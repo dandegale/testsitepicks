@@ -21,11 +21,12 @@ export default function FightDashboard({ fights, initialPicks, groupedFights, le
     setLockedPicks(initialPicks || []);
   }, [initialPicks]);
 
-  // --- FIX: Safety Guard to close drawer and exit focus mode when empty ---
   useEffect(() => {
-    if (Object.keys(pendingPicks).length === 0) {
+    const pickCount = Object.keys(pendingPicks).length;
+    
+    if (pickCount === 0) {
       if (isDrawerOpen) setIsDrawerOpen(false);
-      // Using a small delay to ensure render is complete before parent state updates
+      
       const timer = setTimeout(() => {
         if (onPicksCleared) onPicksCleared();
       }, 0);
@@ -98,7 +99,8 @@ export default function FightDashboard({ fights, initialPicks, groupedFights, le
   };
 
   const totalReturn = Object.values(pendingPicks).reduce((acc, curr) => acc + calculatePayout(curr.odds), 0);
-  const showDrawer = isDrawerOpen && Object.keys(pendingPicks).length > 0;
+  
+  const isActuallyOpen = isDrawerOpen && Object.keys(pendingPicks).length > 0;
 
   return (
     <div className="relative">
@@ -117,8 +119,8 @@ export default function FightDashboard({ fights, initialPicks, groupedFights, le
         ))}
       </div>
 
-      {/* --- FIX: DRAWER WITH HIGHER Z-INDEX AND VISIBILITY CHECK --- */}
-      <div className={`fixed inset-y-0 right-0 w-80 bg-gray-950 border-l border-pink-500/30 shadow-[-20px_0_50px_rgba(0,0,0,0.9)] transform transition-transform duration-500 ease-in-out z-[999] ${showDrawer ? 'translate-x-0' : 'translate-x-full'}`}>
+      {/* --- DRAWER --- */}
+      <div className={`fixed inset-y-0 right-0 w-80 bg-gray-950 border-l border-pink-500/30 shadow-[-20px_0_50px_rgba(0,0,0,0.9)] transform transition-transform duration-500 ease-in-out z-[999] ${isActuallyOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="p-6 h-full flex flex-col">
             <div className="flex justify-between items-center mb-6 border-b border-gray-800 pb-4">
                 <h2 className="text-xl font-black text-white uppercase italic tracking-tighter">Your Slip</h2>
@@ -132,7 +134,8 @@ export default function FightDashboard({ fights, initialPicks, groupedFights, le
                             <div className="text-[10px] text-gray-500 uppercase font-black mb-1">{fight?.fighter_1_name} vs {fight?.fighter_2_name}</div>
                             <div className="flex justify-between items-center">
                                 <span className="font-bold text-white tracking-tight">{selection.fighter}</span>
-                                <span className="text-green-400 font-mono">+{calculatePayout(selection.odds).toFixed(2)}</span>
+                                {/* REMOVED $ SYMBOL AND ADDED 'pts' */}
+                                <span className="text-green-400 font-mono">+{calculatePayout(selection.odds).toFixed(0)} pts</span>
                             </div>
                             <button onClick={() => handleTogglePick(fightId, selection.fighter, selection.odds)} className="absolute -top-2 -right-2 bg-gray-800 border border-gray-700 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
                         </div>
@@ -141,10 +144,11 @@ export default function FightDashboard({ fights, initialPicks, groupedFights, le
             </div>
             <div className="mt-6 border-t border-gray-800 pt-6">
                 <div className="flex justify-between text-lg font-black mb-6 text-white uppercase italic">
-                    <span>Potential</span>
-                    <span className="text-green-400">${totalReturn.toFixed(2)}</span>
+                    {/* CHANGED TERMINOLOGY TO FANTASY POINTS */}
+                    <span>Est. Points</span>
+                    <span className="text-green-400">{totalReturn.toFixed(0)}</span>
                 </div>
-                <button onClick={submitPicks} disabled={isSubmitting} className="w-full bg-pink-600 hover:bg-pink-500 text-white font-black uppercase py-4 rounded-xl shadow-[0_0_20px_rgba(219,39,119,0.4)] transition-all disabled:opacity-50">
+                <button onClick={submitPicks} disabled={isSubmitting || Object.keys(pendingPicks).length === 0} className="w-full bg-pink-600 hover:bg-pink-500 text-white font-black uppercase py-4 rounded-xl shadow-[0_0_20px_rgba(219,39,119,0.4)] transition-all disabled:opacity-50">
                     {isSubmitting ? 'Locking...' : 'Lock In Picks'}
                 </button>
             </div>

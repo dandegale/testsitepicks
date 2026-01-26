@@ -43,22 +43,24 @@ export default function LeagueRail() {
   return (
     <>
       {/* --- DESKTOP RAIL --- */}
+      {/* Removed overflow-x-hidden so tooltips can break out */}
       <div className="hidden md:flex flex-col items-center w-20 bg-gray-950 border-r border-pink-900/30 h-screen sticky top-0 py-6 gap-6 z-40">
         
-        {/* --- CHANGE 1: Logo updated to 'em --- */}
-        <Link href="/" className="w-12 h-12 bg-pink-600 rounded-xl flex items-center justify-center shadow-lg shadow-pink-600/20 hover:scale-105 transition-transform">
+        {/* Logo */}
+        <Link href="/" className="w-12 h-12 bg-pink-600 rounded-xl flex items-center justify-center shadow-lg shadow-pink-600/20 hover:scale-105 transition-transform shrink-0">
             <span className="text-black font-black italic text-xs tracking-tighter">'em</span>
         </Link>
 
         {/* Separator */}
-        <div className="w-8 h-px bg-gray-800"></div>
+        <div className="w-8 h-px bg-gray-800 shrink-0"></div>
 
         {/* Global League */}
-        <Link href="/" className="group relative">
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xs border-2 transition-all ${pathname === '/' ? 'bg-teal-500 text-black border-white' : 'bg-gray-900 text-teal-500 border-gray-700 hover:border-teal-500'}`}>
+        <Link href="/" className="group relative flex items-center justify-center w-full">
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xs border-2 transition-all shrink-0 ${pathname === '/' ? 'bg-teal-500 text-black border-white' : 'bg-gray-950 text-teal-500 border-gray-700 hover:border-teal-500'}`}>
                 GL
             </div>
-            <div className="absolute left-16 top-3 bg-gray-900 text-teal-400 text-[10px] font-black uppercase px-2 py-1 rounded border border-teal-900 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">
+            {/* Tooltip: Shifted to left-20 to clear the rail width */}
+            <div className="absolute left-20 bg-gray-900 text-teal-400 text-[10px] font-black uppercase px-2 py-1 rounded border border-teal-900 opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap z-[100] pointer-events-none shadow-xl">
                 Global League
             </div>
         </Link>
@@ -68,19 +70,20 @@ export default function LeagueRail() {
           {leagues.map((league) => {
             const isActive = pathname === `/league/${league.id}`; 
             return (
-                <Link key={league.id} href={`/league/${league.id}`} className="group relative">
+                <Link key={league.id} href={`/league/${league.id}`} className="group relative flex items-center justify-center w-full shrink-0">
                     {league.image_url ? (
                         <img 
                           src={league.image_url} 
-                          className={`w-12 h-12 rounded-full border-2 transition-all object-cover ${isActive ? 'border-pink-500' : 'border-transparent hover:border-pink-500'}`}
+                          className={`w-12 h-12 rounded-full border-2 transition-all object-cover shrink-0 ${isActive ? 'border-pink-500' : 'border-transparent hover:border-pink-500'}`}
                           alt={league.name}
                         />
                     ) : (
-                        <div className={`w-12 h-12 rounded-full bg-gray-900 flex items-center justify-center font-bold text-xs border-2 transition-colors ${isActive ? 'text-pink-500 border-pink-500' : 'text-gray-500 border-gray-800 hover:border-pink-500 hover:text-pink-500'}`}>
+                        <div className={`w-12 h-12 rounded-full bg-gray-950 flex items-center justify-center font-bold text-xs border-2 transition-colors shrink-0 ${isActive ? 'text-pink-500 border-pink-500' : 'text-gray-500 border-gray-800 hover:border-pink-500 hover:text-pink-500'}`}>
                             {league.name.substring(0, 2).toUpperCase()}
                         </div>
                     )}
-                    <div className="absolute left-16 top-3 bg-gray-900 text-pink-500 text-[10px] font-black uppercase px-2 py-1 rounded border border-pink-900 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">
+                    {/* Tooltip: Shifted to left-20 to clear the rail width */}
+                    <div className="absolute left-20 bg-gray-900 text-pink-500 text-[10px] font-black uppercase px-2 py-1 rounded border border-pink-900 opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap z-[100] pointer-events-none shadow-xl">
                         {league.name}
                     </div>
                 </Link>
@@ -91,7 +94,7 @@ export default function LeagueRail() {
         {/* Create Button */}
         <button 
           onClick={() => setShowModal(true)}
-          className="w-12 h-12 rounded-full bg-gray-900 border border-dashed border-gray-600 flex items-center justify-center text-gray-500 hover:text-green-400 hover:border-green-400 transition-all text-xl mt-auto mb-4"
+          className="w-12 h-12 rounded-full bg-gray-950 border border-dashed border-gray-700 flex items-center justify-center text-gray-500 hover:text-green-400 hover:border-green-400 transition-all text-xl mt-auto mb-4 shrink-0"
         >
             +
         </button>
@@ -112,19 +115,18 @@ export default function LeagueRail() {
             <div className="fixed inset-0 bg-black/80 z-40 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
             <div className="fixed inset-y-0 left-0 w-72 bg-gray-950 border-r border-pink-900 z-50 p-6 flex flex-col shadow-2xl animate-in slide-in-from-left duration-300">
                 <div className="flex justify-between items-center mb-8">
-                    {/* --- CHANGE 2: Updated Mobile Title --- */}
                     <h2 className="text-2xl font-black text-white italic tracking-tighter uppercase">CHOOSE YOUR <span className="text-pink-600">FIGHTER</span></h2>
                     <button onClick={() => setIsOpen(false)} className="text-gray-500 hover:text-white">✕</button>
                 </div>
 
-                <div className="mb-8 space-y-3">
+                <div className="mb-8 space-y-3 overflow-y-auto">
                     <div className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Leagues</div>
-                    <Link href="/" onClick={() => setIsOpen(false)} className="flex items-center gap-3 p-2 rounded hover:bg-gray-900 text-teal-400 font-bold">
+                    <Link href="/" onClick={() => setIsOpen(false)} className="flex items-center gap-3 p-2 rounded hover:bg-gray-900 text-teal-400 font-bold transition-colors">
                         <div className="w-8 h-8 rounded-full bg-teal-900/50 flex items-center justify-center border border-teal-500 text-xs">GL</div>
                         Global League
                     </Link>
                     {leagues.map(l => (
-                        <Link key={l.id} href={`/league/${l.id}`} onClick={() => setIsOpen(false)} className="flex items-center gap-3 p-2 rounded hover:bg-gray-900 text-gray-300 font-bold">
+                        <Link key={l.id} href={`/league/${l.id}`} onClick={() => setIsOpen(false)} className="flex items-center gap-3 p-2 rounded hover:bg-gray-900 text-gray-300 font-bold transition-colors">
                              <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center border border-gray-600 text-xs">{l.name.substring(0,2).toUpperCase()}</div>
                              {l.name}
                         </Link>
@@ -134,7 +136,7 @@ export default function LeagueRail() {
                     </button>
                 </div>
 
-                <nav className="space-y-4 text-lg font-bold uppercase tracking-wider border-t border-gray-800 pt-6">
+                <nav className="space-y-4 text-lg font-bold uppercase tracking-wider border-t border-gray-800 pt-6 mt-auto">
                     <Link href="/" className="block text-gray-400 hover:text-pink-500 transition-colors">🏠 Dashboard</Link>
                     <Link href="/profile" className="block text-gray-400 hover:text-pink-500 transition-colors">👤 My Profile</Link>
                 </nav>
