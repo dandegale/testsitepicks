@@ -44,7 +44,7 @@ export default function ChatBox({ league_id }) {
     };
     fetchMessages();
 
-    // 3. Subscribe (Using your robust logic)
+    // 3. Subscribe
     const channelId = `chat_${activeLeagueId || 'global'}_${Date.now()}`;
     const channel = supabase
       .channel(channelId) 
@@ -55,7 +55,6 @@ export default function ChatBox({ league_id }) {
         filter: activeLeagueId ? `league_id=eq.${activeLeagueId}` : 'league_id=is.null'
       }, (payload) => {
         setMessages((prev) => {
-          // Strict De-duplication
           const exists = prev.some(m => m.id === payload.new.id);
           if (exists) return prev;
           return [...prev, payload.new];
@@ -77,12 +76,16 @@ export default function ChatBox({ league_id }) {
     e.preventDefault();
     if (!newMessage.trim() || !user) return;
 
-    // Optimistic Update (Show immediately)
+    // Grab username from metadata, or fallback to email stub
+    const currentUsername = user.user_metadata?.username || user.email.split('@')[0];
+
+    // Optimistic Update
     const tempId = Date.now();
     const tempMsg = {
         id: tempId,
         content: newMessage,
-        user_id: user.email, // RESTORED: Using email as ID based on your old code
+        user_id: user.email, 
+        username: currentUsername, // NEW: Add username to local state
         league_id: activeLeagueId,
         created_at: new Date().toISOString()
     };
@@ -94,23 +97,22 @@ export default function ChatBox({ league_id }) {
     const { data, error } = await supabase.from('messages').insert([
       { 
         content: tempMsg.content, 
-        user_id: tempMsg.user_id, // Saving Email here
+        user_id: tempMsg.user_id,
+        username: currentUsername, // NEW: Save to DB
         league_id: tempMsg.league_id 
       }
     ]).select();
 
     if (error) {
         console.error("Send Error:", error);
-        setMessages((prev) => prev.filter(m => m.id !== tempId)); // Revert if failed
+        setMessages((prev) => prev.filter(m => m.id !== tempId));
         alert("Failed to send message.");
     } else if (data && data[0]) {
-        // Swap temp ID with real DB ID
         setMessages((prev) => prev.map(m => m.id === tempId ? data[0] : m));
     }
   };
 
   return (
-    // CONTAINER: Full height, transparent background to fit sidebar
     <div className="flex flex-col h-full bg-black/20">
       
       {/* MESSAGES AREA */}
@@ -124,11 +126,10 @@ export default function ChatBox({ league_id }) {
           </div>
         ) : (
           messages.map((msg) => {
-            // Check based on Email since that's what you store
             const isMe = user?.email === msg.user_id;
             
-            // Format Name (strip @gmail.com)
-            const displayName = msg.user_id ? msg.user_id.split('@')[0] : 'Unknown';
+            // NEW LOGIC: Try msg.username first, fallback to email split
+            const displayName = msg.username || (msg.user_id ? msg.user_id.split('@')[0] : 'Unknown');
 
             return (
               <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>

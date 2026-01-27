@@ -36,24 +36,32 @@ export default function Profile() {
   }, []);
 
   const fetchData = async () => {
+    // 1. Get Auth User
     const { data: { user } } = await supabase.auth.getUser();
+    
     if (!user) {
         router.push('/login');
         return;
     }
     setUser(user);
 
-    // Get Profile Name
+    // 2. Get Profile from DB (if exists)
     const { data: profile } = await supabase
       .from('profiles')
       .select('username')
       .eq('id', user.id)
       .single();
     
-    if (profile) {
-        setUsername(profile.username);
-        setNewUsername(profile.username); // Pre-fill the edit box
-    }
+    // 3. RESOLVE USERNAME:
+    // Priority: DB Profile -> Signup Metadata -> Email Stub
+    const dbName = profile?.username;
+    const metaName = user.user_metadata?.username; // <--- This catches the signup name
+    const emailName = user.email?.split('@')[0];
+
+    const finalName = dbName || metaName || emailName || 'Unknown Fighter';
+
+    setUsername(finalName);
+    setNewUsername(finalName); 
 
     // Get User's Picks
     const { data: picks, error } = await supabase
@@ -93,6 +101,12 @@ export default function Profile() {
         alert("Error updating name: " + error.message);
     } else {
         setUsername(newUsername);
+        
+        // Optional: Also update Auth Metadata to keep them in sync
+        await supabase.auth.updateUser({
+            data: { username: newUsername }
+        });
+
         setIsEditing(false);
     }
     setSaving(false);
@@ -207,7 +221,7 @@ export default function Profile() {
             ) : (
                 <div className="group flex items-center gap-3">
                     <h1 className="text-4xl font-black text-white uppercase italic tracking-tighter">
-                        {username || 'Unknown Fighter'}
+                        {username}
                     </h1>
                     <button 
                         onClick={() => setIsEditing(true)}
