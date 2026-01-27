@@ -8,16 +8,21 @@ import CreateLeagueModal from './CreateLeagueModal';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-export default function LeagueRail() {
+export default function LeagueRail({ initialLeagues = [] }) {
   const [isOpen, setIsOpen] = useState(false); 
   const [showModal, setShowModal] = useState(false); 
-  const [leagues, setLeagues] = useState([]);
+  const [leagues, setLeagues] = useState(initialLeagues);
   const [userEmail, setUserEmail] = useState(null);
   const pathname = usePathname(); 
 
-  // Fetch Leagues on Load
   useEffect(() => {
-    fetchData();
+    if (initialLeagues && initialLeagues.length > 0) {
+      setLeagues(initialLeagues);
+    }
+  }, [initialLeagues]);
+
+  useEffect(() => {
+    if (initialLeagues.length === 0) fetchData();
   }, []);
 
   const fetchData = async () => {
@@ -25,15 +30,12 @@ export default function LeagueRail() {
     
     if (user) {
       setUserEmail(user.email);
-      
-      // Get leagues where the user is a member
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('league_members')
         .select('leagues ( id, name, image_url, invite_code )')
         .eq('user_id', user.email); 
       
       if (data) {
-        // Filter out any nulls/broken links
         const validLeagues = data.map(item => item.leagues).filter(Boolean);
         setLeagues(validLeagues);
       }
@@ -43,12 +45,11 @@ export default function LeagueRail() {
   return (
     <>
       {/* --- DESKTOP RAIL --- */}
-      {/* Removed overflow-x-hidden so tooltips can break out */}
       <div className="hidden md:flex flex-col items-center w-20 bg-gray-950 border-r border-pink-900/30 h-screen sticky top-0 py-6 gap-6 z-40">
         
-        {/* Logo */}
-        <Link href="/" className="w-12 h-12 bg-pink-600 rounded-xl flex items-center justify-center shadow-lg shadow-pink-600/20 hover:scale-105 transition-transform shrink-0">
-            <span className="text-black font-black italic text-xs tracking-tighter">'em</span>
+        {/* LOGO UPDATE: Made bigger (w-[70px] h-[70px]) to fit rail snugly */}
+        <Link href="/" className="w-[70px] h-[70px] flex items-center justify-center hover:scale-105 transition-transform shrink-0 px-1">
+            <img src="/fightiq-logo.jpg" alt="FightIQ" className="w-full h-full object-contain rounded-xl" />
         </Link>
 
         {/* Separator */}
@@ -59,14 +60,10 @@ export default function LeagueRail() {
             <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xs border-2 transition-all shrink-0 ${pathname === '/' ? 'bg-teal-500 text-black border-white' : 'bg-gray-950 text-teal-500 border-gray-700 hover:border-teal-500'}`}>
                 GL
             </div>
-            {/* Tooltip: Shifted to left-20 to clear the rail width */}
-            <div className="absolute left-20 bg-gray-900 text-teal-400 text-[10px] font-black uppercase px-2 py-1 rounded border border-teal-900 opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap z-[100] pointer-events-none shadow-xl">
-                Global League
-            </div>
         </Link>
 
         {/* Dynamic List */}
-        <div className="flex flex-col gap-4 overflow-y-auto no-scrollbar w-full items-center">
+        <div className="flex flex-col gap-4 overflow-y-auto overflow-x-hidden no-scrollbar w-full items-center">
           {leagues.map((league) => {
             const isActive = pathname === `/league/${league.id}`; 
             return (
@@ -82,10 +79,6 @@ export default function LeagueRail() {
                             {league.name.substring(0, 2).toUpperCase()}
                         </div>
                     )}
-                    {/* Tooltip: Shifted to left-20 to clear the rail width */}
-                    <div className="absolute left-20 bg-gray-900 text-pink-500 text-[10px] font-black uppercase px-2 py-1 rounded border border-pink-900 opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap z-[100] pointer-events-none shadow-xl">
-                        {league.name}
-                    </div>
                 </Link>
             );
           })}
@@ -115,7 +108,11 @@ export default function LeagueRail() {
             <div className="fixed inset-0 bg-black/80 z-40 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
             <div className="fixed inset-y-0 left-0 w-72 bg-gray-950 border-r border-pink-900 z-50 p-6 flex flex-col shadow-2xl animate-in slide-in-from-left duration-300">
                 <div className="flex justify-between items-center mb-8">
-                    <h2 className="text-2xl font-black text-white italic tracking-tighter uppercase">CHOOSE YOUR <span className="text-pink-600">FIGHTER</span></h2>
+                    {/* LOGO UPDATE MOBILE */}
+                    <div className="flex items-center gap-3">
+                        <img src="/fightiq-logo.jpg" alt="FightIQ" className="w-12 h-12 object-contain rounded-lg" />
+                        <span className="text-xl font-black text-white italic tracking-tighter uppercase">FIGHT<span className="text-pink-600">IQ</span></span>
+                    </div>
                     <button onClick={() => setIsOpen(false)} className="text-gray-500 hover:text-white">✕</button>
                 </div>
 

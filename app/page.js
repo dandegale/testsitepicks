@@ -26,14 +26,22 @@ export default async function FightList() {
 
   const myLeagues = myMemberships ? myMemberships.map(m => m.leagues).filter(Boolean) : [];
 
-  // 3. Fetch User's Stats
-  const { data: myPicks } = await supabase
+  // 3. Fetch User's Stats & Active Picks
+  // We grab the picks AND the fight details (using the 'fight:fights' join)
+  const { data: myPicksRaw } = await supabase
     .from('picks')
-    .select('*')
+    .select('*, fight:fights(*)')
     .eq('user_id', currentUserEmail);
 
-  const totalWins = myPicks ? myPicks.filter(p => p.result === 'Win').length : 0;
-  const totalLosses = myPicks ? myPicks.filter(p => p.result === 'Loss').length : 0;
+  const myPicks = myPicksRaw || [];
+  
+  // Calculate Stats
+  const totalWins = myPicks.filter(p => p.result === 'Win').length;
+  const totalLosses = myPicks.filter(p => p.result === 'Loss').length;
+
+  // Filter for Active Picks (Fights that haven't happened yet)
+  const now = new Date();
+  const myActivePicks = myPicks.filter(p => p.fight && new Date(p.fight.start_time) > now);
 
   // 4. Fetch Global Picks
   const { data: allPicks } = await supabase
@@ -87,6 +95,7 @@ export default async function FightList() {
         myLeagues={myLeagues}
         totalWins={totalWins}
         totalLosses={totalLosses}
+        myActivePicks={myActivePicks} // <--- PASSING DATA HERE
         nextEventName={nextEventName}
         mainEvent={mainEvent}
     />
