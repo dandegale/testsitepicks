@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js'; 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation'; // Added for refresh
 import LogOutButton from './LogOutButton';
 import ChatBox from './ChatBox'; 
 import FightDashboard from './FightDashboard';
@@ -32,8 +33,9 @@ const CountdownDisplay = ({ targetDate }) => {
 };
 
 export default function DashboardClient({ 
-  fights, groupedFights, allPicks, userEmail, myLeagues, totalWins, totalLosses, nextEventName, mainEvent 
+  fights, groupedFights, allPicks, myPicks, userEmail, myLeagues, totalWins, totalLosses, nextEventName, mainEvent 
 }) {
+  const router = useRouter(); // Initialize router for data refreshing
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -81,7 +83,6 @@ export default function DashboardClient({
         return;
     }
 
-    // FIX: Removed 'result: null' because the DB table doesn't have that column
     const picksToInsert = pendingPicks.map(p => ({
         user_id: user.email,
         fight_id: p.fightId,
@@ -92,14 +93,16 @@ export default function DashboardClient({
 
     const { error } = await supabase.from('picks').insert(picksToInsert);
 
-    setIsSubmitting(false);
-
     if (error) {
         console.error("Submission Error:", error);
         alert(`Error saving picks: ${error.message}`);
+        setIsSubmitting(false);
     } else {
         setPendingPicks([]); 
-        window.location.reload(); 
+        setIsSubmitting(false);
+        setIsFocusMode(false);
+        // This tells Next.js to re-run the server-side data fetching in app/page.js
+        router.refresh(); 
     }
   };
 
@@ -154,7 +157,6 @@ export default function DashboardClient({
              </button>
         )}
 
-        {/* HERO SECTION - ULTRA COMPACT (h-15vh) */}
         <div className={`relative w-full bg-gray-900 overflow-hidden border-b border-gray-800 transition-all duration-700 ${isFocusMode ? 'h-0 opacity-0' : 'h-[15vh] min-h-[120px]'}`}>
             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent z-10" />
             <div className="absolute inset-0 flex flex-col justify-end p-4 md:p-6 z-20">
@@ -185,7 +187,6 @@ export default function DashboardClient({
             </div>
 
             <div className="relative flex w-full">
-                {/* CENTER COLUMN (Fight Cards) */}
                 <div className={`transition-all duration-700 ease-in-out w-full xl:w-[66%] ${isFocusMode ? 'xl:mx-auto' : ''}`}>
                     <div className="flex items-center gap-2 mb-6">
                         <span className={`w-2 h-2 rounded-full bg-teal-500 animate-pulse ${isFocusMode ? 'opacity-0' : ''}`}></span>
@@ -199,6 +200,7 @@ export default function DashboardClient({
                             fights={fights} 
                             groupedFights={groupedFights} 
                             initialPicks={allPicks} 
+                            userPicks={myPicks} 
                             league_id={null} 
                             onInteractionStart={handleInteraction}
                             onPickSelect={handlePickSelect} 
@@ -207,14 +209,7 @@ export default function DashboardClient({
                     </div>
                 </div>
 
-                {/* RIGHT SIDEBAR */}
-                <div className={`
-                    hidden xl:block ml-10 space-y-8 transition-all duration-700
-                    ${isFocusMode 
-                        ? 'opacity-100 translate-x-0 w-[33%] relative' 
-                        : 'opacity-100 translate-x-0 w-[33%] relative'}
-                `}>
-                    
+                <div className={`hidden xl:block ml-10 space-y-8 transition-all duration-700 w-[33%] relative`}>
                     {pendingPicks.length > 0 ? (
                          <div className="sticky top-24 max-h-[calc(100vh-120px)] min-w-[350px] bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto">
                              <BettingSlip 

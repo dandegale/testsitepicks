@@ -1,7 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import DashboardClient from './components/DashboardClient';
 
+// --- CACHE FIXES ---
+// This forces the page to be generated on every request
 export const dynamic = 'force-dynamic';
+// This prevents Next.js from caching the data for any amount of time
+export const revalidate = 0; 
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -27,7 +31,6 @@ export default async function FightList() {
   const myLeagues = myMemberships ? myMemberships.map(m => m.leagues).filter(Boolean) : [];
 
   // 3. Fetch User's Stats & Active Picks
-  // We grab the picks AND the fight details (using the 'fight:fights' join)
   const { data: myPicksRaw } = await supabase
     .from('picks')
     .select('*, fight:fights(*)')
@@ -39,11 +42,10 @@ export default async function FightList() {
   const totalWins = myPicks.filter(p => p.result === 'Win').length;
   const totalLosses = myPicks.filter(p => p.result === 'Loss').length;
 
-  // Filter for Active Picks (Fights that haven't happened yet)
   const now = new Date();
   const myActivePicks = myPicks.filter(p => p.fight && new Date(p.fight.start_time) > now);
 
-  // 4. Fetch Global Picks
+  // 4. Fetch Global Picks (This is the FEED of EVERYONE)
   const { data: allPicks } = await supabase
     .from('picks')
     .select('*')
@@ -90,12 +92,13 @@ export default async function FightList() {
     <DashboardClient 
         fights={fights}
         groupedFights={groupedFights}
-        allPicks={allPicks}
+        allPicks={allPicks}         
+        myPicks={myPicks}           
         userEmail={currentUserEmail}
         myLeagues={myLeagues}
         totalWins={totalWins}
         totalLosses={totalLosses}
-        myActivePicks={myActivePicks} // <--- PASSING DATA HERE
+        myActivePicks={myActivePicks}
         nextEventName={nextEventName}
         mainEvent={mainEvent}
     />

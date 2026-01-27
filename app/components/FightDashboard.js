@@ -6,13 +6,15 @@ import FightCard from './FightCard';
 export default function FightDashboard({ 
     fights, 
     groupedFights, 
-    initialPicks, 
+    initialPicks,     // This is the GLOBAL feed (everyone's picks)
+    userPicks = [],   // <--- NEW: This is YOUR picks only
     league_id, 
     onInteractionStart, 
     onPickSelect,
-    pendingPicks = [] // New Prop
+    pendingPicks = [] 
 }) {
-  // activePicks are ones already saved in DB
+  
+  // activePicks is still useful if you want to show "% of people picked X" later
   const [activePicks, setActivePicks] = useState(initialPicks || []);
 
   const handlePickClick = (fightId, fighterName, odds) => {
@@ -41,7 +43,11 @@ export default function FightDashboard({
 
           <div className="grid grid-cols-1 gap-6">
             {groupFights.map((fight) => {
-              const existingPick = activePicks.find(p => p.fight_id === fight.id);
+              
+              // --- THE FIX IS HERE ---
+              // Check userPicks (YOU) instead of activePicks (EVERYONE)
+              const existingPick = userPicks.find(p => p.fight_id === fight.id);
+              
               // Find if this fight is currently in our pending slip
               const pendingForThisFight = pendingPicks.find(p => p.fightId === fight.id);
               
@@ -49,8 +55,8 @@ export default function FightDashboard({
                 <FightCard 
                   key={fight.id} 
                   fight={fight} 
-                  existingPick={existingPick}
-                  pendingPick={pendingForThisFight} // Pass the specific pending pick
+                  existingPick={existingPick} // Now this only locks if YOU picked it
+                  pendingPick={pendingForThisFight} 
                   onPick={handlePickClick} 
                 />
               );
