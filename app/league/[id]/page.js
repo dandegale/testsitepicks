@@ -22,7 +22,7 @@ export default function LeaguePage() {
 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('card'); 
-  const [copySuccess, setCopySuccess] = useState(false); // <--- NEW STATE FOR COPY FEEDBACK
+  const [copySuccess, setCopySuccess] = useState(false);
   
   // Data State
   const [league, setLeague] = useState(null);
@@ -33,11 +33,11 @@ export default function LeaguePage() {
   const [allFights, setAllFights] = useState([]); 
   const [visibleFights, setVisibleFights] = useState([]); 
   const [cardFilter, setCardFilter] = useState('full'); 
+  const [groupedFights, setGroupedFights] = useState({});
 
   // Champion Logic
   const [isEventConcluded, setIsEventConcluded] = useState(false);
 
-  const [groupedFights, setGroupedFights] = useState({});
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false); 
   
@@ -54,23 +54,63 @@ export default function LeaguePage() {
       applyCardFilter();
   }, [cardFilter, allFights]);
 
+  // --- UPDATED GROUPING LOGIC ---
   const applyCardFilter = () => {
       if (allFights.length === 0) return;
       
       let filtered = [...allFights];
+      
+      // Ensure strict ascending order first for the logic to work
+      filtered.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+
       if (cardFilter === 'main') filtered = filtered.slice(-5);
+      
       setVisibleFights(filtered);
 
       const allFinished = filtered.length > 0 && filtered.every(f => f.winner !== null && f.winner !== undefined && f.winner !== '');
       setIsEventConcluded(allFinished);
 
-      const groups = filtered.reduce((acc, fight) => {
-          const group = fight.event_name || 'Fight Card';
-          if (!acc[group]) acc[group] = [];
-          acc[group].push(fight);
-          return acc;
-      }, {});
-      setGroupedFights(groups);
+      // --- 3-DAY CLUSTERING + REVERSE ORDER LOGIC ---
+      let finalGroupedFights = {};
+      const tempGroups = [];
+      let currentBucket = [];
+      
+      // Safety check for start time
+      let groupReferenceTime = filtered.length > 0 ? new Date(filtered[0].start_time).getTime() : 0;
+      const THREE_DAYS_MS = 72 * 60 * 60 * 1000;
+
+      filtered.forEach((fight) => {
+          const fightTime = new Date(fight.start_time).getTime();
+          
+          if (fightTime - groupReferenceTime < THREE_DAYS_MS) {
+              currentBucket.push(fight);
+          } else {
+              tempGroups.push(currentBucket);
+              currentBucket = [fight];
+              groupReferenceTime = fightTime;
+          }
+      });
+      // Push final bucket
+      if (currentBucket.length > 0) tempGroups.push(currentBucket);
+
+      // Name groups & Reverse order
+      tempGroups.forEach(bucket => {
+          if (bucket.length === 0) return;
+
+          // Main Event is the LAST fight in the sorted bucket
+          const mainEventFight = bucket[bucket.length - 1];
+          const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
+              month: 'short', 
+              day: 'numeric' 
+          });
+          
+          const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
+
+          // REVERSE the bucket so Main Event is at index 0 (Top of UI)
+          finalGroupedFights[title] = [...bucket].reverse();
+      });
+
+      setGroupedFights(finalGroupedFights);
   };
 
   const fetchLeagueData = async () => {
@@ -133,26 +173,14 @@ export default function LeaguePage() {
             }
         }
 
-        // 4. Fetch Fights (5-Day Window)
+        // 4. Fetch Fights (Fetch ALL future fights, we filter later)
         const { data: allFutureFights } = await supabase
             .from('fights')
             .select('*')
-            .gt('start_time', new Date().toISOString())
-            .order('start_time', { ascending: true });
+            .is('winner', null) // Only active fights
+            .order('start_time', { ascending: true }); // Must be ascending for grouping logic
 
-        let fightsData = [];
-        if (allFutureFights && allFutureFights.length > 0) {
-            const firstFight = allFutureFights[0];
-            const firstFightTime = new Date(firstFight.start_time).getTime();
-            const fiveDaysInMs = 5 * 24 * 60 * 60 * 1000;
-            const cutoffTime = firstFightTime + fiveDaysInMs;
-
-            fightsData = allFutureFights.filter(fight => {
-                const fightTime = new Date(fight.start_time).getTime();
-                return fightTime <= cutoffTime;
-            });
-        }
-        setAllFights(fightsData);
+        setAllFights(allFutureFights || []);
 
         // 5. Fetch User Picks
         if (currentUser) {
@@ -212,7 +240,6 @@ export default function LeaguePage() {
 
   // --- ACTIONS ---
   
-  // NEW: Handle Copy Code
   const handleCopyCode = () => {
     if (league?.invite_code) {
         navigator.clipboard.writeText(league.invite_code);
@@ -267,12 +294,11 @@ export default function LeaguePage() {
         return;
     }
 
-    // --- GET USERNAME FROM METADATA (Consistent with Global Feed) ---
     const username = user.user_metadata?.username || user.email.split('@')[0];
 
     const picksToInsert = pendingPicks.map(p => ({
         user_id: user.email,
-        username: username, // Saving username to picks table
+        username: username, 
         fight_id: p.fightId,
         selected_fighter: p.fighterName,
         odds_at_pick: parseInt(p.odds, 10),
@@ -351,7 +377,7 @@ export default function LeaguePage() {
                         {league?.name}
                     </h1>
                     
-                    {/* UPDATED: Clickable Invite Code in Hero */}
+                    {/* Invite Code */}
                     <div className="flex items-center gap-4 text-gray-400 text-xs font-bold uppercase tracking-widest">
                         <button 
                             onClick={handleCopyCode}
@@ -371,7 +397,7 @@ export default function LeaguePage() {
             </div>
         </div>
 
-        {/* --- NAVIGATION TABS --- */}
+        {/* --- TABS --- */}
         <div className="border-b border-gray-800 bg-gray-950">
             <div className="max-w-7xl mx-auto px-6 py-0 flex gap-0">
                 <button 
@@ -413,8 +439,6 @@ export default function LeaguePage() {
                                             League Fight Card
                                         </h2>
                                     </div>
-
-                                    {/* UPDATED: Copy Code Button Next to Header */}
                                     <button 
                                         onClick={handleCopyCode}
                                         className="hidden md:flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1 rounded transition-all group"
@@ -437,14 +461,14 @@ export default function LeaguePage() {
                                     fights={visibleFights} 
                                     groupedFights={groupedFights} 
                                     initialPicks={existingPicks} 
-                                    userPicks={existingPicks} // Ensure this is passed for locking
+                                    userPicks={existingPicks} 
                                     league_id={leagueId} 
                                     onPickSelect={handlePickSelect} 
                                     pendingPicks={pendingPicks} 
                                 />
                             ) : (
                                 <div className="p-12 border border-gray-800 rounded-xl text-center text-gray-500 font-bold uppercase tracking-widest">
-                                    No fights scheduled for the upcoming weekend.
+                                    No fights scheduled.
                                 </div>
                             )}
                         </>
@@ -481,7 +505,6 @@ export default function LeaguePage() {
                                                         {player.displayName}
                                                     </div>
                                                     
-                                                    {/* CHAMPION BADGE */}
                                                     {isEventConcluded && index === 0 && (
                                                         <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest block mt-1">
                                                             👑 Champion
@@ -548,7 +571,6 @@ export default function LeaguePage() {
                                 </button>
                             </div>
 
-                            {/* MEMBER LIST WITH REAL NAMES */}
                             <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
                                 <div className="p-4 border-b border-gray-800 bg-black/20 flex justify-between items-center">
                                     <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest">Member Roster</h3>

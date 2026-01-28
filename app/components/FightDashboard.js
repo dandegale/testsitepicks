@@ -1,61 +1,77 @@
 'use client';
 
 import { useState } from 'react';
-import FightCard from './FightCard';
+import FightCard from './FightCard'; // <--- Keeping your original component
 
 export default function FightDashboard({ 
-    fights, 
     groupedFights, 
-    initialPicks,     // This is the GLOBAL feed (everyone's picks)
-    userPicks = [],   // <--- NEW: This is YOUR picks only
-    league_id, 
+    userPicks = [], 
     onInteractionStart, 
     onPickSelect,
     pendingPicks = [] 
 }) {
-  
-  // activePicks is still useful if you want to show "% of people picked X" later
-  const [activePicks, setActivePicks] = useState(initialPicks || []);
 
+  // Helper to handle the click and pass it up
   const handlePickClick = (fightId, fighterName, odds) => {
     if (onInteractionStart) onInteractionStart();
+    
+    // Find the fight object to get the event name
+    let fightEventName = '';
+    // Search through groups to find the fight (needed for the slip display)
+    Object.values(groupedFights).forEach(group => {
+        const found = group.find(f => f.id === fightId);
+        if (found) fightEventName = found.event_name;
+    });
+
     if (onPickSelect) {
         onPickSelect({
             fightId,
             fighterName,
             odds,
-            leagueId: league_id
+            fightName: fightEventName
         });
     }
   };
+
+  if (!groupedFights || Object.keys(groupedFights).length === 0) {
+      return <div className="text-zinc-500 text-center py-20">No active fights found.</div>;
+  }
 
   return (
     <div className="space-y-12 pb-24">
       {Object.entries(groupedFights).map(([groupName, groupFights]) => (
         <div key={groupName} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
           
-          <div className="flex items-center gap-4 mb-6">
-            <h3 className="text-lg font-black italic uppercase text-gray-700 tracking-tighter">
-              {groupName}
-            </h3>
-            <div className="h-px flex-1 bg-gradient-to-r from-gray-800 to-transparent"></div>
+          {/* --- EVENT HEADER --- */}
+          {/* Sticky header to separate the vertical groups clearly */}
+          <div className="flex items-center gap-4 mb-6 sticky top-0 bg-gray-900/95 backdrop-blur z-30 py-4 border-b border-gray-800 shadow-xl -mx-2 px-2 md:mx-0 md:px-0">
+             <div className="w-1.5 h-10 bg-pink-600 rounded-r-full shadow-[0_0_15px_rgba(236,72,153,0.5)]"></div>
+             <div>
+                 <h2 className="text-xl font-black italic uppercase text-white tracking-tighter leading-none">
+                   {groupName}
+                 </h2>
+                 <p className="text-[9px] font-bold text-gray-500 uppercase tracking-[0.2em] mt-1">
+                   {groupFights.length} Bouts Scheduled
+                 </p>
+             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-6">
+          {/* --- VERTICAL FIGHT LIST --- */}
+          {/* grid-cols-1 ensures they stack vertically */}
+          <div className="grid grid-cols-1 gap-4">
             {groupFights.map((fight) => {
               
-              // --- THE FIX IS HERE ---
-              // Check userPicks (YOU) instead of activePicks (EVERYONE)
+              // Check if YOU have picked this
               const existingPick = userPicks.find(p => p.fight_id === fight.id);
               
-              // Find if this fight is currently in our pending slip
+              // Check if it's in your betting slip
               const pendingForThisFight = pendingPicks.find(p => p.fightId === fight.id);
               
               return (
                 <FightCard 
                   key={fight.id} 
                   fight={fight} 
-                  existingPick={existingPick} // Now this only locks if YOU picked it
+                  existingPick={existingPick} 
                   pendingPick={pendingForThisFight} 
                   onPick={handlePickClick} 
                 />
