@@ -10,7 +10,7 @@ import FightDashboard from './FightDashboard';
 import GlobalActivityFeed from './GlobalActivityFeed'; 
 import LeagueRail from './LeagueRail'; 
 import BettingSlip from './BettingSlip'; 
-import MobileNav from './MobileNav'; // <--- IMPORTED MOBILE NAV
+import MobileNav from './MobileNav'; 
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -40,7 +40,8 @@ export default function DashboardClient({
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showMobileLeagues, setShowMobileLeagues] = useState(false); // <--- NEW STATE FOR MOBILE MENU
+  const [showMobileLeagues, setShowMobileLeagues] = useState(false); 
+  const [showMobileSlip, setShowMobileSlip] = useState(false); // <--- NEW: Controls the Mobile Slip Modal
   
   const [clientPicks, setClientPicks] = useState(myPicks || []);
 
@@ -85,11 +86,17 @@ export default function DashboardClient({
         }
         return [...currentPicks, newPick];
     });
+    // On mobile, we don't necessarily want "Focus Mode" to hide the header immediately, 
+    // but we DO want to ensure the slip logic is ready.
     setIsFocusMode(true); 
   };
 
   const handleRemovePick = (fightId) => {
-    setPendingPicks(current => current.filter(p => p.fightId !== fightId));
+    setPendingPicks(current => {
+        const updated = current.filter(p => p.fightId !== fightId);
+        if (updated.length === 0) setShowMobileSlip(false); // Close modal if empty
+        return updated;
+    });
     if (pendingPicks.length <= 1) setIsFocusMode(false);
   };
 
@@ -126,6 +133,7 @@ export default function DashboardClient({
         setPendingPicks([]); 
         setIsSubmitting(false);
         setIsFocusMode(false);
+        setShowMobileSlip(false); // Close mobile modal
         
         // Forced Refresh
         window.location.reload(); 
@@ -141,7 +149,6 @@ export default function DashboardClient({
       </div>
 
       {/* --- MOBILE LEAGUE DRAWER --- */}
-      {/* Slides out when 'Leagues' is clicked on bottom nav */}
       <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
          <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
             <div className="p-6 border-b border-gray-800 flex justify-between items-center">
@@ -154,7 +161,7 @@ export default function DashboardClient({
          </div>
       </div>
 
-      <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-20 md:pb-0"> {/* Added pb-20 for Mobile Nav spacing */}
+      <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24 md:pb-0"> 
         
         <header className={`sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800 transition-all duration-500 ${isFocusMode ? '-translate-y-full' : 'translate-y-0'}`}>
             <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -194,7 +201,7 @@ export default function DashboardClient({
         </header>
 
         {isFocusMode && (
-             <button onClick={() => { setIsFocusMode(false); setPendingPicks([]); }} className="fixed top-6 right-6 z-[70] bg-gray-950 text-white px-6 py-3 rounded-full font-bold uppercase text-xs border border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.3)] hover:bg-pink-600 transition-all">
+             <button onClick={() => { setIsFocusMode(false); setPendingPicks([]); }} className="fixed top-6 right-6 z-[70] bg-gray-950 text-white px-6 py-3 rounded-full font-bold uppercase text-xs border border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.3)] hover:bg-pink-600 transition-all hidden md:block">
                 ✕ Close Picks
              </button>
         )}
@@ -217,7 +224,7 @@ export default function DashboardClient({
 
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
             <div className={`mb-8 transition-all duration-500 origin-top ${isFocusMode ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100'}`}>
-                {/* Mobile League Icons (Horizontal Scroll) */}
+                {/* Mobile League Icons */}
                 <div className="flex overflow-x-auto pb-4 gap-4 md:flex-wrap scrollbar-hide">
                     {(myLeagues || []).map(league => (
                         <Link key={league.id} href={`/league/${league.id}`} className="group flex flex-col items-center shrink-0" title={league.name}>
@@ -252,6 +259,7 @@ export default function DashboardClient({
                     </div>
                 </div>
 
+                {/* --- DESKTOP BETTING SLIP (Hidden on Mobile) --- */}
                 <div className={`hidden xl:block ml-10 space-y-8 transition-all duration-700 w-[33%] relative`}>
                     {pendingPicks.length > 0 ? (
                          <div className="sticky top-24 max-h-[calc(100vh-120px)] min-w-[350px] bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto">
@@ -288,6 +296,47 @@ export default function DashboardClient({
             </div>
         </div>
       </main>
+
+      {/* --- MOBILE: BOTTOM FLOATING BAR (Appears when picks exist) --- */}
+      {pendingPicks.length > 0 && (
+          <div className="md:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
+            <button 
+              onClick={() => setShowMobileSlip(true)}
+              className="w-full bg-pink-600 text-white p-4 rounded-xl shadow-2xl shadow-pink-900/50 flex justify-between items-center border border-pink-400 active:scale-95 transition-transform"
+            >
+              <div className="flex items-center gap-3">
+                <span className="bg-black/20 px-3 py-1 rounded-lg text-xs font-black">
+                  {pendingPicks.length}
+                </span>
+                <span className="text-sm font-black uppercase italic tracking-tighter">
+                  Picks in Slip
+                </span>
+              </div>
+              <span className="text-xs font-bold uppercase tracking-widest">Review & Submit →</span>
+            </button>
+          </div>
+      )}
+
+      {/* --- MOBILE: FULL SCREEN SLIP MODAL --- */}
+      {showMobileSlip && (
+          <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm md:hidden flex items-end">
+            <div className="w-full h-[85vh] bg-gray-950 rounded-t-2xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300">
+               <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+                  <h3 className="font-black italic text-xl text-white uppercase tracking-tighter">Your Slip</h3>
+                  <button onClick={() => setShowMobileSlip(false)} className="text-gray-500 hover:text-white p-2 text-xs font-bold uppercase tracking-widest">✕ Close</button>
+               </div>
+               <div className="flex-1 overflow-y-auto p-4">
+                  <BettingSlip 
+                     picks={pendingPicks} 
+                     onCancelAll={() => { setPendingPicks([]); setShowMobileSlip(false); }}
+                     onRemovePick={handleRemovePick}
+                     onConfirm={handleConfirmAllPicks}
+                     isSubmitting={isSubmitting}
+                  />
+               </div>
+            </div>
+          </div>
+      )}
 
       {/* --- MOBILE BOTTOM NAV --- */}
       <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
