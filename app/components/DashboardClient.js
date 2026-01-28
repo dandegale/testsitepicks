@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js'; 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation'; // Added for refresh
+import { useRouter } from 'next/navigation';
 import LogOutButton from './LogOutButton';
 import ChatBox from './ChatBox'; 
 import FightDashboard from './FightDashboard';
@@ -35,14 +35,34 @@ const CountdownDisplay = ({ targetDate }) => {
 export default function DashboardClient({ 
   fights, groupedFights, allPicks, myPicks, userEmail, myLeagues, totalWins, totalLosses, nextEventName, mainEvent 
 }) {
-  const router = useRouter(); // Initialize router for data refreshing
+  const router = useRouter();
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  const [clientPicks, setClientPicks] = useState(myPicks || []);
+
   const winPercentage = (totalWins + totalLosses) > 0 ? (totalWins / (totalWins + totalLosses)) * 100 : 0;
   const eventDate = mainEvent?.start_time || "2026-02-01T22:00:00"; 
   const safeEventName = nextEventName || "Upcoming Event";
+
+  const fetchLatestPicks = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user && user.email) {
+        const { data } = await supabase
+            .from('picks')
+            .select('*')
+            .eq('user_id', user.email);
+        
+        if (data) {
+            setClientPicks(data); 
+        }
+    }
+  };
+
+  useEffect(() => {
+    fetchLatestPicks();
+  }, []);
 
   const handleInteraction = () => {
     setIsFocusMode(true);
@@ -83,8 +103,12 @@ export default function DashboardClient({
         return;
     }
 
+    // --- GET USERNAME FROM METADATA ---
+    const username = user.user_metadata?.username || user.email.split('@')[0];
+
     const picksToInsert = pendingPicks.map(p => ({
         user_id: user.email,
+        username: username, // <--- NEW: SAVING USERNAME TO DB
         fight_id: p.fightId,
         selected_fighter: p.fighterName,
         odds_at_pick: parseInt(p.odds, 10),
@@ -101,8 +125,9 @@ export default function DashboardClient({
         setPendingPicks([]); 
         setIsSubmitting(false);
         setIsFocusMode(false);
-        // This tells Next.js to re-run the server-side data fetching in app/page.js
-        router.refresh(); 
+        
+        // Forced Refresh
+        window.location.reload(); 
     }
   };
 
@@ -200,7 +225,7 @@ export default function DashboardClient({
                             fights={fights} 
                             groupedFights={groupedFights} 
                             initialPicks={allPicks} 
-                            userPicks={myPicks} 
+                            userPicks={clientPicks} 
                             league_id={null} 
                             onInteractionStart={handleInteraction}
                             onPickSelect={handlePickSelect} 

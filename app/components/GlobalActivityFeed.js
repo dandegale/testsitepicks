@@ -6,12 +6,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 export default function GlobalActivityFeed({ initialPicks = [] }) {
   const [picks, setPicks] = useState([]);
 
-  // Simply update the display whenever the server passes down new initialPicks
   useEffect(() => {
     if (initialPicks && initialPicks.length > 0) {
       const latestThree = initialPicks.slice(0, 3).map(p => ({
         id: p.id,
-        username: p.username || p.user_id?.split('@')[0] || 'User'
+        // Now we just use the username column, fallback to email if old data
+        username: p.username || p.user_id?.split('@')[0] || 'Unknown Fighter'
       }));
       setPicks(latestThree);
     }

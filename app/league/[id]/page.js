@@ -22,6 +22,7 @@ export default function LeaguePage() {
 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('card'); 
+  const [copySuccess, setCopySuccess] = useState(false); // <--- NEW STATE FOR COPY FEEDBACK
   
   // Data State
   const [league, setLeague] = useState(null);
@@ -100,27 +101,20 @@ export default function LeaguePage() {
 
         // --- FETCH REAL USERNAMES ---
         if (processedMembers.length > 0) {
-            // Extract the emails/IDs to look up
             const memberIds = processedMembers.map(m => m.user_id);
             
-            // Query profiles table
-            // IMPORTANT: Ensure your profiles table has 'email' and 'username' columns
             const { data: profiles, error: profileError } = await supabase
                 .from('profiles')
-                .select('email, username') // We need email to match, username to display
-                .in('email', memberIds);   // Assuming member.user_id IS the email
+                .select('email, username') 
+                .in('email', memberIds);   
 
             if (profileError) console.error("Profile Fetch Error:", profileError);
 
-            // Merge
             processedMembers = processedMembers.map(member => {
-                // Find matching profile
                 const profile = profiles?.find(p => p.email === member.user_id);
-                
-                // If profile found AND username exists, use it. Otherwise fallback.
                 const displayName = (profile && profile.username) 
                     ? profile.username 
-                    : member.user_id.split('@')[0]; // Clean fallback
+                    : member.user_id.split('@')[0]; 
 
                 return { ...member, displayName };
             });
@@ -217,6 +211,16 @@ export default function LeaguePage() {
   };
 
   // --- ACTIONS ---
+  
+  // NEW: Handle Copy Code
+  const handleCopyCode = () => {
+    if (league?.invite_code) {
+        navigator.clipboard.writeText(league.invite_code);
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+    }
+  };
+
   const handleKickMember = async (memberUserId) => {
     if (!confirm(`Are you sure you want to KICK ${memberUserId}?`)) return;
     const { error } = await supabase.from('league_members').delete().eq('league_id', leagueId).eq('user_id', memberUserId);
@@ -263,8 +267,12 @@ export default function LeaguePage() {
         return;
     }
 
+    // --- GET USERNAME FROM METADATA (Consistent with Global Feed) ---
+    const username = user.user_metadata?.username || user.email.split('@')[0];
+
     const picksToInsert = pendingPicks.map(p => ({
         user_id: user.email,
+        username: username, // Saving username to picks table
         fight_id: p.fightId,
         selected_fighter: p.fighterName,
         odds_at_pick: parseInt(p.odds, 10),
@@ -342,9 +350,23 @@ export default function LeaguePage() {
                     <h1 className="text-4xl md:text-6xl font-black italic uppercase tracking-tighter mb-2 leading-none">
                         {league?.name}
                     </h1>
+                    
+                    {/* UPDATED: Clickable Invite Code in Hero */}
                     <div className="flex items-center gap-4 text-gray-400 text-xs font-bold uppercase tracking-widest">
-                        <span>Invite Code: <span className="text-white bg-gray-800 px-2 py-0.5 rounded ml-1 select-all">{league?.invite_code}</span></span>
+                        <button 
+                            onClick={handleCopyCode}
+                            className="group flex items-center gap-2 hover:text-white transition-colors"
+                        >
+                            <span>Invite Code:</span>
+                            <span className="text-white bg-gray-800 border border-gray-700 group-hover:border-pink-500 px-3 py-1 rounded select-all font-mono">
+                                {league?.invite_code}
+                            </span>
+                            <span className="text-pink-500 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
+                                {copySuccess ? 'COPIED!' : '❐ COPY'}
+                            </span>
+                        </button>
                     </div>
+
                 </div>
             </div>
         </div>
@@ -384,12 +406,27 @@ export default function LeaguePage() {
                     {activeTab === 'card' && (
                         <>
                             <div className="flex items-center justify-between mb-6">
-                                <div className="flex items-center gap-2">
-                                    <span className="w-2 h-2 rounded-full bg-pink-600 animate-pulse"></span>
-                                    <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
-                                        League Fight Card
-                                    </h2>
+                                <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-pink-600 animate-pulse"></span>
+                                        <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
+                                            League Fight Card
+                                        </h2>
+                                    </div>
+
+                                    {/* UPDATED: Copy Code Button Next to Header */}
+                                    <button 
+                                        onClick={handleCopyCode}
+                                        className="hidden md:flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1 rounded transition-all group"
+                                    >
+                                        <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Code:</span>
+                                        <span className="text-xs font-mono font-bold text-pink-500">{league?.invite_code}</span>
+                                        <span className="text-[10px] text-gray-500 group-hover:text-white">
+                                            {copySuccess ? '✓' : '❐'}
+                                        </span>
+                                    </button>
                                 </div>
+
                                 <div className="text-[10px] font-black uppercase text-gray-500 tracking-widest">
                                     Showing: <span className="text-pink-600">{cardFilter === 'full' ? 'Full Card' : 'Main Card (Last 5)'}</span>
                                 </div>
@@ -400,6 +437,7 @@ export default function LeaguePage() {
                                     fights={visibleFights} 
                                     groupedFights={groupedFights} 
                                     initialPicks={existingPicks} 
+                                    userPicks={existingPicks} // Ensure this is passed for locking
                                     league_id={leagueId} 
                                     onPickSelect={handlePickSelect} 
                                     pendingPicks={pendingPicks} 
