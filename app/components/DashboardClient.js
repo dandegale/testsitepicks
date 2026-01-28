@@ -41,7 +41,10 @@ export default function DashboardClient({
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showMobileLeagues, setShowMobileLeagues] = useState(false); 
-  const [showMobileSlip, setShowMobileSlip] = useState(false); // <--- NEW: Controls the Mobile Slip Modal
+  const [showMobileSlip, setShowMobileSlip] = useState(false);
+  
+  // --- CHANGE 1: Default Odds to FALSE ---
+  const [showOdds, setShowOdds] = useState(false); 
   
   const [clientPicks, setClientPicks] = useState(myPicks || []);
 
@@ -49,22 +52,36 @@ export default function DashboardClient({
   const eventDate = mainEvent?.start_time || "2026-02-01T22:00:00"; 
   const safeEventName = nextEventName || "Upcoming Event";
 
-  const fetchLatestPicks = async () => {
+  const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user && user.email) {
-        const { data } = await supabase
+        
+        // 1. Fetch Picks
+        const { data: picksData } = await supabase
             .from('picks')
             .select('*')
             .eq('user_id', user.email);
         
-        if (data) {
-            setClientPicks(data); 
+        if (picksData) {
+            setClientPicks(picksData); 
+        }
+
+        // --- CHANGE 2: Fetch Profile Settings ---
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('show_odds')
+            .eq('id', user.id)
+            .single();
+
+        // Only set to true if DB explicitly says TRUE. Otherwise keep default (false).
+        if (profile && profile.show_odds === true) {
+            setShowOdds(true);
         }
     }
   };
 
   useEffect(() => {
-    fetchLatestPicks();
+    fetchUserData();
   }, []);
 
   const handleInteraction = () => {
@@ -86,15 +103,13 @@ export default function DashboardClient({
         }
         return [...currentPicks, newPick];
     });
-    // On mobile, we don't necessarily want "Focus Mode" to hide the header immediately, 
-    // but we DO want to ensure the slip logic is ready.
     setIsFocusMode(true); 
   };
 
   const handleRemovePick = (fightId) => {
     setPendingPicks(current => {
         const updated = current.filter(p => p.fightId !== fightId);
-        if (updated.length === 0) setShowMobileSlip(false); // Close modal if empty
+        if (updated.length === 0) setShowMobileSlip(false);
         return updated;
     });
     if (pendingPicks.length <= 1) setIsFocusMode(false);
@@ -133,9 +148,7 @@ export default function DashboardClient({
         setPendingPicks([]); 
         setIsSubmitting(false);
         setIsFocusMode(false);
-        setShowMobileSlip(false); // Close mobile modal
-        
-        // Forced Refresh
+        setShowMobileSlip(false);
         window.location.reload(); 
     }
   };
@@ -224,7 +237,6 @@ export default function DashboardClient({
 
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
             <div className={`mb-8 transition-all duration-500 origin-top ${isFocusMode ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100'}`}>
-                {/* Mobile League Icons */}
                 <div className="flex overflow-x-auto pb-4 gap-4 md:flex-wrap scrollbar-hide">
                     {(myLeagues || []).map(league => (
                         <Link key={league.id} href={`/league/${league.id}`} className="group flex flex-col items-center shrink-0" title={league.name}>
@@ -246,6 +258,7 @@ export default function DashboardClient({
                     </div>
                     
                     <div className={`transition-all ${isFocusMode ? '[&_button]:animate-pulse' : ''}`}>
+                        {/* --- CHANGE 3: Pass showOdds prop --- */}
                         <FightDashboard 
                             fights={fights} 
                             groupedFights={groupedFights} 
@@ -255,11 +268,11 @@ export default function DashboardClient({
                             onInteractionStart={handleInteraction}
                             onPickSelect={handlePickSelect} 
                             pendingPicks={pendingPicks}
+                            showOdds={showOdds} 
                         />
                     </div>
                 </div>
 
-                {/* --- DESKTOP BETTING SLIP (Hidden on Mobile) --- */}
                 <div className={`hidden xl:block ml-10 space-y-8 transition-all duration-700 w-[33%] relative`}>
                     {pendingPicks.length > 0 ? (
                          <div className="sticky top-24 max-h-[calc(100vh-120px)] min-w-[350px] bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto">
@@ -297,7 +310,7 @@ export default function DashboardClient({
         </div>
       </main>
 
-      {/* --- MOBILE: BOTTOM FLOATING BAR (Appears when picks exist) --- */}
+      {/* --- MOBILE: BOTTOM FLOATING BAR --- */}
       {pendingPicks.length > 0 && (
           <div className="md:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
             <button 

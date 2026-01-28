@@ -9,6 +9,7 @@ import ChatBox from '../../components/ChatBox';
 import LeagueRail from '../../components/LeagueRail';
 import BettingSlip from '../../components/BettingSlip'; 
 import LogOutButton from '../../components/LogOutButton';
+// import MobileNav from '../../components/MobileNav'; 
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -35,6 +36,9 @@ export default function LeaguePage() {
   const [cardFilter, setCardFilter] = useState('full'); 
   const [groupedFights, setGroupedFights] = useState({});
 
+  // --- NEW: ODDS STATE (Default False) ---
+  const [showOdds, setShowOdds] = useState(false);
+
   // Champion Logic
   const [isEventConcluded, setIsEventConcluded] = useState(false);
 
@@ -54,28 +58,37 @@ export default function LeaguePage() {
       applyCardFilter();
   }, [cardFilter, allFights]);
 
-  // --- UPDATED GROUPING LOGIC ---
+  // --- FILTER LOGIC ---
   const applyCardFilter = () => {
       if (allFights.length === 0) return;
       
-      let filtered = [...allFights];
+      let sorted = [...allFights].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
       
-      // Ensure strict ascending order first for the logic to work
-      filtered.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+      let nextEventFights = [];
+      if (sorted.length > 0) {
+          const firstFightTime = new Date(sorted[0].start_time).getTime();
+          const EVENT_WINDOW = 4 * 24 * 60 * 60 * 1000; 
 
-      if (cardFilter === 'main') filtered = filtered.slice(-5);
+          nextEventFights = sorted.filter(f => {
+              const fTime = new Date(f.start_time).getTime();
+              return fTime < (firstFightTime + EVENT_WINDOW);
+          });
+      }
+
+      let filtered = [...nextEventFights];
+      if (cardFilter === 'main') {
+          filtered = filtered.slice(-5);
+      }
       
       setVisibleFights(filtered);
 
       const allFinished = filtered.length > 0 && filtered.every(f => f.winner !== null && f.winner !== undefined && f.winner !== '');
       setIsEventConcluded(allFinished);
 
-      // --- 3-DAY CLUSTERING + REVERSE ORDER LOGIC ---
       let finalGroupedFights = {};
       const tempGroups = [];
       let currentBucket = [];
       
-      // Safety check for start time
       let groupReferenceTime = filtered.length > 0 ? new Date(filtered[0].start_time).getTime() : 0;
       const THREE_DAYS_MS = 72 * 60 * 60 * 1000;
 
@@ -90,14 +103,11 @@ export default function LeaguePage() {
               groupReferenceTime = fightTime;
           }
       });
-      // Push final bucket
       if (currentBucket.length > 0) tempGroups.push(currentBucket);
 
-      // Name groups & Reverse order
       tempGroups.forEach(bucket => {
           if (bucket.length === 0) return;
 
-          // Main Event is the LAST fight in the sorted bucket
           const mainEventFight = bucket[bucket.length - 1];
           const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
               month: 'short', 
@@ -106,7 +116,6 @@ export default function LeaguePage() {
           
           const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
 
-          // REVERSE the bucket so Main Event is at index 0 (Top of UI)
           finalGroupedFights[title] = [...bucket].reverse();
       });
 
@@ -117,6 +126,20 @@ export default function LeaguePage() {
     try {
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         setUser(currentUser);
+
+        // --- NEW: FETCH ODDS PREFERENCE ---
+        if (currentUser) {
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('show_odds')
+                .eq('id', currentUser.id)
+                .single();
+            
+            // Only enable if explicitly TRUE in DB
+            if (profile && profile.show_odds === true) {
+                setShowOdds(true);
+            }
+        }
 
         // 1. Fetch League
         const { data: leagueData } = await supabase
@@ -131,7 +154,7 @@ export default function LeaguePage() {
             setIsAdmin(isCreator);
         }
 
-        // 2. Fetch Members (Emails/IDs)
+        // 2. Fetch Members
         const { data: membersData } = await supabase
             .from('league_members')
             .select('user_id, joined_at') 
@@ -139,10 +162,8 @@ export default function LeaguePage() {
         
         let processedMembers = membersData || [];
 
-        // --- FETCH REAL USERNAMES ---
         if (processedMembers.length > 0) {
             const memberIds = processedMembers.map(m => m.user_id);
-            
             const { data: profiles, error: profileError } = await supabase
                 .from('profiles')
                 .select('email, username') 
@@ -173,12 +194,12 @@ export default function LeaguePage() {
             }
         }
 
-        // 4. Fetch Fights (Fetch ALL future fights, we filter later)
+        // 4. Fetch Fights
         const { data: allFutureFights } = await supabase
             .from('fights')
             .select('*')
-            .is('winner', null) // Only active fights
-            .order('start_time', { ascending: true }); // Must be ascending for grouping logic
+            .is('winner', null) 
+            .order('start_time', { ascending: true });
 
         setAllFights(allFutureFights || []);
 
@@ -192,7 +213,7 @@ export default function LeaguePage() {
             setExistingPicks(picksData || []);
         }
 
-        // 6. --- GENERATE LEADERBOARD ---
+        // 6. Generate Leaderboard
         const { data: completedFights } = await supabase
             .from('fights')
             .select('id, winner')
@@ -465,6 +486,7 @@ export default function LeaguePage() {
                                     league_id={leagueId} 
                                     onPickSelect={handlePickSelect} 
                                     pendingPicks={pendingPicks} 
+                                    showOdds={showOdds} // <--- PASSING THE ODDS SETTING HERE
                                 />
                             ) : (
                                 <div className="p-12 border border-gray-800 rounded-xl text-center text-gray-500 font-bold uppercase tracking-widest">

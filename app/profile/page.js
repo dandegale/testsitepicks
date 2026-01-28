@@ -15,11 +15,15 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   
-  // --- NEW EDIT STATE ---
+  // --- PROFILE EDIT STATE ---
   const [username, setUsername] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // --- NEW: ODDS PREFERENCE STATE ---
+  const [showOdds, setShowOdds] = useState(false); // Default OFF
+  const [savingPref, setSavingPref] = useState(false);
 
   const [stats, setStats] = useState({
     totalBets: 0,
@@ -48,20 +52,23 @@ export default function Profile() {
     // 2. Get Profile from DB (if exists)
     const { data: profile } = await supabase
       .from('profiles')
-      .select('username')
+      .select('*') // Select ALL so we get show_odds
       .eq('id', user.id)
       .single();
     
     // 3. RESOLVE USERNAME:
-    // Priority: DB Profile -> Signup Metadata -> Email Stub
     const dbName = profile?.username;
-    const metaName = user.user_metadata?.username; // <--- This catches the signup name
+    const metaName = user.user_metadata?.username; 
     const emailName = user.email?.split('@')[0];
-
     const finalName = dbName || metaName || emailName || 'Unknown Fighter';
 
     setUsername(finalName);
     setNewUsername(finalName); 
+
+    // 4. RESOLVE PREFERENCES (Default to FALSE if null or false)
+    if (profile) {
+        setShowOdds(profile.show_odds === true);
+    }
 
     // Get User's Picks
     const { data: picks, error } = await supabase
@@ -87,12 +94,11 @@ export default function Profile() {
     setLoading(false);
   };
 
-  // --- SAVE FUNCTION ---
+  // --- SAVE PROFILE NAME ---
   const handleSaveProfile = async () => {
     if (!newUsername.trim()) return;
     setSaving(true);
 
-    // Update or Insert the profile name
     const { error } = await supabase
         .from('profiles')
         .upsert({ id: user.id, username: newUsername, updated_at: new Date() });
@@ -101,15 +107,28 @@ export default function Profile() {
         alert("Error updating name: " + error.message);
     } else {
         setUsername(newUsername);
-        
-        // Optional: Also update Auth Metadata to keep them in sync
-        await supabase.auth.updateUser({
-            data: { username: newUsername }
-        });
-
+        await supabase.auth.updateUser({ data: { username: newUsername } });
         setIsEditing(false);
     }
     setSaving(false);
+  };
+
+  // --- TOGGLE ODDS PREFERENCE ---
+  const toggleOdds = async () => {
+      const newValue = !showOdds;
+      setShowOdds(newValue);
+      setSavingPref(true);
+
+      const { error } = await supabase
+          .from('profiles')
+          .update({ show_odds: newValue })
+          .eq('id', user.id);
+
+      if (error) {
+          alert("Error saving setting");
+          setShowOdds(!newValue); // Revert UI on error
+      }
+      setSavingPref(false);
   };
 
   const calculateStats = (picks, fights, missingLeagues) => {
@@ -187,7 +206,7 @@ export default function Profile() {
   if (loading) return <div className="min-h-screen bg-black text-teal-500 p-10 text-center font-bold uppercase animate-pulse">Loading Profile...</div>;
 
   return (
-    <main className="min-h-screen bg-black text-white p-4 md:p-8">
+    <main className="min-h-screen bg-black text-white p-4 md:p-8 pb-24">
       
       {/* HEADER WITH EDIT FUNCTIONALITY */}
       <div className="max-w-4xl mx-auto mb-8 border-b border-gray-800 pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -247,9 +266,7 @@ export default function Profile() {
       </div>
 
       {/* STATS GRID */}
-      <div className="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
-        
-        {/* Card 1: Record */}
+      <div className="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-gray-900 p-6 rounded border border-gray-800 text-center">
             <div className="text-gray-500 text-xs uppercase font-bold mb-2">Record</div>
             <div className="text-3xl font-black text-white">
@@ -257,8 +274,6 @@ export default function Profile() {
             </div>
             <div className="text-xs text-gray-600 font-mono mt-1">W - L</div>
         </div>
-
-        {/* Card 2: Accuracy */}
         <div className="bg-gray-900 p-6 rounded border border-gray-800 text-center">
             <div className="text-gray-500 text-xs uppercase font-bold mb-2">Accuracy</div>
             <div className="text-3xl font-black text-teal-500">
@@ -267,22 +282,44 @@ export default function Profile() {
                     : 0}%
             </div>
         </div>
-
-        {/* Card 3: Pending */}
         <div className="bg-gray-900 p-6 rounded border border-gray-800 text-center">
             <div className="text-gray-500 text-xs uppercase font-bold mb-2">Active Bets</div>
             <div className="text-3xl font-black text-yellow-500">
                 {stats.pending}
             </div>
         </div>
-
-        {/* Card 4: Net Profit */}
         <div className="bg-gray-900 p-6 rounded border border-gray-800 text-center">
             <div className="text-gray-500 text-xs uppercase font-bold mb-2">Career Earnings</div>
             <div className={`text-3xl font-black ${stats.netProfit >= 0 ? 'text-green-500' : 'text-pink-500'}`}>
                 {stats.netProfit >= 0 ? '+' : ''}{stats.netProfit.toFixed(2)}
             </div>
         </div>
+      </div>
+
+      {/* --- NEW: PREFERENCES SECTION --- */}
+      <div className="max-w-4xl mx-auto mb-12">
+          <h2 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-4">Preferences</h2>
+          
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between shadow-lg">
+              <div>
+                  <h4 className="font-bold text-white text-sm">Vegas Odds</h4>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                      Show payouts on the fight dashboard. Keep OFF to play blind.
+                  </p>
+              </div>
+              
+              <div className="flex flex-col items-end">
+                <button 
+                    onClick={toggleOdds}
+                    className={`relative w-12 h-6 rounded-full transition-colors duration-300 ${showOdds ? 'bg-green-600' : 'bg-gray-700'}`}
+                >
+                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-300 ${showOdds ? 'left-7' : 'left-1'}`} />
+                </button>
+                <span className="text-[9px] font-bold text-gray-500 mt-2 uppercase tracking-widest">
+                    {showOdds ? 'ON' : 'OFF'}
+                </span>
+              </div>
+          </div>
       </div>
 
       {/* BET HISTORY LIST */}
@@ -307,7 +344,6 @@ export default function Profile() {
                         </thead>
                         <tbody className="divide-y divide-gray-800 text-sm">
                             {history.map((item) => {
-                                // Style logic for the League Tag
                                 const isGlobal = item.leagueName === 'Global Feed';
                                 const leagueStyle = isGlobal 
                                     ? 'bg-gray-800 text-gray-400 border-gray-700' 
@@ -320,6 +356,7 @@ export default function Profile() {
                                         </td>
                                         <td className="p-4">
                                             <span className="font-bold text-white block">{item.selection}</span>
+                                            {/* Only show historical odds if you want, or respect the toggle here too. Currently showing history regardless. */}
                                             <span className="text-xs text-yellow-600 font-mono">({item.odds > 0 ? '+' : ''}{item.odds})</span>
                                         </td>
                                         <td className="p-4">
