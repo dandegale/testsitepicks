@@ -10,6 +10,7 @@ import FightDashboard from './FightDashboard';
 import GlobalActivityFeed from './GlobalActivityFeed'; 
 import LeagueRail from './LeagueRail'; 
 import BettingSlip from './BettingSlip'; 
+import MobileNav from './MobileNav'; // <--- IMPORTED MOBILE NAV
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -39,6 +40,7 @@ export default function DashboardClient({
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showMobileLeagues, setShowMobileLeagues] = useState(false); // <--- NEW STATE FOR MOBILE MENU
   
   const [clientPicks, setClientPicks] = useState(myPicks || []);
 
@@ -103,12 +105,11 @@ export default function DashboardClient({
         return;
     }
 
-    // --- GET USERNAME FROM METADATA ---
     const username = user.user_metadata?.username || user.email.split('@')[0];
 
     const picksToInsert = pendingPicks.map(p => ({
         user_id: user.email,
-        username: username, // <--- NEW: SAVING USERNAME TO DB
+        username: username, 
         fight_id: p.fightId,
         selected_fighter: p.fighterName,
         odds_at_pick: parseInt(p.odds, 10),
@@ -134,11 +135,26 @@ export default function DashboardClient({
   return (
     <div className="flex min-h-screen bg-black text-white overflow-hidden font-sans selection:bg-pink-500 selection:text-white">
       
+      {/* --- DESKTOP RAIL --- */}
       <div className={`hidden md:block transition-all duration-500 ${isFocusMode ? '-ml-20' : 'ml-0'}`}>
         <LeagueRail initialLeagues={myLeagues} />
       </div>
 
-      <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col">
+      {/* --- MOBILE LEAGUE DRAWER --- */}
+      {/* Slides out when 'Leagues' is clicked on bottom nav */}
+      <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
+         <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-800 flex justify-between items-center">
+                <span className="font-black italic text-xl">YOUR LEAGUES</span>
+                <button onClick={() => setShowMobileLeagues(false)} className="text-gray-500 hover:text-white transition-colors">✕</button>
+            </div>
+            <div className="p-4">
+                <LeagueRail initialLeagues={myLeagues} />
+            </div>
+         </div>
+      </div>
+
+      <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-20 md:pb-0"> {/* Added pb-20 for Mobile Nav spacing */}
         
         <header className={`sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800 transition-all duration-500 ${isFocusMode ? '-translate-y-full' : 'translate-y-0'}`}>
             <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -167,11 +183,12 @@ export default function DashboardClient({
                             </svg>
                         </div>
                     </div>
-                    <Link href="/profile" className="bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all flex items-center gap-2">
-                        <span className="hidden sm:inline">My Profile</span>
-                        <span className="sm:hidden">👤</span>
+                    <Link href="/profile" className="hidden md:flex bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all items-center gap-2">
+                        <span>My Profile</span>
                     </Link>
-                    <LogOutButton />
+                    <div className="hidden md:block">
+                        <LogOutButton />
+                    </div>
                 </div>
             </div>
         </header>
@@ -200,9 +217,10 @@ export default function DashboardClient({
 
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
             <div className={`mb-8 transition-all duration-500 origin-top ${isFocusMode ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100'}`}>
-                <div className="flex flex-wrap gap-4">
+                {/* Mobile League Icons (Horizontal Scroll) */}
+                <div className="flex overflow-x-auto pb-4 gap-4 md:flex-wrap scrollbar-hide">
                     {(myLeagues || []).map(league => (
-                        <Link key={league.id} href={`/league/${league.id}`} className="group flex flex-col items-center" title={league.name}>
+                        <Link key={league.id} href={`/league/${league.id}`} className="group flex flex-col items-center shrink-0" title={league.name}>
                             <div className="w-12 h-12 rounded-full bg-gray-950 border border-gray-800 group-hover:border-pink-600 flex items-center justify-center text-[10px] font-bold text-gray-500 group-hover:text-pink-600 transition-all shadow-lg overflow-hidden shrink-0">
                                 {league.name.substring(0,2).toUpperCase()}
                             </div>
@@ -270,6 +288,10 @@ export default function DashboardClient({
             </div>
         </div>
       </main>
+
+      {/* --- MOBILE BOTTOM NAV --- */}
+      <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
+
     </div>
   );
 }

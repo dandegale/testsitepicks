@@ -43,14 +43,18 @@ export default function FightDashboard({
         <div key={groupName} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
           
           {/* --- EVENT HEADER --- */}
-          {/* Sticky header to separate the vertical groups clearly */}
-          <div className="flex items-center gap-4 mb-6 sticky top-0 bg-gray-900/95 backdrop-blur z-30 py-4 border-b border-gray-800 shadow-xl -mx-2 px-2 md:mx-0 md:px-0">
+          {/* MOBILE FIXES:
+              1. top-[64px]: Pushes it down so it doesn't hide behind your main nav bar.
+              2. -mx-4 px-4: Makes the header full-bleed width on mobile even inside the container.
+              3. md:top-0: Resets it on desktop if the layout changes.
+          */}
+          <div className="flex items-center gap-4 mb-6 sticky top-[64px] md:top-0 bg-gray-900/95 backdrop-blur z-30 py-4 border-b border-gray-800 shadow-xl -mx-4 px-4 md:mx-0 md:px-0 md:rounded-xl">
              <div className="w-1.5 h-10 bg-pink-600 rounded-r-full shadow-[0_0_15px_rgba(236,72,153,0.5)]"></div>
              <div>
-                 <h2 className="text-xl font-black italic uppercase text-white tracking-tighter leading-none">
+                 <h2 className="text-lg md:text-xl font-black italic uppercase text-white tracking-tighter leading-none">
                    {groupName}
                  </h2>
-                 <p className="text-[9px] font-bold text-gray-500 uppercase tracking-[0.2em] mt-1">
+                 <p className="text-[8px] md:text-[9px] font-bold text-gray-500 uppercase tracking-[0.2em] mt-1">
                    {groupFights.length} Bouts Scheduled
                  </p>
              </div>
