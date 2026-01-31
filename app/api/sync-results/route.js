@@ -22,95 +22,91 @@ export async function GET() {
 
     const apiData = await response.json();
 
-    // --- SAFETY CHECK 1: Handle API Errors ---
-    // If apiData is not an array, it's likely an error message (e.g. { message: 'Quota exceeded' })
     if (!Array.isArray(apiData)) {
-        return NextResponse.json({ 
-            message: 'Sync Failed: Provider returned an error.', 
-            provider_response: apiData 
-        }, { status: 400 });
-    }
-
-    if (apiData.length === 0) {
-        return NextResponse.json({ message: 'No recent results found in API.' });
+        return NextResponse.json({ message: 'Error from Provider', provider_response: apiData }, { status: 400 });
     }
 
     const logs = [];
     let updatesCount = 0;
 
-    // Fetch active fights from DB to compare
-    const { data: dbFights } = await supabase
-        .from('fights')
-        .select('*')
-        .is('winner', null); 
+    // Fetch active fights from DB
+    const { data: dbFights } = await supabase.from('fights').select('*').is('winner', null); 
+
+    logs.push(`Found ${apiData.length} events in API. Checking against ${dbFights.length} pending fights in DB.`);
 
     for (const event of apiData) {
-        // Skip logic if data is incomplete
-        if (!event.scores || event.scores.length === 0) continue;
+        const title = `${event.home_team} vs ${event.away_team}`;
 
-        const isCompleted = event.completed;
-        
-        // --- DETERMINE WINNER FROM API ---
+        // 1. Check if scores exist
+        if (!event.scores || event.scores.length === 0) {
+             logs.push(`SKIP: ${title} -> No scores data available yet.`);
+             continue;
+        }
+
+        // 2. Check completed status (Optional: sometimes we want to grab scores even if not marked 'completed')
+        if (!event.completed) {
+             logs.push(`SKIP: ${title} -> API says fight is NOT completed yet.`);
+             continue; 
+        }
+
+        // 3. Determine Winner
         let winnerName = null;
-        const p1 = event.scores[0]; // Home
-        const p2 = event.scores[1]; // Away
+        const p1 = event.scores[0]; 
+        const p2 = event.scores[1]; 
 
-        // Check for explicit "W" or score comparison
+        // Convert to numbers if possible for comparison, handle "W" strings
         if (p1.score === 'W' || parseInt(p1.score) > parseInt(p2.score)) winnerName = p1.name;
         else if (p2.score === 'W' || parseInt(p2.score) > parseInt(p1.score)) winnerName = p2.name;
 
-        // If the API says it's not completed, but we found a winner score anyway, we can arguably proceed.
-        // But usually safer to respect 'completed'. 
-        // We will proceed IF we found a clear winner name.
-        if (!winnerName) continue;
+        if (!winnerName) {
+            logs.push(`SKIP: ${title} -> Scores found (${p1.score}-${p2.score}) but winner unclear.`);
+            continue;
+        }
 
-        // --- MATCH WITH DATABASE ---
-        // Normalize names for fuzzy matching
+        // 4. Find Match in DB
         const apiF1 = event.home_team.toLowerCase().trim();
         const apiF2 = event.away_team.toLowerCase().trim();
 
         const match = dbFights?.find(dbFight => {
             const dbF1 = dbFight.fighter_1_name.toLowerCase().trim();
             const dbF2 = dbFight.fighter_2_name.toLowerCase().trim();
-            // Match A vs B OR B vs A
             return (dbF1 === apiF1 || dbF1 === apiF2) && (dbF2 === apiF1 || dbF2 === apiF2);
         });
 
-        if (!match) continue;
+        if (!match) {
+            logs.push(`SKIP: ${title} -> No matching fight found in Database.`);
+            continue;
+        }
 
-        // --- DETERMINE DB WINNER NAME ---
+        // 5. Update DB
+        // Use exact DB name
         let dbWinnerName = null;
         const normWinner = winnerName.toLowerCase();
-        const normDbF1 = match.fighter_1_name.toLowerCase();
-        const normDbF2 = match.fighter_2_name.toLowerCase();
-
-        // 1. Exact Match
-        if (normWinner === normDbF1) dbWinnerName = match.fighter_1_name;
-        else if (normWinner === normDbF2) dbWinnerName = match.fighter_2_name;
         
-        // 2. Partial Match (e.g. "Jones" in "Jon Jones")
+        if (normWinner === match.fighter_1_name.toLowerCase()) dbWinnerName = match.fighter_1_name;
+        else if (normWinner === match.fighter_2_name.toLowerCase()) dbWinnerName = match.fighter_2_name;
+        
+        // Fuzzy backup
         if (!dbWinnerName) {
-            if (normDbF1.includes(normWinner) || normWinner.includes(normDbF1)) dbWinnerName = match.fighter_1_name;
-            else if (normDbF2.includes(normWinner) || normWinner.includes(normDbF2)) dbWinnerName = match.fighter_2_name;
+            if (match.fighter_1_name.toLowerCase().includes(normWinner)) dbWinnerName = match.fighter_1_name;
+            else if (match.fighter_2_name.toLowerCase().includes(normWinner)) dbWinnerName = match.fighter_2_name;
         }
 
         if (dbWinnerName) {
-            const { error } = await supabase
-                .from('fights')
-                .update({ winner: dbWinnerName })
-                .eq('id', match.id);
-
+            const { error } = await supabase.from('fights').update({ winner: dbWinnerName }).eq('id', match.id);
             if (!error) {
                 updatesCount++;
-                logs.push(`✅ UPDATED: ${dbWinnerName} won (DB ID: ${match.id})`);
+                logs.push(`✅ SUCCESS: Updated ${dbWinnerName} as winner.`);
             } else {
-                logs.push(`❌ Error updating DB: ${error.message}`);
+                logs.push(`❌ ERROR: DB Update failed for ${dbWinnerName} - ${error.message}`);
             }
+        } else {
+             logs.push(`SKIP: ${title} -> Winner '${winnerName}' did not fuzz-match DB names.`);
         }
     }
 
     return NextResponse.json({ 
-      message: 'Sync Run Complete', 
+      message: 'Sync Debug Complete', 
       updates_made: updatesCount,
       logs: logs 
     });
