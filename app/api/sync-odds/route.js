@@ -21,19 +21,21 @@ export async function GET() {
     );
 
     const apiData = await response.json();
-    if (!apiData || apiData.length === 0) return NextResponse.json({ message: 'No fights found in API' });
+    if (!apiData || !Array.isArray(apiData)) return NextResponse.json({ message: 'No fights found in API' });
 
+    // --- FIX 1: Fetch ALL Active Fights (Not just future ones) ---
+    // This prevents creating duplicates for fights that just started (Live Odds)
     const { data: existingFights } = await supabase
         .from('fights')
         .select('*')
-        .gt('start_time', new Date().toISOString());
+        .is('winner', null); 
 
     const logs = [];
     const bookedFighters = new Set();
     const PREFERRED_BOOKS = ['fanduel', 'draftkings', 'betmgm', 'bovada'];
 
-    // --- CONFIG: REALITY FILTER (UPDATED) ---
-    const MAX_DAYS_AHEAD = 120; // <--- CHANGED TO 4 MONTHS
+    // CONFIG: 4 MONTH LIMIT
+    const MAX_DAYS_AHEAD = 120;
     const today = new Date();
     const futureLimit = new Date();
     futureLimit.setDate(today.getDate() + MAX_DAYS_AHEAD);
@@ -41,11 +43,8 @@ export async function GET() {
     for (const event of apiData) {
         const fightDate = new Date(event.commence_time);
 
-        // FILTER 1: THE DATE CHECK
-        // If fight is > 4 months away, skip it.
-        if (fightDate > futureLimit) {
-            continue;
-        }
+        // FILTER 1: Date Limit
+        if (fightDate > futureLimit) continue;
 
         let bestBookmaker = null;
         for (const book of PREFERRED_BOOKS) {
@@ -62,12 +61,12 @@ export async function GET() {
         const f1Key = outcome1.name.toLowerCase().trim();
         const f2Key = outcome2.name.toLowerCase().trim();
 
-        // FILTER 2: NAME CHECK
+        // FILTER 2: No 'TBD' or 'TBA'
         if (f1Key.includes('tbd') || f2Key.includes('tbd') || f1Key.includes('tba') || f2Key.includes('tba')) {
             continue;
         }
 
-        // FILTER 3: DUPLICATE CHECK
+        // FILTER 3: Prevent duplicate entries within THIS specific API pull
         if (bookedFighters.has(f1Key) || bookedFighters.has(f2Key)) continue;
 
         bookedFighters.add(f1Key);
@@ -87,18 +86,35 @@ export async function GET() {
             source: bestBookmaker.key
         };
 
+        // --- FIX 2: ROBUST FUZZY MATCHING ---
         const match = existingFights.find(dbFight => {
             const dbF1 = dbFight.fighter_1_name.toLowerCase().trim();
             const dbF2 = dbFight.fighter_2_name.toLowerCase().trim();
-            return (dbF1 === f1Key && dbF2 === f2Key) || (dbF1 === f2Key && dbF2 === f1Key);
+
+            // Check A vs A AND B vs B (Exact or Partial)
+            const matchDirect = (dbF1.includes(f1Key) || f1Key.includes(dbF1)) && 
+                                (dbF2.includes(f2Key) || f2Key.includes(dbF2));
+            
+            // Check A vs B AND B vs A (Exact or Partial)
+            const matchReverse = (dbF1.includes(f2Key) || f2Key.includes(dbF1)) && 
+                                 (dbF2.includes(f1Key) || f1Key.includes(dbF2));
+
+            return matchDirect || matchReverse;
         });
 
         if (match) {
-            await supabase.from('fights').update(fightPayload).eq('id', match.id);
-            logs.push(`Updated: ${outcome1.name} vs ${outcome2.name}`);
+            // Only update if something changed (saves DB writes)
+            if (match.fighter_1_odds !== outcome1.price || match.fighter_2_odds !== outcome2.price) {
+                await supabase.from('fights').update(fightPayload).eq('id', match.id);
+                logs.push(`Updated Odds: ${outcome1.name} vs ${outcome2.name}`);
+            }
         } else {
-            await supabase.from('fights').insert(fightPayload);
-            logs.push(`✅ CREATED: ${outcome1.name} vs ${outcome2.name}`);
+            // Insert New Fight
+            // Optional: Ensure we don't insert old fights that somehow slipped through
+            if (new Date(event.commence_time) > new Date()) {
+                await supabase.from('fights').insert(fightPayload);
+                logs.push(`✅ CREATED: ${outcome1.name} vs ${outcome2.name}`);
+            }
         }
     }
 
