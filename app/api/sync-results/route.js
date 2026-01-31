@@ -21,7 +21,19 @@ export async function GET() {
     );
 
     const apiData = await response.json();
-    if (!apiData || apiData.length === 0) return NextResponse.json({ message: 'No recent results found in API.' });
+
+    // --- SAFETY CHECK 1: Handle API Errors ---
+    // If apiData is not an array, it's likely an error message (e.g. { message: 'Quota exceeded' })
+    if (!Array.isArray(apiData)) {
+        return NextResponse.json({ 
+            message: 'Sync Failed: Provider returned an error.', 
+            provider_response: apiData 
+        }, { status: 400 });
+    }
+
+    if (apiData.length === 0) {
+        return NextResponse.json({ message: 'No recent results found in API.' });
+    }
 
     const logs = [];
     let updatesCount = 0;
@@ -33,36 +45,27 @@ export async function GET() {
         .is('winner', null); 
 
     for (const event of apiData) {
-        // LOGGING: Helps you see if the API actually knows the fight is over
-        const isCompleted = event.completed;
-        const hasScores = event.scores && event.scores.length > 0;
-        
-        // Debug Log (Visible in the response)
-        const debugMsg = `Checking: ${event.home_team} vs ${event.away_team} | Completed: ${isCompleted}`;
-        
-        if (!isCompleted && !hasScores) {
-            logs.push(`${debugMsg} -> Skipped (No status/scores)`);
-            continue; 
-        }
+        // Skip logic if data is incomplete
+        if (!event.scores || event.scores.length === 0) continue;
 
+        const isCompleted = event.completed;
+        
         // --- DETERMINE WINNER FROM API ---
         let winnerName = null;
-        if (hasScores) {
-            const p1 = event.scores[0]; // Home
-            const p2 = event.scores[1]; // Away
+        const p1 = event.scores[0]; // Home
+        const p2 = event.scores[1]; // Away
 
-            // Check for explicit "W" or score comparison
-            // Sometimes APIs send strings "15" vs "10", sometimes "W" vs "L"
-            if (p1.score === 'W' || p1.score > p2.score) winnerName = p1.name;
-            else if (p2.score === 'W' || p2.score > p1.score) winnerName = p2.name;
-        }
+        // Check for explicit "W" or score comparison
+        if (p1.score === 'W' || parseInt(p1.score) > parseInt(p2.score)) winnerName = p1.name;
+        else if (p2.score === 'W' || parseInt(p2.score) > parseInt(p1.score)) winnerName = p2.name;
 
-        if (!winnerName) {
-            logs.push(`${debugMsg} -> Skipped (No clear winner in scores)`);
-            continue;
-        }
+        // If the API says it's not completed, but we found a winner score anyway, we can arguably proceed.
+        // But usually safer to respect 'completed'. 
+        // We will proceed IF we found a clear winner name.
+        if (!winnerName) continue;
 
         // --- MATCH WITH DATABASE ---
+        // Normalize names for fuzzy matching
         const apiF1 = event.home_team.toLowerCase().trim();
         const apiF2 = event.away_team.toLowerCase().trim();
 
@@ -73,32 +76,22 @@ export async function GET() {
             return (dbF1 === apiF1 || dbF1 === apiF2) && (dbF2 === apiF1 || dbF2 === apiF2);
         });
 
-        if (!match) {
-            logs.push(`${debugMsg} -> Skipped (No match found in DB for '${event.home_team}')`);
-            continue;
-        }
+        if (!match) continue;
 
         // --- DETERMINE DB WINNER NAME ---
-        // We have the winner from API, but we must use the EXACT string from our DB
         let dbWinnerName = null;
-
-        // Normalize for comparison
         const normWinner = winnerName.toLowerCase();
         const normDbF1 = match.fighter_1_name.toLowerCase();
         const normDbF2 = match.fighter_2_name.toLowerCase();
 
-        // 1. Exact Match Check
+        // 1. Exact Match
         if (normWinner === normDbF1) dbWinnerName = match.fighter_1_name;
         else if (normWinner === normDbF2) dbWinnerName = match.fighter_2_name;
         
-        // 2. Fuzzy Last Name Check (Safe Version)
-        // If exact match failed, check if one contains the other
+        // 2. Partial Match (e.g. "Jones" in "Jon Jones")
         if (!dbWinnerName) {
-            if (normDbF1.includes(normWinner) || normWinner.includes(normDbF1)) {
-                dbWinnerName = match.fighter_1_name;
-            } else if (normDbF2.includes(normWinner) || normWinner.includes(normDbF2)) {
-                dbWinnerName = match.fighter_2_name;
-            }
+            if (normDbF1.includes(normWinner) || normWinner.includes(normDbF1)) dbWinnerName = match.fighter_1_name;
+            else if (normDbF2.includes(normWinner) || normWinner.includes(normDbF2)) dbWinnerName = match.fighter_2_name;
         }
 
         if (dbWinnerName) {
@@ -113,8 +106,6 @@ export async function GET() {
             } else {
                 logs.push(`❌ Error updating DB: ${error.message}`);
             }
-        } else {
-            logs.push(`${debugMsg} -> Skipped (Could not match winner string '${winnerName}' to DB names)`);
         }
     }
 
