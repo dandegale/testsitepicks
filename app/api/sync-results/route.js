@@ -14,102 +14,77 @@ export async function GET() {
   );
 
   try {
-    // 1. Fetch from ESPN MMA Scoreboard (Free, No Key)
+    // 1. Fetch ESPN Data
     const response = await fetch(
       `https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard`,
       { cache: 'no-store' }
     );
-
-    if (!response.ok) {
-        return NextResponse.json({ message: 'Failed to fetch from ESPN' }, { status: 500 });
-    }
-
     const data = await response.json();
     const events = data.events || [];
-
-    if (events.length === 0) {
-        return NextResponse.json({ message: 'No events found on ESPN scoreboard.' });
-    }
-
-    // 2. Fetch Active Fights from DB
-    const { data: dbFights } = await supabase
-        .from('fights')
-        .select('*')
-        .is('winner', null);
-
-    if (!dbFights || dbFights.length === 0) {
-        return NextResponse.json({ message: 'No active fights in DB to sync.' });
-    }
-
+    
     const logs = [];
+    logs.push(`ESPN returned ${events.length} events.`);
+
+    // 2. Fetch DB Fights
+    const { data: dbFights } = await supabase.from('fights').select('*').is('winner', null);
+    logs.push(`Checking against ${dbFights.length} active DB fights.`);
+
     let updatesCount = 0;
 
-    // 3. Loop through ESPN Events
     for (const event of events) {
         const competition = event.competitions[0];
         const status = event.status.type;
-
-        // Skip if not finished
-        if (!status.completed) continue;
-
-        // Find the Winner
-        const competitors = competition.competitors; // Array of 2 fighters
-        const winnerObj = competitors.find(c => c.winner === true);
-
-        if (!winnerObj) continue; // Should not happen if completed, but safe check
-
-        const winnerName = winnerObj.athlete.fullName; // e.g. "Jon Jones"
-
-        // 4. Match with Database
-        // ESPN names might be slightly different ("Alexander Volkanovski" vs "Alex Volkanovski")
-        // We use our fuzzy matching logic.
+        const f1 = competition.competitors[0].athlete.fullName;
+        const f2 = competition.competitors[1].athlete.fullName;
         
-        // Find the matching fight in our DB
-        // We check if the winner's name is present in either fighter column
+        // LOG EVERY FIGHT FOUND
+        let logMsg = `ESPN Found: ${f1} vs ${f2} [Status: ${status.description}, Completed: ${status.completed}]`;
+        
+        if (!status.completed) {
+            logs.push(`SKIP: ${logMsg} -> Fight not finished.`);
+            continue;
+        }
+
+        // Find Winner
+        const winnerObj = competition.competitors.find(c => c.winner === true);
+        if (!winnerObj) {
+             logs.push(`SKIP: ${logMsg} -> Completed, but no winner marked in data.`);
+             continue;
+        }
+        
+        const winnerName = winnerObj.athlete.fullName;
+        
+        // Match with DB
         const match = dbFights.find(dbFight => {
             const dbF1 = dbFight.fighter_1_name.toLowerCase();
             const dbF2 = dbFight.fighter_2_name.toLowerCase();
-            const espnName = winnerName.toLowerCase();
-
-            // Check strict inclusion (e.g. "Jones" in "Jon Jones")
-            const matchF1 = dbF1.includes(espnName) || espnName.includes(dbF1);
-            const matchF2 = dbF2.includes(espnName) || espnName.includes(dbF2);
-
-            // Double check: We need to make sure this is actually the right fight
-            // (In case two fights have a "Smith"). 
-            // We usually check the opponent too, but ESPN structure makes getting the opponent name easy.
-            return matchF1 || matchF2;
+            const w = winnerName.toLowerCase();
+            return dbF1.includes(w) || w.includes(dbF1) || dbF2.includes(w) || w.includes(dbF2);
         });
 
         if (match) {
-            // Determine exactly which string to save based on our DB columns
-            let finalWinnerName = null;
-            if (match.fighter_1_name.toLowerCase().includes(winnerName.toLowerCase()) || winnerName.toLowerCase().includes(match.fighter_1_name.toLowerCase())) {
-                finalWinnerName = match.fighter_1_name;
-            } else {
-                finalWinnerName = match.fighter_2_name;
-            }
-
-            // Update Supabase
-            const { error } = await supabase
-                .from('fights')
-                .update({ winner: finalWinnerName })
-                .eq('id', match.id);
-
-            if (!error) {
-                updatesCount++;
-                logs.push(`✅ RESULT: ${finalWinnerName} def. ${finalWinnerName === match.fighter_1_name ? match.fighter_2_name : match.fighter_1_name}`);
-            } else {
-                logs.push(`❌ DB Error: ${error.message}`);
-            }
+             // Determine Name to Save
+             let finalWinnerName = null;
+             if (match.fighter_1_name.toLowerCase().includes(winnerName.toLowerCase()) || winnerName.toLowerCase().includes(match.fighter_1_name.toLowerCase())) {
+                 finalWinnerName = match.fighter_1_name;
+             } else {
+                 finalWinnerName = match.fighter_2_name;
+             }
+             
+             // Update
+             const { error } = await supabase.from('fights').update({ winner: finalWinnerName }).eq('id', match.id);
+             if (!error) {
+                 updatesCount++;
+                 logs.push(`✅ SUCCESS: Updated ${finalWinnerName} as winner.`);
+             } else {
+                 logs.push(`❌ DB ERROR: ${error.message}`);
+             }
+        } else {
+            logs.push(`⚠️ NO MATCH: Found result for ${winnerName}, but could not find '${f1}' or '${f2}' in your Database.`);
         }
     }
 
-    return NextResponse.json({ 
-        message: 'ESPN Sync Complete', 
-        updates: updatesCount, 
-        logs: logs 
-    });
+    return NextResponse.json({ message: 'Debug Run Complete', updates: updatesCount, logs: logs });
 
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
