@@ -128,12 +128,10 @@ export default function DashboardClient({
                 let w = 0;
                 let l = 0;
                 
-                // --- FIX: DEDUPLICATION LOGIC ---
-                // We use a Set to track fight IDs we have already counted for this user.
+                // DEDUPLICATION LOGIC
                 const processedFightIds = new Set();
 
                 picksData.forEach(p => {
-                    // Skip if we already counted this fight (e.g. same pick in 2 leagues)
                     if (processedFightIds.has(p.fight_id)) return;
 
                     const fight = results.find(f => f.id === p.fight_id);
@@ -141,7 +139,6 @@ export default function DashboardClient({
                         if (fight.winner === p.selected_fighter) w++;
                         else l++;
                         
-                        // Mark this fight as counted
                         processedFightIds.add(p.fight_id);
                     }
                 });
@@ -249,8 +246,22 @@ export default function DashboardClient({
                 <span className="font-black italic text-xl">YOUR LEAGUES</span>
                 <button onClick={() => setShowMobileLeagues(false)} className="text-gray-500 hover:text-white transition-colors">✕</button>
             </div>
-            <div className="p-4">
+            
+            {/* UPDATED DRAWER CONTENT */}
+            <div className="p-4 space-y-6">
                 <LeagueRail initialLeagues={myLeagues} />
+                
+                <div className="border-t border-gray-800 pt-6">
+                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Menu</p>
+                    <Link href="/leaderboard" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all mb-2">
+                        <span className="text-xl">🏆</span>
+                        <span className="text-sm font-bold text-gray-300">Global Leaderboard</span>
+                    </Link>
+                     <Link href="/profile" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all">
+                        <span className="text-xl">👤</span>
+                        <span className="text-sm font-bold text-gray-300">My Profile</span>
+                    </Link>
+                </div>
             </div>
          </div>
       </div>
@@ -328,6 +339,24 @@ export default function DashboardClient({
                             </div>
                         </Link>
                     ))}
+                </div>
+
+                {/* --- NEW: MOBILE LEADERBOARD BANNER --- */}
+                <div className="md:hidden mt-4 px-1">
+                    <Link href="/leaderboard" className="block w-full bg-gradient-to-r from-gray-900 to-black border border-gray-800 p-4 rounded-xl flex items-center justify-between shadow-lg active:scale-95 transition-transform group">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-teal-500/10 border border-teal-500/30 flex items-center justify-center text-xl group-hover:bg-teal-500/20 transition-colors">
+                                🏆
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">Official Rankings</span>
+                                <span className="text-sm font-black italic text-white">VIEW GLOBAL LEADERBOARD</span>
+                            </div>
+                        </div>
+                        <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition-all text-gray-400">
+                             →
+                        </div>
+                    </Link>
                 </div>
             </div>
 
