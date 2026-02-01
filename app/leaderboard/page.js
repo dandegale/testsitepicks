@@ -28,7 +28,7 @@ export default function LeaderboardPage() {
     const { data: { user: currentUser } } = await supabase.auth.getUser();
     setUser(currentUser);
 
-    // 1. Fetch Leagues (for Sidebar)
+    // 1. Fetch Leagues
     let userLeagues = [];
     if (currentUser) {
       const { data: memberships } = await supabase
@@ -42,7 +42,7 @@ export default function LeaderboardPage() {
       }
     }
 
-    // 2. Fetch DATA (Fights, Picks, AND PROFILES)
+    // 2. Fetch DATA
     const { data: picks } = await supabase.from('picks').select('*');
     const { data: fights } = await supabase.from('fights').select('*');
     const { data: profiles } = await supabase.from('profiles').select('email, username');
@@ -70,21 +70,22 @@ export default function LeaderboardPage() {
     return Math.round(standardWin / 10);
   };
 
-  // --- UPDATED LOGIC: STRICT GLOBAL ONLY ---
+  // --- UPDATED LOGIC: FACTOR IN LOSSES ---
   const processLeaderboard = (picks, fights, profiles) => {
     const scores = {};
 
     picks.forEach((pick) => {
-        // 🛑 STRICT FILTER: If this pick belongs to a league, IGNORE IT.
-        // We only want 'Global' picks (where league_id is null).
+        // STRICT FILTER: Global picks only
         if (pick.league_id) return;
 
         const fight = fights.find(f => f.id === pick.fight_id);
 
-        if (fight && fight.winner && fight.winner === pick.selected_fighter) {
+        // Only process if the fight is OVER (has a winner)
+        if (fight && fight.winner) {
             
             const userId = pick.user_id; 
 
+            // Initialize User if missing
             if (!scores[userId]) {
                 const userProfile = profiles.find(p => p.email === userId);
                 const displayName = userProfile?.username || userId.split('@')[0];
@@ -97,9 +98,16 @@ export default function LeaderboardPage() {
                 };
             }
 
-            const points = calculatePoints(pick.odds_at_pick);
-            scores[userId].score += points;
-            scores[userId].wins += 1;
+            // --- WIN / LOSS LOGIC ---
+            if (fight.winner === pick.selected_fighter) {
+                // WIN: Add calculated points
+                const points = calculatePoints(pick.odds_at_pick);
+                scores[userId].score += points;
+                scores[userId].wins += 1;
+            } else {
+                // LOSS: Subtract the wager (10 points)
+                scores[userId].score -= 10;
+            }
         }
     });
 
@@ -185,7 +193,7 @@ export default function LeaderboardPage() {
                 )}
             </div>
 
-            {/* Scrollable Table Container for Mobile */}
+            {/* Scrollable Table Container */}
             <div className="bg-gray-950 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[600px] md:min-w-0">
                     <thead>
@@ -234,7 +242,7 @@ export default function LeaderboardPage() {
                                         {player.wins}
                                     </td>
                                     <td className="p-4 md:p-6 text-right">
-                                        <span className="text-teal-400 font-black text-xl italic tracking-tighter">
+                                        <span className={`font-black text-xl italic tracking-tighter ${player.score < 0 ? 'text-red-500' : 'text-teal-400'}`}>
                                             {player.score} <span className="text-[10px] text-teal-700 not-italic ml-1">PTS</span>
                                         </span>
                                     </td>
