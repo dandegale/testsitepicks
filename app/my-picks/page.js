@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import LeagueRail from '../components/LeagueRail';
-import LogOutButton from '../components/LogOutButton'; // Ensure this path matches your file structure
+import LogOutButton from '../components/LogOutButton'; 
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -82,9 +82,13 @@ export default function MyPicksPage() {
         picksWithDetails.sort((a, b) => b.id - a.id);
 
         // 7. Filter: Show anything pending
+        // UPDATED: Now filters out if pick is resolved OR if fight has a winner declared
         const active = picksWithDetails.filter(p => {
-             const isFinished = ['Win', 'Loss', 'Draw'].includes(p.result);
-             return !isFinished;
+             const isPickResolved = ['Win', 'Loss', 'Draw'].includes(p.result);
+             const isFightEnded = p.fight && p.fight.winner; // Check if the fight has a winner
+             
+             // Keep pick only if it's NOT resolved AND the fight is NOT ended
+             return !isPickResolved && !isFightEnded;
         });
         
         setActivePicks(active);
