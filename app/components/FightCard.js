@@ -8,10 +8,19 @@ export default function FightCard({
   showOdds = true 
 }) {
   
-  // 1. NEW: Check if the fight has started based on local time
-  const hasStarted = new Date(fight.start_time) < new Date();
+  // --- FIX: VALIDATION LOGIC ---
+  // 1. Create the date object
+  const startTime = new Date(fight.start_time);
+  
+  // 2. Check if the date is actually valid (not null, not 1970, not 'Invalid Date')
+  // We check if fight.start_time exists AND if the date object is valid
+  const isValidDate = fight.start_time && !isNaN(startTime.getTime());
 
-  // 2. UPDATE: Lock the card if a pick exists OR if the fight has started
+  // 3. Only lock if it is a VALID date AND it is in the past
+  // If date is missing (null), we assume it hasn't started yet (Safe Fail)
+  const hasStarted = isValidDate && startTime < new Date();
+
+  // 4. Update Lock Logic
   const isLocked = !!existingPick || hasStarted; 
   
   const isSelected = pendingPick?.fighterName === fight.fighter_1_name || pendingPick?.fighterName === fight.fighter_2_name;
@@ -57,7 +66,13 @@ export default function FightCard({
       
       <div className="flex justify-between items-center mb-6 text-gray-400 text-xs uppercase tracking-widest font-bold">
         <span>{fight.event_name || 'UFC Fight Night'}</span>
-        <span>{new Date(fight.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+        {/* Only show time if we actually have a valid one */}
+        <span>
+            {isValidDate 
+                ? startTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) 
+                : 'TBD'
+            }
+        </span>
       </div>
 
       <div className="flex justify-between items-center gap-4">
@@ -84,13 +99,8 @@ export default function FightCard({
                   )
               }`}
           >
-            {/* LOGIC FOR BUTTON TEXT */}
             {isLocked && existingPick?.selected_fighter === fight.fighter_1_name && 'LOCKED IN'}
-            
-            {/* Case: Locked, I picked the OTHER guy */}
-            {isLocked && existingPick?.selected_fighter && existingPick?.selected_fighter !== fight.fighter_1_name && 'LOCKED'}
-            
-            {/* Case: Locked because fight started, but I made NO pick */}
+            {isLocked && existingPick?.selected_fighter !== fight.fighter_1_name && existingPick && 'LOCKED'}
             {isLocked && !existingPick && hasStarted && 'CLOSED'}
             
             {!isLocked && pendingPick?.fighterName === fight.fighter_1_name && 'SELECTED'}
@@ -131,9 +141,7 @@ export default function FightCard({
               }`}
           >
              {isLocked && existingPick?.selected_fighter === fight.fighter_2_name && 'LOCKED IN'}
-             {isLocked && existingPick?.selected_fighter && existingPick?.selected_fighter !== fight.fighter_2_name && 'LOCKED'}
-             
-             {/* Case: Locked because fight started, but I made NO pick */}
+             {isLocked && existingPick?.selected_fighter !== fight.fighter_2_name && existingPick && 'LOCKED'}
              {isLocked && !existingPick && hasStarted && 'CLOSED'}
 
              {!isLocked && pendingPick?.fighterName === fight.fighter_2_name && 'SELECTED'}

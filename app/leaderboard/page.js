@@ -39,19 +39,21 @@ export default function LeaderboardPage() {
       }
     }
 
-    // 2. Fetch DATA (Fights & Picks)
-    // Fetching all picks for the global leaderboard
+    // 2. Fetch DATA (Fights, Picks, AND PROFILES)
     const { data: picks } = await supabase.from('picks').select('*');
     const { data: fights } = await supabase.from('fights').select('*');
+    
+    // NEW: Fetch Profiles so we can show real usernames
+    const { data: profiles } = await supabase.from('profiles').select('email, username');
 
     if (picks && fights) {
-      processLeaderboard(picks, fights);
+      processLeaderboard(picks, fights, profiles || []);
     }
 
     setLoading(false);
   };
 
-  // --- THE MATH ENGINE (Updated for 10 PTS System) ---
+  // --- THE MATH ENGINE ---
   const calculatePoints = (odds) => {
     const numericOdds = parseInt(odds, 10);
     if (isNaN(numericOdds) || numericOdds === 0) return 0;
@@ -67,18 +69,23 @@ export default function LeaderboardPage() {
     return Math.round(standardWin / 10);
   };
 
-  const processLeaderboard = (picks, fights) => {
+  const processLeaderboard = (picks, fights, profiles) => {
     const scores = {};
 
     picks.forEach((pick) => {
-        // Only count picks that have a decided result
-        if (pick.result === 'Win') {
+        // Only count picks that have a decided result (marked as Correct in DB)
+        // OR calculate manually if you prefer comparing to the 'fights' table
+        if (pick.is_correct === true) {
             const points = calculatePoints(pick.odds_at_pick);
-            const userId = pick.user_id;
+            const userId = pick.user_id; // This is the email
 
             if (!scores[userId]) {
+                // Find the real username from the profiles table
+                const userProfile = profiles.find(p => p.email === userId);
+                const displayName = userProfile?.username || userId.split('@')[0];
+
                 scores[userId] = { 
-                    name: userId.split('@')[0], // Clean up email to username
+                    name: displayName, 
                     score: 0, 
                     wins: 0,
                     fullEmail: userId 
@@ -87,7 +94,6 @@ export default function LeaderboardPage() {
             scores[userId].score += points;
             scores[userId].wins += 1;
         }
-        // Optional: If you want to subtract points for losses, add 'else if (pick.result === "Loss")' here
     });
 
     // Convert to Array & Sort (Highest Score First)
@@ -197,7 +203,7 @@ export default function LeaderboardPage() {
                                         <div className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-3">
                                             {/* Avatar Placeholder */}
                                             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500'}`}>
-                                                {player.name.substring(0, 2).toUpperCase()}
+                                                {player.name ? player.name.substring(0, 2).toUpperCase() : '?'}
                                             </div>
                                             {player.name}
                                             {player.fullEmail === user?.email && (
