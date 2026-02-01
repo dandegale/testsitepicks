@@ -11,10 +11,14 @@ export default function FightCard({
   showOdds = true 
 }) {
   
-  // --- ROBUST TIME VALIDATION ---
-  const startTime = new Date(fight.start_time);
+  // --- 1. ROBUST TIME PARSING (The "3 AM" Fix) ---
+  // If the string is "2026-02-08T03:00:00" (missing Z), we force it to "2026-02-08T03:00:00Z"
+  // This ensures the browser treats it as UTC and subtracts 5 hours for EST (becoming 10 PM).
+  const rawTime = fight.start_time;
+  const timeString = rawTime && !rawTime.endsWith('Z') ? `${rawTime}Z` : rawTime;
+  const startTime = new Date(timeString);
   
-  const isValidDate = fight.start_time 
+  const isValidDate = timeString 
                       && !isNaN(startTime.getTime()) 
                       && startTime.getFullYear() > 2024;
 
@@ -24,6 +28,18 @@ export default function FightCard({
   
   const isSelected = pendingPick?.fighterName === fight.fighter_1_name || pendingPick?.fighterName === fight.fighter_2_name;
   
+  // --- 2. TIME FORMATTING HELPER ---
+  const formatFightTime = (date) => {
+    if (!isValidDate) return 'TBD';
+
+    return new Intl.DateTimeFormat('en-US', {
+      weekday: 'short',     // "Sat"
+      hour: 'numeric',      // "10"
+      minute: '2-digit',    // "00"
+      timeZoneName: 'short' // "EST"
+    }).format(date);
+  };
+
   const calculatePayout = (odds) => {
     if (!odds) return 0;
     const stake = 10;
@@ -63,13 +79,13 @@ export default function FightCard({
         }
     `}>
       
+      {/* HEADER SECTION */}
       <div className="flex justify-between items-center mb-6 text-gray-400 text-xs uppercase tracking-widest font-bold">
         <span>{fight.event_name || 'UFC Fight Night'}</span>
-        <span>
-            {isValidDate 
-                ? startTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) 
-                : 'TBD'
-            }
+        
+        {/* --- CHANGED TO WHITE TEXT --- */}
+        <span className="text-white font-mono tracking-tighter">
+            {formatFightTime(startTime)}
         </span>
       </div>
 
@@ -78,7 +94,6 @@ export default function FightCard({
         {/* FIGHTER 1 */}
         <div className="flex-1 text-center">
           <h3 className="text-xl md:text-2xl font-black text-white uppercase leading-none mb-2">
-            {/* LINK TO PROFILE */}
             <Link 
               href={`/fighter/${createFighterSlug(fight.fighter_1_name)}`}
               className="hover:text-pink-500 hover:underline decoration-pink-500 decoration-2 underline-offset-4 transition-all"
@@ -125,7 +140,6 @@ export default function FightCard({
         {/* FIGHTER 2 */}
         <div className="flex-1 text-center">
           <h3 className="text-xl md:text-2xl font-black text-white uppercase leading-none mb-2">
-            {/* LINK TO PROFILE */}
             <Link 
               href={`/fighter/${createFighterSlug(fight.fighter_2_name)}`}
               className="hover:text-pink-500 hover:underline decoration-pink-500 decoration-2 underline-offset-4 transition-all"

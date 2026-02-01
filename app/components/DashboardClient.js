@@ -14,20 +14,38 @@ import MobileNav from './MobileNav';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-// --- Countdown Timer ---
+// --- Countdown Timer (FIXED FOR UTC) ---
 const CountdownDisplay = ({ targetDate }) => {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [isExpired, setIsExpired] = useState(false);
+
   useEffect(() => {
+    // 1. Force UTC Interpretation
+    // If string is "2026-02-08T03:00:00", treat it as UTC
+    const rawTime = targetDate;
+    const timeString = rawTime && !rawTime.endsWith('Z') ? `${rawTime}Z` : rawTime;
+    const eventTime = new Date(timeString).getTime();
+
     const timer = setInterval(() => {
       const now = new Date().getTime();
-      const eventTime = new Date(targetDate).getTime();
       const distance = eventTime - now;
-      if (distance <= 0) { setIsExpired(true); clearInterval(timer); } 
-      else { setIsExpired(false); setTimeLeft({ days: Math.floor(distance / (86400000)), hours: Math.floor((distance % (86400000)) / (3600000)), minutes: Math.floor((distance % (3600000)) / (60000)), seconds: Math.floor((distance % (60000)) / 1000) }); }
+      
+      if (distance <= 0) { 
+          setIsExpired(true); 
+          clearInterval(timer); 
+      } else { 
+          setIsExpired(false); 
+          setTimeLeft({ 
+              days: Math.floor(distance / (86400000)), 
+              hours: Math.floor((distance % (86400000)) / (3600000)), 
+              minutes: Math.floor((distance % (3600000)) / (60000)), 
+              seconds: Math.floor((distance % (60000)) / 1000) 
+          }); 
+      }
     }, 1000);
     return () => clearInterval(timer);
   }, [targetDate]);
+
   const Unit = ({ value, label }) => ( <div className="flex flex-col items-center px-3 py-1 bg-black/60 border border-gray-800 rounded-lg min-w-[55px]"> <span className="text-lg font-black text-pink-500 tabular-nums leading-none">{value}</span> <span className="text-[7px] font-black uppercase text-gray-500 tracking-tighter mt-1">{label}</span> </div> );
   if (isExpired) return ( <div className="flex items-center gap-2 px-4 py-3 bg-red-950/20 border border-red-900/50 rounded-lg"> <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse"></span> <span className="text-red-500 font-black uppercase italic text-[10px] tracking-widest">Picks Locked</span> </div> );
   return ( <div className="flex gap-2"> <Unit value={timeLeft.days} label="Days" /> <Unit value={timeLeft.hours} label="Hrs" /> <Unit value={timeLeft.minutes} label="Min" /> <Unit value={timeLeft.seconds} label="Sec" /> </div> );
@@ -55,7 +73,7 @@ export default function DashboardClient({
   const eventDate = mainEvent?.start_time || "2026-02-01T22:00:00"; 
   const safeEventName = nextEventName || "Upcoming Event";
 
-  // --- GHOST FILTER LOGIC ---
+  // --- GHOST FILTER LOGIC (FIXED FOR TIMEZONE) ---
   const { cleanFights, cleanGroups } = useMemo(() => {
       if (!fights) return { cleanFights: [], cleanGroups: {} };
 
@@ -93,10 +111,15 @@ export default function DashboardClient({
       tempGroups.forEach(bucket => {
           if (bucket.length === 0) return;
           const mainEventFight = bucket[bucket.length - 1];
+          
+          // --- DATE FIX: Force US Timezone ---
+          // This forces "Feb 8 at 3AM UTC" to display as "Feb 7" (Saturday)
           const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
               month: 'short', 
-              day: 'numeric' 
+              day: 'numeric',
+              timeZone: 'America/New_York' 
           });
+
           const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
           finalGroupedFights[title] = [...bucket].reverse();
       });
@@ -341,7 +364,7 @@ export default function DashboardClient({
                     ))}
                 </div>
 
-                {/* --- NEW: MOBILE LEADERBOARD BANNER --- */}
+                {/* --- MOBILE LEADERBOARD BANNER --- */}
                 <div className="md:hidden mt-4 px-1">
                     <Link href="/leaderboard" className="block w-full bg-gradient-to-r from-gray-900 to-black border border-gray-800 p-4 rounded-xl flex items-center justify-between shadow-lg active:scale-95 transition-transform group">
                         <div className="flex items-center gap-4">

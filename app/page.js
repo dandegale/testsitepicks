@@ -63,9 +63,13 @@ export default async function FightList() {
           // Since the bucket is currently Oldest -> Newest, the Main Event is the LAST item.
           const mainEventFight = bucket[bucket.length - 1];
           
+          // --- DATE FIX: Force US Timezone ---
+          // This prevents 3 AM Sunday (UTC) from showing as "Feb 8"
+          // It will correctly show as "Feb 7" (Saturday)
           const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
               month: 'short', 
-              day: 'numeric' 
+              day: 'numeric',
+              timeZone: 'America/New_York' // <--- ADDED THIS LINE
           });
 
           const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
@@ -76,8 +80,6 @@ export default async function FightList() {
   }
 
   // Hero Section Logic
-  // Since the groups object keys are unordered strings, we rely on the fact that we inserted them in chronological order.
-  // But to be safe, we just grab the first key.
   const nextEventKey = Object.keys(finalGroupedFights)[0] || 'Upcoming Fights';
   const nextEventFights = finalGroupedFights[nextEventKey] || [];
   

@@ -9,7 +9,7 @@ import ChatBox from '../../components/ChatBox';
 import LeagueRail from '../../components/LeagueRail';
 import BettingSlip from '../../components/BettingSlip'; 
 import LogOutButton from '../../components/LogOutButton';
-// import MobileNav from '../../components/MobileNav'; 
+import MobileNav from '../../components/MobileNav'; 
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -25,6 +25,10 @@ export default function LeaguePage() {
   const [activeTab, setActiveTab] = useState('card'); 
   const [copySuccess, setCopySuccess] = useState(false);
   
+  // Mobile States
+  const [showMobileLeagues, setShowMobileLeagues] = useState(false);
+  const [showMobileSlip, setShowMobileSlip] = useState(false);
+
   // Data State
   const [league, setLeague] = useState(null);
   const [members, setMembers] = useState([]); 
@@ -58,21 +62,17 @@ export default function LeaguePage() {
       applyCardFilter();
   }, [cardFilter, allFights]);
 
-  // --- UPDATED FILTER LOGIC ---
   const applyCardFilter = () => {
       if (allFights.length === 0) return;
       
-      // 1. GHOST FILTER: Remove fights that started > 12 hours ago but have no winner
       const now = new Date().getTime();
       const TWELVE_HOURS = 12 * 60 * 60 * 1000;
       
       const validFights = allFights.filter(f => {
           const fTime = new Date(f.start_time).getTime();
-          // Keep if it is in the future OR if it started recently (less than 12 hours ago)
           return fTime > (now - TWELVE_HOURS);
       });
 
-      // 2. Sort the valid fights
       let sorted = [...validFights].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
       
       let nextEventFights = [];
@@ -122,7 +122,8 @@ export default function LeaguePage() {
           const mainEventFight = bucket[bucket.length - 1];
           const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
               month: 'short', 
-              day: 'numeric' 
+              day: 'numeric',
+              timeZone: 'America/New_York'
           });
           
           const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
@@ -138,7 +139,6 @@ export default function LeaguePage() {
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         setUser(currentUser);
 
-        // Fetch Odds Preference
         if (currentUser) {
             const { data: profile } = await supabase
                 .from('profiles')
@@ -151,7 +151,6 @@ export default function LeaguePage() {
             }
         }
 
-        // 1. Fetch League
         const { data: leagueData } = await supabase
           .from('leagues')
           .select('*')
@@ -164,7 +163,6 @@ export default function LeaguePage() {
             setIsAdmin(isCreator);
         }
 
-        // 2. Fetch Members
         const { data: membersData } = await supabase
             .from('league_members')
             .select('user_id, joined_at') 
@@ -174,12 +172,10 @@ export default function LeaguePage() {
 
         if (processedMembers.length > 0) {
             const memberIds = processedMembers.map(m => m.user_id);
-            const { data: profiles, error: profileError } = await supabase
+            const { data: profiles } = await supabase
                 .from('profiles')
                 .select('email, username') 
                 .in('email', memberIds);   
-
-            if (profileError) console.error("Profile Fetch Error:", profileError);
 
             processedMembers = processedMembers.map(member => {
                 const profile = profiles?.find(p => p.email === member.user_id);
@@ -193,7 +189,6 @@ export default function LeaguePage() {
 
         setMembers(processedMembers);
 
-        // 3. Sidebar
         if (currentUser) {
             const { data: memberships } = await supabase
               .from('league_members')
@@ -204,7 +199,6 @@ export default function LeaguePage() {
             }
         }
 
-        // 4. Fetch Fights
         const { data: allFutureFights } = await supabase
             .from('fights')
             .select('*')
@@ -213,7 +207,6 @@ export default function LeaguePage() {
 
         setAllFights(allFutureFights || []);
 
-        // 5. Fetch User Picks
         if (currentUser) {
             const { data: picksData } = await supabase
                 .from('picks')
@@ -223,7 +216,6 @@ export default function LeaguePage() {
             setExistingPicks(picksData || []);
         }
 
-        // 6. Generate Leaderboard
         const { data: completedFights } = await supabase
             .from('fights')
             .select('id, winner')
@@ -269,8 +261,6 @@ export default function LeaguePage() {
     }
   };
 
-  // --- ACTIONS ---
-  
   const handleCopyCode = () => {
     if (league?.invite_code) {
         navigator.clipboard.writeText(league.invite_code);
@@ -367,7 +357,7 @@ export default function LeaguePage() {
         <LeagueRail initialLeagues={myLeagues} />
       </div>
 
-      <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col">
+      <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24 md:pb-0">
         
         {/* Header */}
         <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
@@ -397,7 +387,7 @@ export default function LeaguePage() {
         <div className="relative w-full bg-gray-900 overflow-hidden border-b border-gray-800 h-[200px]">
             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent z-10" />
             {league?.image_url && (
-                <img src={league.image_url} className="absolute inset-0 w-full h-full object-cover opacity-50" />
+                <img src={league.image_url} className="absolute inset-0 w-full h-full object-cover opacity-50" alt="League Banner" />
             )}
             <div className="absolute inset-0 flex flex-col justify-end p-6 md:p-10 z-20">
                 <div className="max-w-7xl mx-auto w-full">
@@ -496,7 +486,7 @@ export default function LeaguePage() {
                                     league_id={leagueId} 
                                     onPickSelect={handlePickSelect} 
                                     pendingPicks={pendingPicks} 
-                                    showOdds={showOdds} // <--- PASSING THE ODDS SETTING HERE
+                                    showOdds={showOdds} 
                                 />
                             ) : (
                                 <div className="p-12 border border-gray-800 rounded-xl text-center text-gray-500 font-bold uppercase tracking-widest">
@@ -565,10 +555,65 @@ export default function LeaguePage() {
                     )}
 
                     {activeTab === 'settings' && (
-                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-8">
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-12">
+                            
+                            {/* 1. EDIT LEAGUE DETAILS (NEW) */}
+                            <div>
+                                <h2 className="text-xs font-black text-white uppercase tracking-widest mb-4 flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-pink-600"></span>
+                                    Edit League Details
+                                </h2>
+                                <form 
+                                    onSubmit={async (e) => {
+                                        e.preventDefault();
+                                        const form = e.target;
+                                        const newName = form.leagueName.value;
+                                        const newImage = form.leagueImage.value;
+
+                                        const { error } = await supabase
+                                            .from('leagues')
+                                            .update({ name: newName, image_url: newImage })
+                                            .eq('id', leagueId);
+
+                                        if (error) alert("Error: " + error.message);
+                                        else {
+                                            alert("League updated!");
+                                            window.location.reload(); 
+                                        }
+                                    }}
+                                    className="bg-gray-900 border border-gray-800 rounded-xl p-6"
+                                >
+                                    <div className="grid md:grid-cols-2 gap-6 mb-6">
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">League Name</label>
+                                            <input 
+                                                name="leagueName"
+                                                defaultValue={league?.name}
+                                                className="w-full bg-black border border-gray-700 p-3 rounded text-white text-sm font-bold focus:border-pink-500 outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">Logo Image URL</label>
+                                            <input 
+                                                name="leagueImage"
+                                                defaultValue={league?.image_url}
+                                                className="w-full bg-black border border-gray-700 p-3 rounded text-white text-xs font-mono focus:border-pink-500 outline-none"
+                                                placeholder="https://..."
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end">
+                                        <button type="submit" className="bg-white text-black text-[10px] font-black uppercase px-6 py-3 rounded hover:bg-pink-600 hover:text-white transition-all">
+                                            Save Changes
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+
+                            {/* 2. CONFIGURE FIGHT CARD */}
                             <div>
                                 <h2 className="text-xs font-black text-white uppercase tracking-widest mb-4">
-                                    Step 1: Configure Fight Card
+                                    Configure Fight Card
                                 </h2>
                                 <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
                                     <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-4">
@@ -591,18 +636,22 @@ export default function LeaguePage() {
                                 </div>
                             </div>
 
-                            <div className="flex items-center justify-between gap-2 border-b border-gray-800 pb-4">
-                                <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
-                                    Danger Zone
-                                </h2>
-                                <button 
-                                    onClick={handleDeleteLeague}
-                                    className="bg-red-950/20 text-red-500 hover:bg-red-950/40 border border-red-900/50 px-4 py-2 rounded text-[10px] font-black uppercase tracking-widest transition-all"
-                                >
-                                    ⚠ Delete League
-                                </button>
+                            {/* 3. DANGER ZONE */}
+                            <div className="pt-8 border-t border-gray-800">
+                                <div className="flex items-center justify-between gap-2 mb-4">
+                                    <h2 className="text-xl font-black uppercase italic tracking-tighter text-red-600">
+                                        Danger Zone
+                                    </h2>
+                                    <button 
+                                        onClick={handleDeleteLeague}
+                                        className="bg-red-950/20 text-red-500 hover:bg-red-950/40 border border-red-900/50 px-6 py-3 rounded text-[10px] font-black uppercase tracking-widest transition-all hover:text-white"
+                                    >
+                                        ⚠ Delete League
+                                    </button>
+                                </div>
                             </div>
 
+                            {/* 4. ROSTER */}
                             <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
                                 <div className="p-4 border-b border-gray-800 bg-black/20 flex justify-between items-center">
                                     <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest">Member Roster</h3>
@@ -670,8 +719,86 @@ export default function LeaguePage() {
 
             </div>
         </div>
-
       </main>
+
+      {/* --- MOBILE: BOTTOM FLOATING BAR --- */}
+      {pendingPicks.length > 0 && (
+          <div className="md:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
+            <button 
+              onClick={() => setShowMobileSlip(true)}
+              className="w-full bg-pink-600 text-white p-4 rounded-xl shadow-2xl shadow-pink-900/50 flex justify-between items-center border border-pink-400 active:scale-95 transition-transform"
+            >
+              <div className="flex items-center gap-3">
+                <span className="bg-black/20 px-3 py-1 rounded-lg text-xs font-black">
+                  {pendingPicks.length}
+                </span>
+                <span className="text-sm font-black uppercase italic tracking-tighter">
+                  Picks in Slip
+                </span>
+              </div>
+              <span className="text-xs font-bold uppercase tracking-widest">Review & Submit →</span>
+            </button>
+          </div>
+      )}
+
+      {/* --- MOBILE: FULL SCREEN SLIP MODAL --- */}
+      {showMobileSlip && (
+          <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm md:hidden flex items-end">
+            <div className="w-full h-[85vh] bg-gray-950 rounded-t-2xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300">
+               <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+                  <h3 className="font-black italic text-xl text-white uppercase tracking-tighter">Your Slip</h3>
+                  <button onClick={() => setShowMobileSlip(false)} className="text-gray-500 hover:text-white p-2 text-xs font-bold uppercase tracking-widest">✕ Close</button>
+               </div>
+               <div className="flex-1 overflow-y-auto p-4">
+                  <BettingSlip 
+                     picks={pendingPicks} 
+                     onCancelAll={() => { setPendingPicks([]); setShowMobileSlip(false); }}
+                     onRemovePick={handleRemovePick}
+                     onConfirm={handleConfirmAllPicks}
+                     isSubmitting={isSubmitting}
+                  />
+               </div>
+            </div>
+          </div>
+      )}
+
+      {/* --- MOBILE LEAGUE DRAWER --- */}
+      <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
+         <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-800 flex justify-between items-center">
+                <span className="font-black italic text-xl">YOUR LEAGUES</span>
+                <button onClick={() => setShowMobileLeagues(false)} className="text-gray-500 hover:text-white transition-colors">✕</button>
+            </div>
+            
+            <div className="p-4 space-y-6">
+                {/* 1. The Leagues List */}
+                <div className="flex flex-col gap-4">
+                    {myLeagues.length > 0 ? (
+                        <LeagueRail initialLeagues={myLeagues} />
+                    ) : (
+                        <p className="text-gray-500 text-xs italic">No leagues joined yet.</p>
+                    )}
+                </div>
+                
+                {/* 2. Menu Links */}
+                <div className="border-t border-gray-800 pt-6">
+                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Menu</p>
+                    <Link href="/leaderboard" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all mb-2">
+                        <span className="text-xl">🏆</span>
+                        <span className="text-sm font-bold text-gray-300">Global Leaderboard</span>
+                    </Link>
+                     <Link href="/profile" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all">
+                        <span className="text-xl">👤</span>
+                        <span className="text-sm font-bold text-gray-300">My Profile</span>
+                    </Link>
+                </div>
+            </div>
+         </div>
+      </div>
+
+      {/* --- MOBILE BOTTOM NAV --- */}
+      <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
+
     </div>
   );
 }
