@@ -1,5 +1,8 @@
 'use client';
 
+import Link from 'next/link';
+import { createFighterSlug } from '@/utils/slugify';
+
 export default function FightCard({ 
   fight, 
   existingPick, 
@@ -8,23 +11,15 @@ export default function FightCard({
   showOdds = true 
 }) {
   
-  // --- FIX: ROBUST TIME VALIDATION ---
-  // 1. Create the date object
+  // --- ROBUST TIME VALIDATION ---
   const startTime = new Date(fight.start_time);
   
-  // 2. SANITY CHECK: 
-  //    - Must exist
-  //    - Must be a valid date
-  //    - Must be AFTER 2024 (This filters out 1970/1900 placeholder dates)
   const isValidDate = fight.start_time 
                       && !isNaN(startTime.getTime()) 
                       && startTime.getFullYear() > 2024;
 
-  // 3. Only lock if it is a VALID date AND it is in the past
-  // If the date is invalid (or from 1970), 'hasStarted' stays false, keeping the card OPEN.
   const hasStarted = isValidDate && startTime < new Date();
 
-  // 4. Update Lock Logic
   const isLocked = !!existingPick || hasStarted; 
   
   const isSelected = pendingPick?.fighterName === fight.fighter_1_name || pendingPick?.fighterName === fight.fighter_2_name;
@@ -70,7 +65,6 @@ export default function FightCard({
       
       <div className="flex justify-between items-center mb-6 text-gray-400 text-xs uppercase tracking-widest font-bold">
         <span>{fight.event_name || 'UFC Fight Night'}</span>
-        {/* Only show time if we actually have a valid one */}
         <span>
             {isValidDate 
                 ? startTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) 
@@ -84,7 +78,13 @@ export default function FightCard({
         {/* FIGHTER 1 */}
         <div className="flex-1 text-center">
           <h3 className="text-xl md:text-2xl font-black text-white uppercase leading-none mb-2">
-            {fight.fighter_1_name}
+            {/* LINK TO PROFILE */}
+            <Link 
+              href={`/fighter/${createFighterSlug(fight.fighter_1_name)}`}
+              className="hover:text-pink-500 hover:underline decoration-pink-500 decoration-2 underline-offset-4 transition-all"
+            >
+              {fight.fighter_1_name}
+            </Link>
           </h3>
           
           <div className="text-yellow-500 font-mono text-sm mb-4 min-h-[20px]">
@@ -125,7 +125,13 @@ export default function FightCard({
         {/* FIGHTER 2 */}
         <div className="flex-1 text-center">
           <h3 className="text-xl md:text-2xl font-black text-white uppercase leading-none mb-2">
-            {fight.fighter_2_name}
+            {/* LINK TO PROFILE */}
+            <Link 
+              href={`/fighter/${createFighterSlug(fight.fighter_2_name)}`}
+              className="hover:text-pink-500 hover:underline decoration-pink-500 decoration-2 underline-offset-4 transition-all"
+            >
+              {fight.fighter_2_name}
+            </Link>
           </h3>
           
           <div className="text-yellow-500 font-mono text-sm mb-4 min-h-[20px]">
