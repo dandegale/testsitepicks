@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import LeagueRail from '../components/LeagueRail';
 import LogOutButton from '../components/LogOutButton';
+import MobileNav from '../components/MobileNav'; 
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -16,6 +17,8 @@ export default function LeaderboardPage() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [myLeagues, setMyLeagues] = useState([]);
   const [user, setUser] = useState(null);
+  
+  const [showMobileLeagues, setShowMobileLeagues] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -42,8 +45,6 @@ export default function LeaderboardPage() {
     // 2. Fetch DATA (Fights, Picks, AND PROFILES)
     const { data: picks } = await supabase.from('picks').select('*');
     const { data: fights } = await supabase.from('fights').select('*');
-    
-    // NEW: Fetch Profiles so we can show real usernames
     const { data: profiles } = await supabase.from('profiles').select('email, username');
 
     if (picks && fights) {
@@ -69,23 +70,22 @@ export default function LeaderboardPage() {
     return Math.round(standardWin / 10);
   };
 
-  // --- UPDATED LOGIC HERE ---
+  // --- UPDATED LOGIC: STRICT GLOBAL ONLY ---
   const processLeaderboard = (picks, fights, profiles) => {
     const scores = {};
 
     picks.forEach((pick) => {
-        // 1. Find the actual fight object for this pick
+        // 🛑 STRICT FILTER: If this pick belongs to a league, IGNORE IT.
+        // We only want 'Global' picks (where league_id is null).
+        if (pick.league_id) return;
+
         const fight = fights.find(f => f.id === pick.fight_id);
 
-        // 2. DYNAMIC CHECK: Does the fight have a winner? Does it match the pick?
-        // We ignore 'pick.is_correct' because the database might not be updated yet.
         if (fight && fight.winner && fight.winner === pick.selected_fighter) {
             
-            const points = calculatePoints(pick.odds_at_pick);
-            const userId = pick.user_id; // This is the email
+            const userId = pick.user_id; 
 
             if (!scores[userId]) {
-                // Find the real username from the profiles table
                 const userProfile = profiles.find(p => p.email === userId);
                 const displayName = userProfile?.username || userId.split('@')[0];
 
@@ -96,12 +96,13 @@ export default function LeaderboardPage() {
                     fullEmail: userId 
                 };
             }
+
+            const points = calculatePoints(pick.odds_at_pick);
             scores[userId].score += points;
             scores[userId].wins += 1;
         }
     });
 
-    // Convert to Array & Sort (Highest Score First)
     const sorted = Object.values(scores).sort((a, b) => b.score - a.score);
     setLeaderboard(sorted);
   };
@@ -118,22 +119,36 @@ export default function LeaderboardPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
-      {/* Sidebar */}
+    <div className="flex min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white pb-20 md:pb-0">
+      
+      {/* --- DESKTOP SIDEBAR --- */}
       <div className="hidden md:block">
         <LeagueRail initialLeagues={myLeagues} />
       </div>
 
+      {/* --- MOBILE LEAGUE DRAWER --- */}
+      <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
+         <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-800 flex justify-between items-center">
+                <span className="font-black italic text-xl">YOUR LEAGUES</span>
+                <button onClick={() => setShowMobileLeagues(false)} className="text-gray-500 hover:text-white transition-colors">✕</button>
+            </div>
+            <div className="p-4">
+                <LeagueRail initialLeagues={myLeagues} />
+            </div>
+         </div>
+      </div>
+
       <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col">
         
-        {/* --- STICKY HEADER --- */}
+        {/* --- HEADER --- */}
         <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
-            <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <Link href="/" className="text-2xl font-black italic text-white tracking-tighter uppercase">
                         FIGHT<span className="text-pink-600">IQ</span>
                     </Link>
-                    <div className="h-4 w-px bg-gray-800 mx-2"></div>
+                    <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
                     <nav className="hidden md:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
                         <Link href="/my-picks" className="hover:text-white transition-colors">My Picks</Link>
                         <Link href="/" className="hover:text-white transition-colors">Global Feed</Link>
@@ -141,26 +156,27 @@ export default function LeaderboardPage() {
                     </nav>
                 </div>
                 <div className="flex items-center gap-4">
-                     <Link href="/profile" className="bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all">
+                     <Link href="/profile" className="hidden md:flex bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all">
                         MY PROFILE
                     </Link>
-                    <LogOutButton />
+                    <div className="hidden md:block">
+                        <LogOutButton />
+                    </div>
                 </div>
             </div>
         </header>
 
-        <div className="p-6 md:p-12 max-w-5xl mx-auto w-full">
+        <div className="p-4 md:p-12 max-w-5xl mx-auto w-full">
             {/* Page Title */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 border-b border-gray-800 pb-6 gap-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 md:mb-12 border-b border-gray-800 pb-6 gap-4">
                 <div>
-                    <h1 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter mb-2">
+                    <h1 className="text-3xl md:text-5xl font-black italic uppercase tracking-tighter mb-2">
                         GLOBAL <span className="text-teal-500">RANKINGS</span>
                     </h1>
-                    <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Official Season Standings</p>
+                    <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Official Season Standings (Global Only)</p>
                 </div>
-                {/* User's Own Rank Badge (If logged in) */}
                 {user && (
-                    <div className="bg-gray-900 border border-gray-800 px-6 py-3 rounded-xl flex flex-col items-center">
+                    <div className="bg-gray-900 border border-gray-800 px-6 py-3 rounded-xl flex flex-col items-center w-full md:w-auto">
                         <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1">Your Rank</span>
                         <span className="text-2xl font-black text-white italic">
                             #{leaderboard.findIndex(p => p.fullEmail === user.email) + 1 > 0 ? leaderboard.findIndex(p => p.fullEmail === user.email) + 1 : '-'}
@@ -169,20 +185,19 @@ export default function LeaderboardPage() {
                 )}
             </div>
 
-            {/* Leaderboard Table */}
-            <div className="bg-gray-950 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl">
-                <table className="w-full text-left border-collapse">
+            {/* Scrollable Table Container for Mobile */}
+            <div className="bg-gray-950 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[600px] md:min-w-0">
                     <thead>
                         <tr className="bg-gray-900 border-b border-gray-800 text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">
-                            <th className="p-6 w-24 text-center">Rank</th>
-                            <th className="p-6">Fighter IQ Manager</th>
-                            <th className="p-6 text-center">Wins</th>
-                            <th className="p-6 text-right">Total Pts</th>
+                            <th className="p-4 md:p-6 w-16 md:w-24 text-center">Rank</th>
+                            <th className="p-4 md:p-6">Fighter IQ Manager</th>
+                            <th className="p-4 md:p-6 text-center">Wins</th>
+                            <th className="p-4 md:p-6 text-right">Total Pts</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-900">
                         {leaderboard.map((player, index) => {
-                            // Style top 3 differently
                             let rankStyle = "text-gray-500";
                             let rowStyle = "hover:bg-gray-900/50 transition-colors group";
                             
@@ -199,14 +214,13 @@ export default function LeaderboardPage() {
 
                             return (
                                 <tr key={index} className={rowStyle}>
-                                    <td className="p-6 text-center">
+                                    <td className="p-4 md:p-6 text-center">
                                         <span className={`text-2xl font-black italic ${rankStyle}`}>
                                             {index + 1}
                                         </span>
                                     </td>
-                                    <td className="p-6">
+                                    <td className="p-4 md:p-6">
                                         <div className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-3">
-                                            {/* Avatar Placeholder */}
                                             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500'}`}>
                                                 {player.name ? player.name.substring(0, 2).toUpperCase() : '?'}
                                             </div>
@@ -216,10 +230,10 @@ export default function LeaderboardPage() {
                                             )}
                                         </div>
                                     </td>
-                                    <td className="p-6 text-center text-gray-400 font-mono font-bold">
+                                    <td className="p-4 md:p-6 text-center text-gray-400 font-mono font-bold">
                                         {player.wins}
                                     </td>
-                                    <td className="p-6 text-right">
+                                    <td className="p-4 md:p-6 text-right">
                                         <span className="text-teal-400 font-black text-xl italic tracking-tighter">
                                             {player.score} <span className="text-[10px] text-teal-700 not-italic ml-1">PTS</span>
                                         </span>
@@ -240,6 +254,9 @@ export default function LeaderboardPage() {
             </div>
         </div>
       </main>
+
+      <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
+
     </div>
   );
 }
