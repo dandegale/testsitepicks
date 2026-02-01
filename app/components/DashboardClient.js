@@ -21,7 +21,6 @@ const CountdownDisplay = ({ targetDate }) => {
 
   useEffect(() => {
     // 1. Force UTC Interpretation
-    // If string is "2026-02-08T03:00:00", treat it as UTC
     const rawTime = targetDate;
     const timeString = rawTime && !rawTime.endsWith('Z') ? `${rawTime}Z` : rawTime;
     const eventTime = new Date(timeString).getTime();
@@ -113,7 +112,6 @@ export default function DashboardClient({
           const mainEventFight = bucket[bucket.length - 1];
           
           // --- DATE FIX: Force US Timezone ---
-          // This forces "Feb 8 at 3AM UTC" to display as "Feb 7" (Saturday)
           const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
               month: 'short', 
               day: 'numeric',
@@ -262,7 +260,7 @@ export default function DashboardClient({
         <LeagueRail initialLeagues={myLeagues} />
       </div>
 
-      {/* --- MOBILE LEAGUE DRAWER --- */}
+      {/* --- MOBILE LEAGUE DRAWER (FIXED) --- */}
       <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
          <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
             <div className="p-6 border-b border-gray-800 flex justify-between items-center">
@@ -270,10 +268,34 @@ export default function DashboardClient({
                 <button onClick={() => setShowMobileLeagues(false)} className="text-gray-500 hover:text-white transition-colors">✕</button>
             </div>
             
-            {/* UPDATED DRAWER CONTENT */}
             <div className="p-4 space-y-6">
-                <LeagueRail initialLeagues={myLeagues} />
                 
+                {/* 1. LEAGUES LIST (Manually rendered vertically) */}
+                <div className="flex flex-col gap-3">
+                    {myLeagues && myLeagues.length > 0 ? (
+                        myLeagues.map(league => (
+                            <Link 
+                                key={league.id} 
+                                href={`/league/${league.id}`} 
+                                className="flex items-center gap-4 p-3 rounded-xl bg-gray-800/40 hover:bg-gray-800 border border-gray-700/50 hover:border-pink-500/50 transition-all group"
+                            >
+                                <div className="w-10 h-10 rounded-full bg-gray-900 border border-gray-600 flex items-center justify-center text-[10px] font-black text-gray-400 group-hover:text-pink-500 group-hover:border-pink-500 transition-all shrink-0">
+                                     {league.name.substring(0,2).toUpperCase()}
+                                </div>
+                                <span className="font-bold text-sm text-gray-300 group-hover:text-white truncate">
+                                    {league.name}
+                                </span>
+                            </Link>
+                        ))
+                    ) : (
+                        <div className="p-4 border border-dashed border-gray-800 rounded-xl text-center">
+                            <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest mb-2">No Leagues Joined</p>
+                            <Link href="/create-league" className="text-pink-500 text-xs font-black uppercase hover:underline">+ Create One</Link>
+                        </div>
+                    )}
+                </div>
+                
+                {/* 2. MENU LINKS */}
                 <div className="border-t border-gray-800 pt-6">
                     <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Menu</p>
                     <Link href="/leaderboard" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all mb-2">
