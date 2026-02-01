@@ -11,16 +11,17 @@ import GlobalActivityFeed from './GlobalActivityFeed';
 import LeagueRail from './LeagueRail'; 
 import BettingSlip from './BettingSlip'; 
 import MobileNav from './MobileNav'; 
+// 1. IMPORT YOUR EXISTING MODAL
+import CreateLeagueModal from './CreateLeagueModal';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-// --- Countdown Timer (FIXED FOR UTC) ---
+// --- Countdown Timer ---
 const CountdownDisplay = ({ targetDate }) => {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [isExpired, setIsExpired] = useState(false);
 
   useEffect(() => {
-    // 1. Force UTC Interpretation
     const rawTime = targetDate;
     const timeString = rawTime && !rawTime.endsWith('Z') ? `${rawTime}Z` : rawTime;
     const eventTime = new Date(timeString).getTime();
@@ -28,19 +29,8 @@ const CountdownDisplay = ({ targetDate }) => {
     const timer = setInterval(() => {
       const now = new Date().getTime();
       const distance = eventTime - now;
-      
-      if (distance <= 0) { 
-          setIsExpired(true); 
-          clearInterval(timer); 
-      } else { 
-          setIsExpired(false); 
-          setTimeLeft({ 
-              days: Math.floor(distance / (86400000)), 
-              hours: Math.floor((distance % (86400000)) / (3600000)), 
-              minutes: Math.floor((distance % (3600000)) / (60000)), 
-              seconds: Math.floor((distance % (60000)) / 1000) 
-          }); 
-      }
+      if (distance <= 0) { setIsExpired(true); clearInterval(timer); } 
+      else { setIsExpired(false); setTimeLeft({ days: Math.floor(distance / (86400000)), hours: Math.floor((distance % (86400000)) / (3600000)), minutes: Math.floor((distance % (3600000)) / (60000)), seconds: Math.floor((distance % (60000)) / 1000) }); }
     }, 1000);
     return () => clearInterval(timer);
   }, [targetDate]);
@@ -60,8 +50,10 @@ export default function DashboardClient({
   const [showMobileLeagues, setShowMobileLeagues] = useState(false); 
   const [showMobileSlip, setShowMobileSlip] = useState(false);
   
-  const [showOdds, setShowOdds] = useState(false); 
+  // 2. ADD MODAL STATE
+  const [showCreateModal, setShowCreateModal] = useState(false);
   
+  const [showOdds, setShowOdds] = useState(false); 
   const [clientPicks, setClientPicks] = useState(myPicks || []);
   const [careerStats, setCareerStats] = useState({ wins: 0, losses: 0 });
 
@@ -72,31 +64,26 @@ export default function DashboardClient({
   const eventDate = mainEvent?.start_time || "2026-02-01T22:00:00"; 
   const safeEventName = nextEventName || "Upcoming Event";
 
-  // --- GHOST FILTER LOGIC (FIXED FOR TIMEZONE) ---
+  // --- GHOST FILTER LOGIC ---
   const { cleanFights, cleanGroups } = useMemo(() => {
       if (!fights) return { cleanFights: [], cleanGroups: {} };
-
       const now = new Date().getTime();
       const TWELVE_HOURS = 12 * 60 * 60 * 1000;
-
       const validFights = fights.filter(f => {
           if (f.winner) return true; 
           const fTime = new Date(f.start_time).getTime();
           return fTime > (now - TWELVE_HOURS);
       });
-
       validFights.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
 
       let finalGroupedFights = {};
       const tempGroups = [];
       let currentBucket = [];
-      
       let groupReferenceTime = validFights.length > 0 ? new Date(validFights[0].start_time).getTime() : 0;
       const THREE_DAYS_MS = 72 * 60 * 60 * 1000;
 
       validFights.forEach((fight) => {
           const fightTime = new Date(fight.start_time).getTime();
-          
           if (fightTime - groupReferenceTime < THREE_DAYS_MS) {
               currentBucket.push(fight);
           } else {
@@ -110,95 +97,52 @@ export default function DashboardClient({
       tempGroups.forEach(bucket => {
           if (bucket.length === 0) return;
           const mainEventFight = bucket[bucket.length - 1];
-          
-          // --- DATE FIX: Force US Timezone ---
           const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
-              month: 'short', 
-              day: 'numeric',
-              timeZone: 'America/New_York' 
+              month: 'short', day: 'numeric', timeZone: 'America/New_York' 
           });
-
           const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
           finalGroupedFights[title] = [...bucket].reverse();
       });
-
       return { cleanFights: validFights, cleanGroups: finalGroupedFights };
   }, [fights]);
-
 
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user && user.email) {
-        
-        // 1. Fetch Picks
-        const { data: picksData } = await supabase
-            .from('picks')
-            .select('*')
-            .eq('user_id', user.email);
-        
+        const { data: picksData } = await supabase.from('picks').select('*').eq('user_id', user.email);
         if (picksData) {
             setClientPicks(picksData); 
-        
-            // 2. Fetch ALL completed fights
-            const { data: results } = await supabase
-                .from('fights')
-                .select('id, winner')
-                .not('winner', 'is', null);
-
+            const { data: results } = await supabase.from('fights').select('id, winner').not('winner', 'is', null);
             if (results) {
-                let w = 0;
-                let l = 0;
-                
-                // DEDUPLICATION LOGIC
+                let w = 0; let l = 0;
                 const processedFightIds = new Set();
-
                 picksData.forEach(p => {
                     if (processedFightIds.has(p.fight_id)) return;
-
                     const fight = results.find(f => f.id === p.fight_id);
                     if (fight && fight.winner) {
-                        if (fight.winner === p.selected_fighter) w++;
-                        else l++;
-                        
+                        if (fight.winner === p.selected_fighter) w++; else l++;
                         processedFightIds.add(p.fight_id);
                     }
                 });
                 setCareerStats({ wins: w, losses: l });
             }
         }
-
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('show_odds')
-            .eq('id', user.id)
-            .single();
-
-        if (profile && profile.show_odds === true) {
-            setShowOdds(true);
-        }
+        const { data: profile } = await supabase.from('profiles').select('show_odds').eq('id', user.id).single();
+        if (profile && profile.show_odds === true) setShowOdds(true);
     }
   };
 
-  useEffect(() => {
-    fetchUserData();
-  }, []);
+  useEffect(() => { fetchUserData(); }, []);
 
-  const handleInteraction = () => {
-    setIsFocusMode(true);
-  };
+  const handleInteraction = () => setIsFocusMode(true);
 
   const handlePickSelect = (newPick) => {
     setPendingPicks(currentPicks => {
         const existingIndex = currentPicks.findIndex(p => p.fightId === newPick.fightId);
         if (existingIndex >= 0) {
             const existingPick = currentPicks[existingIndex];
-            if (existingPick.fighterName === newPick.fighterName) {
-                return currentPicks.filter((_, i) => i !== existingIndex);
-            } else {
-                const updated = [...currentPicks];
-                updated[existingIndex] = newPick;
-                return updated;
-            }
+            if (existingPick.fighterName === newPick.fighterName) return currentPicks.filter((_, i) => i !== existingIndex);
+            else { const updated = [...currentPicks]; updated[existingIndex] = newPick; return updated; }
         }
         return [...currentPicks, newPick];
     });
@@ -217,50 +161,26 @@ export default function DashboardClient({
   const handleConfirmAllPicks = async () => {
     if (pendingPicks.length === 0) return;
     setIsSubmitting(true);
-
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user || !user.email) {
-        alert("You must be logged in to lock picks.");
-        setIsSubmitting(false);
-        return;
-    }
-
+    if (authError || !user || !user.email) { alert("You must be logged in to lock picks."); setIsSubmitting(false); return; }
     const username = user.user_metadata?.username || user.email.split('@')[0];
-
     const picksToInsert = pendingPicks.map(p => ({
-        user_id: user.email,
-        username: username, 
-        fight_id: p.fightId,
-        selected_fighter: p.fighterName,
-        odds_at_pick: parseInt(p.odds, 10),
-        league_id: p.leagueId || null
+        user_id: user.email, username: username, fight_id: p.fightId, selected_fighter: p.fighterName, odds_at_pick: parseInt(p.odds, 10), league_id: p.leagueId || null
     }));
-
     const { error } = await supabase.from('picks').insert(picksToInsert);
-
-    if (error) {
-        console.error("Submission Error:", error);
-        alert(`Error saving picks: ${error.message}`);
-        setIsSubmitting(false);
-    } else {
-        setPendingPicks([]); 
-        setIsSubmitting(false);
-        setIsFocusMode(false);
-        setShowMobileSlip(false);
-        window.location.reload(); 
-    }
+    if (error) { console.error("Submission Error:", error); alert(`Error saving picks: ${error.message}`); setIsSubmitting(false); }
+    else { setPendingPicks([]); setIsSubmitting(false); setIsFocusMode(false); setShowMobileSlip(false); window.location.reload(); }
   };
 
   return (
     <div className="flex min-h-screen bg-black text-white overflow-hidden font-sans selection:bg-pink-500 selection:text-white">
       
-      {/* --- DESKTOP RAIL --- */}
+      {/* DESKTOP RAIL */}
       <div className={`hidden md:block transition-all duration-500 ${isFocusMode ? '-ml-20' : 'ml-0'}`}>
         <LeagueRail initialLeagues={myLeagues} />
       </div>
 
-      {/* --- MOBILE LEAGUE DRAWER (FIXED) --- */}
+      {/* MOBILE DRAWER */}
       <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
          <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
             <div className="p-6 border-b border-gray-800 flex justify-between items-center">
@@ -269,16 +189,11 @@ export default function DashboardClient({
             </div>
             
             <div className="p-4 space-y-6">
-                
-                {/* 1. LEAGUES LIST (Manually rendered vertically) */}
                 <div className="flex flex-col gap-3">
+                    {/* Render Leagues List */}
                     {myLeagues && myLeagues.length > 0 ? (
                         myLeagues.map(league => (
-                            <Link 
-                                key={league.id} 
-                                href={`/league/${league.id}`} 
-                                className="flex items-center gap-4 p-3 rounded-xl bg-gray-800/40 hover:bg-gray-800 border border-gray-700/50 hover:border-pink-500/50 transition-all group"
-                            >
+                            <Link key={league.id} href={`/league/${league.id}`} className="flex items-center gap-4 p-3 rounded-xl bg-gray-800/40 hover:bg-gray-800 border border-gray-700/50 hover:border-pink-500/50 transition-all group">
                                 <div className="w-10 h-10 rounded-full bg-gray-900 border border-gray-600 flex items-center justify-center text-[10px] font-black text-gray-400 group-hover:text-pink-500 group-hover:border-pink-500 transition-all shrink-0">
                                      {league.name.substring(0,2).toUpperCase()}
                                 </div>
@@ -290,12 +205,28 @@ export default function DashboardClient({
                     ) : (
                         <div className="p-4 border border-dashed border-gray-800 rounded-xl text-center">
                             <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest mb-2">No Leagues Joined</p>
-                            <Link href="/create-league" className="text-pink-500 text-xs font-black uppercase hover:underline">+ Create One</Link>
+                            
+                            {/* 3. FIX: BUTTON TRIGGERS MODAL */}
+                            <button 
+                                onClick={() => { setShowMobileLeagues(false); setShowCreateModal(true); }}
+                                className="text-pink-500 text-xs font-black uppercase hover:underline"
+                            >
+                                + Create One
+                            </button>
                         </div>
+                    )}
+                    
+                    {/* Always show "Create" option even if list has items */}
+                    {myLeagues && myLeagues.length > 0 && (
+                        <button 
+                            onClick={() => { setShowMobileLeagues(false); setShowCreateModal(true); }}
+                            className="w-full py-3 mt-2 border border-dashed border-gray-700 text-gray-500 rounded hover:text-teal-400 hover:border-teal-500 transition-all text-xs font-bold uppercase"
+                        >
+                            + Create / Join
+                        </button>
                     )}
                 </div>
                 
-                {/* 2. MENU LINKS */}
                 <div className="border-t border-gray-800 pt-6">
                     <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Menu</p>
                     <Link href="/leaderboard" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all mb-2">
@@ -312,7 +243,7 @@ export default function DashboardClient({
       </div>
 
       <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24 md:pb-0"> 
-        
+        {/* HEADER */}
         <header className={`sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800 transition-all duration-500 ${isFocusMode ? '-translate-y-full' : 'translate-y-0'}`}>
             <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -506,6 +437,13 @@ export default function DashboardClient({
             </div>
           </div>
       )}
+
+      {/* 4. RENDER THE EXISTING MODAL */}
+      <CreateLeagueModal 
+        isOpen={showCreateModal} 
+        onClose={() => setShowCreateModal(false)} 
+        onRefresh={() => window.location.reload()} 
+      />
 
       {/* --- MOBILE BOTTOM NAV --- */}
       <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
