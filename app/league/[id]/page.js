@@ -36,7 +36,7 @@ export default function LeaguePage() {
   const [cardFilter, setCardFilter] = useState('full'); 
   const [groupedFights, setGroupedFights] = useState({});
 
-  // --- NEW: ODDS STATE (Default False) ---
+  // Odds State
   const [showOdds, setShowOdds] = useState(false);
 
   // Champion Logic
@@ -58,11 +58,22 @@ export default function LeaguePage() {
       applyCardFilter();
   }, [cardFilter, allFights]);
 
-  // --- FILTER LOGIC ---
+  // --- UPDATED FILTER LOGIC ---
   const applyCardFilter = () => {
       if (allFights.length === 0) return;
       
-      let sorted = [...allFights].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+      // 1. GHOST FILTER: Remove fights that started > 12 hours ago but have no winner
+      const now = new Date().getTime();
+      const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+      
+      const validFights = allFights.filter(f => {
+          const fTime = new Date(f.start_time).getTime();
+          // Keep if it is in the future OR if it started recently (less than 12 hours ago)
+          return fTime > (now - TWELVE_HOURS);
+      });
+
+      // 2. Sort the valid fights
+      let sorted = [...validFights].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
       
       let nextEventFights = [];
       if (sorted.length > 0) {
@@ -127,7 +138,7 @@ export default function LeaguePage() {
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         setUser(currentUser);
 
-        // --- NEW: FETCH ODDS PREFERENCE ---
+        // Fetch Odds Preference
         if (currentUser) {
             const { data: profile } = await supabase
                 .from('profiles')
@@ -135,7 +146,6 @@ export default function LeaguePage() {
                 .eq('id', currentUser.id)
                 .single();
             
-            // Only enable if explicitly TRUE in DB
             if (profile && profile.show_odds === true) {
                 setShowOdds(true);
             }

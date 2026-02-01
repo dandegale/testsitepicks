@@ -8,7 +8,12 @@ export default function FightCard({
   showOdds = true 
 }) {
   
-  const isLocked = !!existingPick; 
+  // 1. NEW: Check if the fight has started based on local time
+  const hasStarted = new Date(fight.start_time) < new Date();
+
+  // 2. UPDATE: Lock the card if a pick exists OR if the fight has started
+  const isLocked = !!existingPick || hasStarted; 
+  
   const isSelected = pendingPick?.fighterName === fight.fighter_1_name || pendingPick?.fighterName === fight.fighter_2_name;
   
   const calculatePayout = (odds) => {
@@ -19,7 +24,6 @@ export default function FightCard({
       : ((100 / Math.abs(odds)) * stake) + stake;
   };
 
-  // Helper: Only hides the raw number if showOdds is false
   const renderOddsText = (odds) => {
       if (!showOdds) return <span className="opacity-0">---</span>; 
       return (
@@ -64,7 +68,6 @@ export default function FightCard({
             {fight.fighter_1_name}
           </h3>
           
-          {/* RAW ODDS: Hidden if toggle is OFF */}
           <div className="text-yellow-500 font-mono text-sm mb-4 min-h-[20px]">
             {renderOddsText(fight.fighter_1_odds)}
           </div>
@@ -81,14 +84,20 @@ export default function FightCard({
                   )
               }`}
           >
+            {/* LOGIC FOR BUTTON TEXT */}
             {isLocked && existingPick?.selected_fighter === fight.fighter_1_name && 'LOCKED IN'}
-            {isLocked && existingPick?.selected_fighter !== fight.fighter_1_name && 'LOCKED'}
+            
+            {/* Case: Locked, I picked the OTHER guy */}
+            {isLocked && existingPick?.selected_fighter && existingPick?.selected_fighter !== fight.fighter_1_name && 'LOCKED'}
+            
+            {/* Case: Locked because fight started, but I made NO pick */}
+            {isLocked && !existingPick && hasStarted && 'CLOSED'}
+            
             {!isLocked && pendingPick?.fighterName === fight.fighter_1_name && 'SELECTED'}
             
             {!isLocked && !pendingPick && (
               <div className="flex flex-col leading-tight">
                 <span>Pick to Win</span>
-                {/* PAYOUT: Always Visible now */}
                 <span className="text-[9px] opacity-75 font-medium normal-case mt-0.5">
                    Returns {calculatePayout(fight.fighter_1_odds).toFixed(2)}
                 </span>
@@ -105,7 +114,6 @@ export default function FightCard({
             {fight.fighter_2_name}
           </h3>
           
-          {/* RAW ODDS: Hidden if toggle is OFF */}
           <div className="text-yellow-500 font-mono text-sm mb-4 min-h-[20px]">
              {renderOddsText(fight.fighter_2_odds)}
           </div>
@@ -123,13 +131,16 @@ export default function FightCard({
               }`}
           >
              {isLocked && existingPick?.selected_fighter === fight.fighter_2_name && 'LOCKED IN'}
-             {isLocked && existingPick?.selected_fighter !== fight.fighter_2_name && 'LOCKED'}
+             {isLocked && existingPick?.selected_fighter && existingPick?.selected_fighter !== fight.fighter_2_name && 'LOCKED'}
+             
+             {/* Case: Locked because fight started, but I made NO pick */}
+             {isLocked && !existingPick && hasStarted && 'CLOSED'}
+
              {!isLocked && pendingPick?.fighterName === fight.fighter_2_name && 'SELECTED'}
              
              {!isLocked && !pendingPick && (
               <div className="flex flex-col leading-tight">
                 <span>Pick to Win</span>
-                {/* PAYOUT: Always Visible now */}
                 <span className="text-[9px] opacity-75 font-medium normal-case mt-0.5">
                    Returns {calculatePayout(fight.fighter_2_odds).toFixed(2)}
                 </span>
