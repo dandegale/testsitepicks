@@ -23,8 +23,7 @@ export async function GET() {
     const apiData = await response.json();
     if (!apiData || !Array.isArray(apiData)) return NextResponse.json({ message: 'No fights found in API' });
 
-    // --- FIX 1: Fetch ALL Active Fights (Not just future ones) ---
-    // This prevents creating duplicates for fights that just started (Live Odds)
+    // 1. Fetch ALL Active Fights (No winner yet)
     const { data: existingFights } = await supabase
         .from('fights')
         .select('*')
@@ -32,13 +31,14 @@ export async function GET() {
 
     const logs = [];
     const bookedFighters = new Set();
-    const PREFERRED_BOOKS = ['fanduel', 'draftkings', 'betmgm', 'bovada'];
+    
+    // NEW: Track which DB IDs were confirmed by this API update
+    const confirmedDbIds = new Set();
 
-    // CONFIG: 4 MONTH LIMIT
+    const PREFERRED_BOOKS = ['fanduel', 'draftkings', 'betmgm', 'bovada'];
     const MAX_DAYS_AHEAD = 120;
-    const today = new Date();
     const futureLimit = new Date();
-    futureLimit.setDate(today.getDate() + MAX_DAYS_AHEAD);
+    futureLimit.setDate(new Date().getDate() + MAX_DAYS_AHEAD);
 
     for (const event of apiData) {
         const fightDate = new Date(event.commence_time);
@@ -46,6 +46,7 @@ export async function GET() {
         // FILTER 1: Date Limit
         if (fightDate > futureLimit) continue;
 
+        // Find best bookmaker
         let bestBookmaker = null;
         for (const book of PREFERRED_BOOKS) {
             bestBookmaker = event.bookmakers.find(b => b.key === book);
@@ -86,16 +87,14 @@ export async function GET() {
             source: bestBookmaker.key
         };
 
-        // --- FIX 2: ROBUST FUZZY MATCHING ---
+        // MATCHING LOGIC
         const match = existingFights.find(dbFight => {
             const dbF1 = dbFight.fighter_1_name.toLowerCase().trim();
             const dbF2 = dbFight.fighter_2_name.toLowerCase().trim();
 
-            // Check A vs A AND B vs B (Exact or Partial)
             const matchDirect = (dbF1.includes(f1Key) || f1Key.includes(dbF1)) && 
                                 (dbF2.includes(f2Key) || f2Key.includes(dbF2));
             
-            // Check A vs B AND B vs A (Exact or Partial)
             const matchReverse = (dbF1.includes(f2Key) || f2Key.includes(dbF1)) && 
                                  (dbF2.includes(f1Key) || f1Key.includes(dbF2));
 
@@ -103,14 +102,17 @@ export async function GET() {
         });
 
         if (match) {
-            // Only update if something changed (saves DB writes)
+            // ✅ MARK AS CONFIRMED (So we don't delete it later)
+            confirmedDbIds.add(match.id);
+
+            // Only update if something changed
             if (match.fighter_1_odds !== outcome1.price || match.fighter_2_odds !== outcome2.price) {
                 await supabase.from('fights').update(fightPayload).eq('id', match.id);
                 logs.push(`Updated Odds: ${outcome1.name} vs ${outcome2.name}`);
             }
         } else {
             // Insert New Fight
-            // Optional: Ensure we don't insert old fights that somehow slipped through
+            // Only insert if it's in the future (prevents resurrecting old history)
             if (new Date(event.commence_time) > new Date()) {
                 await supabase.from('fights').insert(fightPayload);
                 logs.push(`✅ CREATED: ${outcome1.name} vs ${outcome2.name}`);
@@ -118,7 +120,30 @@ export async function GET() {
         }
     }
 
-    return NextResponse.json({ message: 'Sync Attempted', logs: logs });
+    // --- NEW: CLEANUP PHASE (The Fix) ---
+    // If a fight is in our DB, but was NOT found in the API response, it means it was cancelled or removed.
+    // We only delete fights that haven't been marked as "Winner" yet.
+    
+    const ghostFights = existingFights.filter(f => !confirmedDbIds.has(f.id));
+
+    if (ghostFights.length > 0) {
+        const ghostIds = ghostFights.map(f => f.id);
+        
+        // Safety Check: We could add logic here to only delete future fights if you're worried about live glitching,
+        // but generally, if the Odds API drops it, it's gone.
+        const { error: deleteError } = await supabase
+            .from('fights')
+            .delete()
+            .in('id', ghostIds);
+
+        if (!deleteError) {
+            logs.push(`🗑️ CLEANUP: Removed ${ghostFights.length} cancelled/ghost fights.`);
+        } else {
+            logs.push(`⚠️ CLEANUP ERROR: ${deleteError.message}`);
+        }
+    }
+
+    return NextResponse.json({ message: 'Sync & Cleanup Complete', logs: logs });
 
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

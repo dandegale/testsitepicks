@@ -8,16 +8,20 @@ export default function FightCard({
   showOdds = true 
 }) {
   
-  // --- FIX: VALIDATION LOGIC ---
+  // --- FIX: ROBUST TIME VALIDATION ---
   // 1. Create the date object
   const startTime = new Date(fight.start_time);
   
-  // 2. Check if the date is actually valid (not null, not 1970, not 'Invalid Date')
-  // We check if fight.start_time exists AND if the date object is valid
-  const isValidDate = fight.start_time && !isNaN(startTime.getTime());
+  // 2. SANITY CHECK: 
+  //    - Must exist
+  //    - Must be a valid date
+  //    - Must be AFTER 2024 (This filters out 1970/1900 placeholder dates)
+  const isValidDate = fight.start_time 
+                      && !isNaN(startTime.getTime()) 
+                      && startTime.getFullYear() > 2024;
 
   // 3. Only lock if it is a VALID date AND it is in the past
-  // If date is missing (null), we assume it hasn't started yet (Safe Fail)
+  // If the date is invalid (or from 1970), 'hasStarted' stays false, keeping the card OPEN.
   const hasStarted = isValidDate && startTime < new Date();
 
   // 4. Update Lock Logic

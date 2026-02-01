@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js'; 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -34,7 +34,7 @@ const CountdownDisplay = ({ targetDate }) => {
 };
 
 export default function DashboardClient({ 
-  fights, groupedFights, allPicks, myPicks, userEmail, myLeagues, totalWins, totalLosses, nextEventName, mainEvent 
+  fights, groupedFights: initialGroupedFights, allPicks, myPicks, userEmail, myLeagues, totalWins, totalLosses, nextEventName, mainEvent 
 }) {
   const router = useRouter();
   const [isFocusMode, setIsFocusMode] = useState(false);
@@ -43,14 +43,72 @@ export default function DashboardClient({
   const [showMobileLeagues, setShowMobileLeagues] = useState(false); 
   const [showMobileSlip, setShowMobileSlip] = useState(false);
   
-  // --- CHANGE 1: Default Odds to FALSE ---
+  // Default Odds to FALSE
   const [showOdds, setShowOdds] = useState(false); 
   
   const [clientPicks, setClientPicks] = useState(myPicks || []);
 
-  const winPercentage = (totalWins + totalLosses) > 0 ? (totalWins / (totalWins + totalLosses)) * 100 : 0;
+  // --- NEW: Live Career Stats State ---
+  const [careerStats, setCareerStats] = useState({ wins: 0, losses: 0 });
+
+  // Calculate Win % from the LIVE stats, not the static props
+  const liveWinPercentage = (careerStats.wins + careerStats.losses) > 0 
+      ? (careerStats.wins / (careerStats.wins + careerStats.losses)) * 100 
+      : 0;
+
   const eventDate = mainEvent?.start_time || "2026-02-01T22:00:00"; 
   const safeEventName = nextEventName || "Upcoming Event";
+
+  // --- GHOST FILTER LOGIC ---
+  const { cleanFights, cleanGroups } = useMemo(() => {
+      if (!fights) return { cleanFights: [], cleanGroups: {} };
+
+      const now = new Date().getTime();
+      const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+
+      // 1. Filter out old "Active" fights
+      const validFights = fights.filter(f => {
+          if (f.winner) return true; 
+          const fTime = new Date(f.start_time).getTime();
+          return fTime > (now - TWELVE_HOURS);
+      });
+
+      validFights.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+
+      let finalGroupedFights = {};
+      const tempGroups = [];
+      let currentBucket = [];
+      
+      let groupReferenceTime = validFights.length > 0 ? new Date(validFights[0].start_time).getTime() : 0;
+      const THREE_DAYS_MS = 72 * 60 * 60 * 1000;
+
+      validFights.forEach((fight) => {
+          const fightTime = new Date(fight.start_time).getTime();
+          
+          if (fightTime - groupReferenceTime < THREE_DAYS_MS) {
+              currentBucket.push(fight);
+          } else {
+              tempGroups.push(currentBucket);
+              currentBucket = [fight];
+              groupReferenceTime = fightTime;
+          }
+      });
+      if (currentBucket.length > 0) tempGroups.push(currentBucket);
+
+      tempGroups.forEach(bucket => {
+          if (bucket.length === 0) return;
+          const mainEventFight = bucket[bucket.length - 1];
+          const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
+              month: 'short', 
+              day: 'numeric' 
+          });
+          const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
+          finalGroupedFights[title] = [...bucket].reverse();
+      });
+
+      return { cleanFights: validFights, cleanGroups: finalGroupedFights };
+  }, [fights]);
+
 
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -64,16 +122,35 @@ export default function DashboardClient({
         
         if (picksData) {
             setClientPicks(picksData); 
+        
+            // 2. NEW: Calculate Career Record Live
+            // Fetch ALL completed fights (not just upcoming ones)
+            const { data: results } = await supabase
+                .from('fights')
+                .select('id, winner')
+                .not('winner', 'is', null);
+
+            if (results) {
+                let w = 0;
+                let l = 0;
+                picksData.forEach(p => {
+                    const fight = results.find(f => f.id === p.fight_id);
+                    if (fight && fight.winner) {
+                        if (fight.winner === p.selected_fighter) w++;
+                        else l++;
+                    }
+                });
+                setCareerStats({ wins: w, losses: l });
+            }
         }
 
-        // --- CHANGE 2: Fetch Profile Settings ---
+        // 3. Fetch Profile Settings for Odds
         const { data: profile } = await supabase
             .from('profiles')
             .select('show_odds')
             .eq('id', user.id)
             .single();
 
-        // Only set to true if DB explicitly says TRUE. Otherwise keep default (false).
         if (profile && profile.show_odds === true) {
             setShowOdds(true);
         }
@@ -193,13 +270,17 @@ export default function DashboardClient({
                     <div className="flex items-center gap-3 pr-4 border-r border-gray-800">
                         <div className="text-right">
                             <p className="text-[9px] font-black text-gray-600 uppercase tracking-tighter leading-none mb-1">Career Record</p>
-                            <p className="text-sm font-black italic text-white leading-none">{totalWins}W - {totalLosses}L</p>
+                            {/* UPDATED: USE LIVE STATS HERE */}
+                            <p className="text-sm font-black italic text-white leading-none">
+                                {careerStats.wins}W - {careerStats.losses}L
+                            </p>
                         </div>
                         <div className="w-8 h-8 rounded-full border border-gray-800 flex items-center justify-center relative text-[8px] font-black">
-                            {Math.round(winPercentage)}%
+                            {/* UPDATED: USE LIVE PERCENTAGE HERE */}
+                            {Math.round(liveWinPercentage)}%
                             <svg className="absolute inset-0 w-full h-full -rotate-90">
                                 <circle cx="16" cy="16" r="14" fill="none" stroke="#111" strokeWidth="1.5" />
-                                <circle cx="16" cy="16" r="14" fill="none" stroke="#db2777" strokeWidth="1.5" strokeDasharray="88" strokeDashoffset={88 - (88 * winPercentage) / 100} />
+                                <circle cx="16" cy="16" r="14" fill="none" stroke="#db2777" strokeWidth="1.5" strokeDasharray="88" strokeDashoffset={88 - (88 * liveWinPercentage) / 100} />
                             </svg>
                         </div>
                     </div>
@@ -258,10 +339,9 @@ export default function DashboardClient({
                     </div>
                     
                     <div className={`transition-all ${isFocusMode ? '[&_button]:animate-pulse' : ''}`}>
-                        {/* --- CHANGE 3: Pass showOdds prop --- */}
                         <FightDashboard 
-                            fights={fights} 
-                            groupedFights={groupedFights} 
+                            fights={cleanFights} 
+                            groupedFights={cleanGroups} 
                             initialPicks={allPicks} 
                             userPicks={clientPicks} 
                             league_id={null} 

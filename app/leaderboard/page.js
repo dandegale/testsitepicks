@@ -69,13 +69,18 @@ export default function LeaderboardPage() {
     return Math.round(standardWin / 10);
   };
 
+  // --- UPDATED LOGIC HERE ---
   const processLeaderboard = (picks, fights, profiles) => {
     const scores = {};
 
     picks.forEach((pick) => {
-        // Only count picks that have a decided result (marked as Correct in DB)
-        // OR calculate manually if you prefer comparing to the 'fights' table
-        if (pick.is_correct === true) {
+        // 1. Find the actual fight object for this pick
+        const fight = fights.find(f => f.id === pick.fight_id);
+
+        // 2. DYNAMIC CHECK: Does the fight have a winner? Does it match the pick?
+        // We ignore 'pick.is_correct' because the database might not be updated yet.
+        if (fight && fight.winner && fight.winner === pick.selected_fighter) {
+            
             const points = calculatePoints(pick.odds_at_pick);
             const userId = pick.user_id; // This is the email
 

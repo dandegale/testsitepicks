@@ -26,18 +26,18 @@ export async function GET() {
       return NextResponse.json({ message: 'No fights found in API' });
     }
 
-    // 2. Fetch ALL existing future fights from DB (To compare safely in memory)
+    // 2. FIX: Fetch ALL active fights (regardless of time) to prevent duplicates
+    // We fetch anything where 'winner' is null.
     const { data: existingFights } = await supabase
         .from('fights')
         .select('*')
-        .gt('start_time', new Date().toISOString());
+        .is('winner', null);
 
     const results = [];
 
     // 3. Process each fight
     for (const event of apiData) {
         
-        // --- BOOKMAKER LOGIC ---
         let bookmaker = event.bookmakers.find(b => b.key === 'fanduel');
         if (!bookmaker) {
             bookmaker = event.bookmakers.find(b => b.key === 'draftkings') || event.bookmakers[0];
@@ -48,7 +48,6 @@ export async function GET() {
         const outcome1 = bookmaker.markets[0].outcomes[0]; 
         const outcome2 = bookmaker.markets[0].outcomes[1]; 
 
-        // --- NAMING LOGIC ---
         const dateStr = new Date(event.commence_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         const dynamicEventName = event.sport_title && event.sport_title !== 'Mixed Martial Arts' 
             ? event.sport_title 
@@ -64,27 +63,24 @@ export async function GET() {
             source: bookmaker.key 
         };
 
-        // --- MATCHING LOGIC (The Fix) ---
-        // compare names in JavaScript to avoid SQL errors with "O'Malley"
         const match = existingFights.find(dbFight => {
             const dbF1 = dbFight.fighter_1_name.toLowerCase();
             const dbF2 = dbFight.fighter_2_name.toLowerCase();
             const newF1 = outcome1.name.toLowerCase();
             const newF2 = outcome2.name.toLowerCase();
 
-            // Check matches (including flipped order)
             return (dbF1 === newF1 && dbF2 === newF2) || (dbF1 === newF2 && dbF2 === newF1);
         });
 
         if (match) {
-            // UPDATE
+            // UPDATE existing fight
             await supabase
                 .from('fights')
                 .update(fightPayload)
                 .eq('id', match.id);
             results.push(`Updated: ${outcome1.name} vs ${outcome2.name}`);
         } else {
-            // INSERT
+            // INSERT only if truly new
             await supabase
                 .from('fights')
                 .insert(fightPayload);
