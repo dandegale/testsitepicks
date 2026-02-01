@@ -43,15 +43,11 @@ export default function DashboardClient({
   const [showMobileLeagues, setShowMobileLeagues] = useState(false); 
   const [showMobileSlip, setShowMobileSlip] = useState(false);
   
-  // Default Odds to FALSE
   const [showOdds, setShowOdds] = useState(false); 
   
   const [clientPicks, setClientPicks] = useState(myPicks || []);
-
-  // --- NEW: Live Career Stats State ---
   const [careerStats, setCareerStats] = useState({ wins: 0, losses: 0 });
 
-  // Calculate Win % from the LIVE stats, not the static props
   const liveWinPercentage = (careerStats.wins + careerStats.losses) > 0 
       ? (careerStats.wins / (careerStats.wins + careerStats.losses)) * 100 
       : 0;
@@ -66,7 +62,6 @@ export default function DashboardClient({
       const now = new Date().getTime();
       const TWELVE_HOURS = 12 * 60 * 60 * 1000;
 
-      // 1. Filter out old "Active" fights
       const validFights = fights.filter(f => {
           if (f.winner) return true; 
           const fTime = new Date(f.start_time).getTime();
@@ -123,8 +118,7 @@ export default function DashboardClient({
         if (picksData) {
             setClientPicks(picksData); 
         
-            // 2. NEW: Calculate Career Record Live
-            // Fetch ALL completed fights (not just upcoming ones)
+            // 2. Fetch ALL completed fights
             const { data: results } = await supabase
                 .from('fights')
                 .select('id, winner')
@@ -133,18 +127,28 @@ export default function DashboardClient({
             if (results) {
                 let w = 0;
                 let l = 0;
+                
+                // --- FIX: DEDUPLICATION LOGIC ---
+                // We use a Set to track fight IDs we have already counted for this user.
+                const processedFightIds = new Set();
+
                 picksData.forEach(p => {
+                    // Skip if we already counted this fight (e.g. same pick in 2 leagues)
+                    if (processedFightIds.has(p.fight_id)) return;
+
                     const fight = results.find(f => f.id === p.fight_id);
                     if (fight && fight.winner) {
                         if (fight.winner === p.selected_fighter) w++;
                         else l++;
+                        
+                        // Mark this fight as counted
+                        processedFightIds.add(p.fight_id);
                     }
                 });
                 setCareerStats({ wins: w, losses: l });
             }
         }
 
-        // 3. Fetch Profile Settings for Odds
         const { data: profile } = await supabase
             .from('profiles')
             .select('show_odds')
@@ -270,13 +274,11 @@ export default function DashboardClient({
                     <div className="flex items-center gap-3 pr-4 border-r border-gray-800">
                         <div className="text-right">
                             <p className="text-[9px] font-black text-gray-600 uppercase tracking-tighter leading-none mb-1">Career Record</p>
-                            {/* UPDATED: USE LIVE STATS HERE */}
                             <p className="text-sm font-black italic text-white leading-none">
                                 {careerStats.wins}W - {careerStats.losses}L
                             </p>
                         </div>
                         <div className="w-8 h-8 rounded-full border border-gray-800 flex items-center justify-center relative text-[8px] font-black">
-                            {/* UPDATED: USE LIVE PERCENTAGE HERE */}
                             {Math.round(liveWinPercentage)}%
                             <svg className="absolute inset-0 w-full h-full -rotate-90">
                                 <circle cx="16" cy="16" r="14" fill="none" stroke="#111" strokeWidth="1.5" />
