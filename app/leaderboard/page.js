@@ -45,6 +45,7 @@ export default function LeaderboardPage() {
     // 2. Fetch DATA
     const { data: picks } = await supabase.from('picks').select('*');
     const { data: fights } = await supabase.from('fights').select('*');
+    // Fetch profiles to try and get the latest username
     const { data: profiles } = await supabase.from('profiles').select('email, username');
 
     if (picks && fights) {
@@ -70,7 +71,7 @@ export default function LeaderboardPage() {
     return Math.round(standardWin / 10);
   };
 
-  // --- UPDATED LOGIC: FACTOR IN LOSSES ---
+  // --- UPDATED LOGIC: USERNAME FIX ---
   const processLeaderboard = (picks, fights, profiles) => {
     const scores = {};
 
@@ -87,8 +88,12 @@ export default function LeaderboardPage() {
 
             // Initialize User if missing
             if (!scores[userId]) {
+                // 1. Try to find LIVE profile (best case)
                 const userProfile = profiles.find(p => p.email === userId);
-                const displayName = userProfile?.username || userId.split('@')[0];
+                
+                // 2. Fallback to the username SAVED ON THE PICK (second best)
+                // 3. Last resort: Use the email handle
+                const displayName = userProfile?.username || pick.username || userId.split('@')[0];
 
                 scores[userId] = { 
                     name: displayName, 
@@ -100,12 +105,10 @@ export default function LeaderboardPage() {
 
             // --- WIN / LOSS LOGIC ---
             if (fight.winner === pick.selected_fighter) {
-                // WIN: Add calculated points
                 const points = calculatePoints(pick.odds_at_pick);
                 scores[userId].score += points;
                 scores[userId].wins += 1;
             } else {
-                // LOSS: Subtract the wager (10 points)
                 scores[userId].score -= 10;
             }
         }
