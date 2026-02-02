@@ -10,7 +10,6 @@ import LeagueRail from '../../components/LeagueRail';
 import BettingSlip from '../../components/BettingSlip'; 
 import LogOutButton from '../../components/LogOutButton';
 import MobileNav from '../../components/MobileNav'; 
-// 1. IMPORT TOAST
 import Toast from '../../components/Toast'; 
 
 const supabase = createClient(
@@ -35,6 +34,7 @@ export default function LeaguePage() {
   const [league, setLeague] = useState(null);
   const [members, setMembers] = useState([]); 
   const [leaderboard, setLeaderboard] = useState([]); 
+  const [feedItems, setFeedItems] = useState([]); 
   
   // Fight Data
   const [allFights, setAllFights] = useState([]); 
@@ -56,7 +56,7 @@ export default function LeaguePage() {
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // --- NEW: TOAST & DELETE STATE ---
+  // Toast & Delete States
   const [toast, setToast] = useState(null); 
   const [deleteConfirm, setDeleteConfirm] = useState(false); 
   const [deleting, setDeleting] = useState(false);
@@ -71,14 +71,13 @@ export default function LeaguePage() {
 
   const applyCardFilter = () => {
       if (allFights.length === 0) return;
-      
       const now = new Date().getTime();
       const TWELVE_HOURS = 12 * 60 * 60 * 1000;
       
       const validFights = allFights.filter(f => {
           if (!f || !f.start_time) return false;
           const fTime = new Date(f.start_time).getTime();
-          return fTime > (now - TWELVE_HOURS);
+          return (fTime > (now - TWELVE_HOURS)) || (f.winner === null);
       });
 
       let sorted = [...validFights].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
@@ -87,7 +86,6 @@ export default function LeaguePage() {
       if (sorted.length > 0) {
           const firstFightTime = new Date(sorted[0].start_time).getTime();
           const EVENT_WINDOW = 4 * 24 * 60 * 60 * 1000; 
-
           nextEventFights = sorted.filter(f => {
               const fTime = new Date(f.start_time).getTime();
               return fTime < (firstFightTime + EVENT_WINDOW);
@@ -95,9 +93,7 @@ export default function LeaguePage() {
       }
 
       let filtered = [...nextEventFights];
-      if (cardFilter === 'main') {
-          filtered = filtered.slice(-5);
-      }
+      if (cardFilter === 'main') filtered = filtered.slice(-5);
       
       setVisibleFights(filtered);
 
@@ -107,13 +103,11 @@ export default function LeaguePage() {
       let finalGroupedFights = {};
       const tempGroups = [];
       let currentBucket = [];
-      
       let groupReferenceTime = filtered.length > 0 ? new Date(filtered[0].start_time).getTime() : 0;
       const THREE_DAYS_MS = 72 * 60 * 60 * 1000;
 
       filtered.forEach((fight) => {
           const fightTime = new Date(fight.start_time).getTime();
-          
           if (fightTime - groupReferenceTime < THREE_DAYS_MS) {
               currentBucket.push(fight);
           } else {
@@ -126,16 +120,9 @@ export default function LeaguePage() {
 
       tempGroups.forEach(bucket => {
           if (bucket.length === 0) return;
-
           const mainEventFight = bucket[bucket.length - 1];
-          const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
-              month: 'short', 
-              day: 'numeric',
-              timeZone: 'America/New_York'
-          });
-          
+          const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
           const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
-
           finalGroupedFights[title] = [...bucket].reverse();
       });
 
@@ -148,22 +135,11 @@ export default function LeaguePage() {
         setUser(currentUser);
 
         if (currentUser) {
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('show_odds')
-                .eq('id', currentUser.id)
-                .single();
-            
-            if (profile && profile.show_odds === true) {
-                setShowOdds(true);
-            }
+            const { data: profile } = await supabase.from('profiles').select('show_odds').eq('id', currentUser.id).single();
+            if (profile && profile.show_odds === true) setShowOdds(true);
         }
 
-        const { data: leagueData } = await supabase
-          .from('leagues')
-          .select('*')
-          .eq('id', leagueId)
-          .single();
+        const { data: leagueData } = await supabase.from('leagues').select('*').eq('id', leagueId).single();
         setLeague(leagueData);
 
         if (currentUser && leagueData) {
@@ -171,75 +147,63 @@ export default function LeaguePage() {
             setIsAdmin(isCreator);
         }
 
-        const { data: membersData } = await supabase
-            .from('league_members')
-            .select('user_id, joined_at') 
-            .eq('league_id', leagueId);
-        
+        // Fetch Members & Avatars
+        const { data: membersData } = await supabase.from('league_members').select('user_id, joined_at').eq('league_id', leagueId);
         let processedMembers = membersData || [];
 
         if (processedMembers.length > 0) {
             const memberIds = processedMembers.map(m => m.user_id);
-            const { data: profiles } = await supabase
-                .from('profiles')
-                .select('email, username') 
-                .in('email', memberIds);   
+            const { data: profiles } = await supabase.from('profiles').select('email, username, avatar_url').in('email', memberIds);   
 
             processedMembers = processedMembers.map(member => {
                 const profile = profiles?.find(p => p.email === member.user_id);
-                const displayName = (profile && profile.username) 
-                    ? profile.username 
-                    : member.user_id.split('@')[0]; 
-
-                return { ...member, displayName };
+                const displayName = (profile && profile.username) ? profile.username : member.user_id.split('@')[0]; 
+                const avatarUrl = profile?.avatar_url || null;
+                return { ...member, displayName, avatarUrl };
             });
         }
-
         setMembers(processedMembers);
 
-        if (currentUser) {
-            const { data: memberships } = await supabase
-              .from('league_members')
-              .select('leagues ( id, name, image_url, invite_code )')
-              .eq('user_id', currentUser.email);
-            if (memberships) {
-              setMyLeagues(memberships.map(m => m.leagues).filter(Boolean));
-            }
-        }
-
-        const { data: allFutureFights } = await supabase
-            .from('fights')
-            .select('*')
-            .is('winner', null) 
-            .order('start_time', { ascending: true });
-
-        setAllFights(allFutureFights || []);
+        const { data: globalFights } = await supabase.from('fights').select('*').order('start_time', { ascending: true });
+        setAllFights(globalFights || []);
 
         if (currentUser) {
-            const { data: picksData } = await supabase
-                .from('picks')
-                .select('*')
-                .eq('user_id', currentUser.email)
-                .eq('league_id', leagueId); 
+            const { data: picksData } = await supabase.from('picks').select('*').eq('user_id', currentUser.email).eq('league_id', leagueId); 
             setExistingPicks(picksData || []);
         }
 
-        const { data: completedFights } = await supabase
-            .from('fights')
-            .select('id, winner')
-            .not('winner', 'is', null);
+        const { data: completedFights } = await supabase.from('fights').select('id, winner').not('winner', 'is', null);
 
         const { data: allLeaguePicks } = await supabase
             .from('picks')
-            .select('user_id, fight_id, selected_fighter, odds_at_pick')
+            .select('user_id, fight_id, selected_fighter, odds_at_pick, created_at')
             .eq('league_id', leagueId);
 
+        // Build Feed
+        if (allLeaguePicks && globalFights && processedMembers) {
+            const feed = allLeaguePicks.map(pick => {
+                const member = processedMembers.find(m => m.user_id === pick.user_id);
+                const fight = globalFights.find(f => f.id === pick.fight_id);
+                return {
+                    id: `${pick.user_id}-${pick.fight_id}`,
+                    user: member?.displayName || "Unknown",
+                    avatar: member?.avatarUrl,
+                    user_id: pick.user_id,
+                    fighter: pick.selected_fighter,
+                    odds: pick.odds_at_pick,
+                    timestamp: pick.created_at,
+                    fight_context: fight ? `${fight.fighter_1_name} vs ${fight.fighter_2_name}` : 'Unknown Fight',
+                    result: fight?.winner ? (fight.winner === pick.selected_fighter ? 'WIN' : 'LOSS') : 'PENDING'
+                };
+            });
+            feed.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            setFeedItems(feed);
+        }
+
+        // Leaderboard
         if (processedMembers && allLeaguePicks) {
             const scores = processedMembers.map(member => {
-                let wins = 0;
-                let losses = 0;
-                let totalScore = 0;
-
+                let wins = 0; let losses = 0; let totalScore = 0;
                 const memberPicks = allLeaguePicks.filter(p => p.user_id === member.user_id);
 
                 memberPicks.forEach(pick => {
@@ -252,9 +216,7 @@ export default function LeaguePage() {
                             if (!isNaN(numericOdds) && numericOdds !== 0) {
                                 if (numericOdds > 0) profit = (numericOdds / 100) * 10;
                                 else profit = (100 / Math.abs(numericOdds)) * 10;
-                            } else {
-                                profit = 10; 
-                            }
+                            } else { profit = 10; }
                             totalScore += (profit + 10);
                         } else {
                             losses++;
@@ -265,32 +227,26 @@ export default function LeaguePage() {
 
                 return {
                     user_id: member.user_id,
-                    displayName: member.displayName, 
-                    wins,
-                    losses,
+                    displayName: member.displayName,
+                    avatarUrl: member.avatarUrl,
+                    wins, losses,
                     totalScore: parseFloat(totalScore.toFixed(1)),
                     winRate: (wins + losses) > 0 ? Math.round((wins / (wins + losses)) * 100) : 0
                 };
             });
-
             scores.sort((a, b) => b.totalScore - a.totalScore || b.wins - a.wins);
             setLeaderboard(scores);
         }
 
-    } catch (error) {
-        console.error("League Load Error:", error);
-    } finally {
-        setLoading(false);
-    }
+    } catch (error) { console.error("League Load Error:", error); } finally { setLoading(false); }
   };
 
   const handleCopyCode = () => {
     if (league?.invite_code) {
         const inviteUrl = `${window.location.origin}/league/${leagueId}?invite=${league.invite_code}`;
         const shareMessage = `Join my fight league on FightIQ! 👊\n${inviteUrl}`;
-
         navigator.clipboard.writeText(shareMessage).then(() => {
-            // Using Toast instead of simple state if desired, but kept simple state for "Code Copy"
+            setToast({ message: "Invite Link Copied!", type: "success" });
             setCopySuccess(true);
             setTimeout(() => setCopySuccess(false), 2000);
         });
@@ -298,7 +254,6 @@ export default function LeaguePage() {
   };
 
   const handleKickMember = async (memberUserId) => {
-    // Kept browser confirm for kick (minor action)
     if (!confirm(`Are you sure you want to KICK ${memberUserId}?`)) return;
     const { error } = await supabase.from('league_members').delete().eq('league_id', leagueId).eq('user_id', memberUserId);
     if (error) alert('Error: ' + error.message);
@@ -308,22 +263,15 @@ export default function LeaguePage() {
     }
   };
 
-  // --- UPDATED DELETE LOGIC (NO BROWSER ALERT) ---
   const handleDeleteLeague = async () => {
-      // 1. First Click: Show Warning Toast
       if (!deleteConfirm) {
           setDeleteConfirm(true);
           setToast({ message: "⚠️ Click DELETE again to confirm!", type: "error" });
-          
-          // Reset confirm state after 3 seconds
           setTimeout(() => setDeleteConfirm(false), 3000);
           return;
       }
-
-      // 2. Second Click: Perform Delete
       setDeleting(true);
       const { error } = await supabase.from('leagues').delete().eq('id', leagueId);
-      
       if (error) {
           setToast({ message: "Delete Failed: " + error.message, type: "error" });
           setDeleting(false);
@@ -339,21 +287,14 @@ export default function LeaguePage() {
         const existingIndex = currentPicks.findIndex(p => p.fightId === newPick.fightId);
         if (existingIndex >= 0) {
             const existingPick = currentPicks[existingIndex];
-            if (existingPick.fighterName === newPick.fighterName) {
-                return currentPicks.filter((_, i) => i !== existingIndex);
-            } else {
-                const updated = [...currentPicks];
-                updated[existingIndex] = newPick;
-                return updated;
-            }
+            if (existingPick.fighterName === newPick.fighterName) return currentPicks.filter((_, i) => i !== existingIndex);
+            const updated = [...currentPicks]; updated[existingIndex] = newPick; return updated;
         }
         return [...currentPicks, newPick];
     });
   };
 
-  const handleRemovePick = (fightId) => {
-    setPendingPicks(current => current.filter(p => p.fightId !== fightId));
-  };
+  const handleRemovePick = (fightId) => setPendingPicks(c => c.filter(p => p.fightId !== fightId));
 
   const handleConfirmAllPicks = async () => {
     if (pendingPicks.length === 0) return;
@@ -367,7 +308,6 @@ export default function LeaguePage() {
     }
 
     const username = user.user_metadata?.username || user.email.split('@')[0];
-
     const picksToInsert = pendingPicks.map(p => ({
         user_id: user.email,
         username: username, 
@@ -378,15 +318,13 @@ export default function LeaguePage() {
     }));
 
     const { error } = await supabase.from('picks').insert(picksToInsert);
-
     setIsSubmitting(false);
 
-    if (error) {
-        setToast({ message: "Error saving picks", type: "error" });
-    } else {
+    if (error) setToast({ message: "Error saving picks", type: "error" });
+    else {
         setPendingPicks([]); 
         setToast({ message: "Picks Locked In!", type: "success" });
-        setTimeout(() => window.location.reload(), 1000); 
+        setTimeout(() => window.location.reload(), 1500); 
     }
   };
 
@@ -403,11 +341,7 @@ export default function LeaguePage() {
 
   return (
     <div className="flex min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
-      
-      {/* Sidebar */}
-      <div className="hidden md:block">
-        <LeagueRail initialLeagues={myLeagues} />
-      </div>
+      <div className="hidden md:block"><LeagueRail initialLeagues={myLeagues} /></div>
 
       <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24 md:pb-0">
         
@@ -415,85 +349,46 @@ export default function LeaguePage() {
         <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
             <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Link href="/" className="text-2xl font-black italic text-white tracking-tighter uppercase">
-                        FIGHT<span className="text-pink-600">IQ</span>
-                    </Link>
+                    <Link href="/" className="text-2xl font-black italic text-white tracking-tighter uppercase">FIGHT<span className="text-pink-600">IQ</span></Link>
                     <div className="h-4 w-px bg-gray-800 mx-2"></div>
                     <nav className="hidden md:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
                         <Link href="/" className="hover:text-white transition-colors">Global Feed</Link>
-                        <span className="text-pink-600 cursor-default truncate max-w-[150px]">
-                            {league?.name}
-                        </span>
+                        <span className="text-pink-600 cursor-default truncate max-w-[150px]">{league?.name}</span>
                     </nav>
                 </div>
                 <div className="flex items-center gap-4">
-                     <Link href="/profile" className="bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all">
-                        MY PROFILE
-                    </Link>
+                     <Link href="/profile" className="bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all">MY PROFILE</Link>
                     <LogOutButton />
                 </div>
             </div>
         </header>
 
-        {/* League Hero */}
+        {/* Hero */}
         <div className="relative w-full bg-gray-900 overflow-hidden border-b border-gray-800 h-[200px]">
             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent z-10" />
-            {league?.image_url && (
-                <img src={league.image_url} className="absolute inset-0 w-full h-full object-cover opacity-50" alt="League Banner" />
-            )}
+            {league?.image_url && <img src={league.image_url} className="absolute inset-0 w-full h-full object-cover opacity-50" alt="League Banner" />}
             <div className="absolute inset-0 flex flex-col justify-end p-6 md:p-10 z-20">
                 <div className="max-w-7xl mx-auto w-full">
-                    <span className="bg-pink-600 text-white text-[9px] font-black uppercase px-2 py-1 rounded inline-block mb-3">
-                        Private League
-                    </span>
-                    <h1 className="text-4xl md:text-6xl font-black italic uppercase tracking-tighter mb-2 leading-none">
-                        {league?.name}
-                    </h1>
-                    
-                    {/* Invite Code / Share Button (Hero Section) */}
+                    <span className="bg-pink-600 text-white text-[9px] font-black uppercase px-2 py-1 rounded inline-block mb-3">Private League</span>
+                    <h1 className="text-4xl md:text-6xl font-black italic uppercase tracking-tighter mb-2 leading-none">{league?.name}</h1>
                     <div className="flex items-center gap-4 text-gray-400 text-xs font-bold uppercase tracking-widest">
-                        <button 
-                            onClick={handleCopyCode}
-                            className="group flex items-center gap-2 hover:text-white transition-colors"
-                        >
+                        <button onClick={handleCopyCode} className="group flex items-center gap-2 hover:text-white transition-colors">
                             <span>Invite Code:</span>
-                            <span className="text-white bg-gray-800 border border-gray-700 group-hover:border-pink-500 px-3 py-1 rounded select-all font-mono">
-                                {league?.invite_code}
-                            </span>
-                            <span className="text-pink-500 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
-                                {copySuccess ? 'LINK COPIED!' : '❐ SHARE LINK'}
-                            </span>
+                            <span className="text-white bg-gray-800 border border-gray-700 group-hover:border-pink-500 px-3 py-1 rounded select-all font-mono">{league?.invite_code}</span>
+                            <span className="text-pink-500 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">{copySuccess ? 'LINK COPIED!' : '❐ SHARE LINK'}</span>
                         </button>
                     </div>
-
                 </div>
             </div>
         </div>
 
-        {/* --- TABS --- */}
+        {/* Tabs */}
         <div className="border-b border-gray-800 bg-gray-950">
             <div className="max-w-7xl mx-auto px-6 py-0 flex gap-0">
-                <button 
-                    onClick={() => setActiveTab('card')}
-                    className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'card' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}
-                >
-                    Fight Card
-                </button>
-                <button 
-                    onClick={() => setActiveTab('leaderboard')}
-                    className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'leaderboard' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}
-                >
-                    Leaderboard
-                </button>
-                {/* Admin Tab - Only visible if isAdmin is true */}
-                {isAdmin && (
-                    <button 
-                        onClick={() => setActiveTab('settings')}
-                        className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'settings' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}
-                    >
-                        Admin Settings
-                    </button>
-                )}
+                <button onClick={() => setActiveTab('card')} className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'card' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}>Fight Card</button>
+                <button onClick={() => setActiveTab('feed')} className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'feed' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}>Activity Feed</button>
+                <button onClick={() => setActiveTab('leaderboard')} className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'leaderboard' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}>Leaderboard</button>
+                {isAdmin && <button onClick={() => setActiveTab('settings')} className={`px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'settings' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}>Admin Settings</button>}
             </div>
         </div>
 
@@ -503,61 +398,77 @@ export default function LeaguePage() {
                 {/* LEFT COLUMN */}
                 <div className="w-full xl:w-[66%] pr-0 xl:pr-10 transition-all">
                     
+                    {/* FIGHT CARD TAB */}
                     {activeTab === 'card' && (
                         <>
                             <div className="flex items-center justify-between mb-6">
                                 <div className="flex items-center gap-4">
-                                    <div className="flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-pink-600 animate-pulse"></span>
-                                        <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
-                                            League Fight Card
-                                        </h2>
-                                    </div>
-                                    
-                                    {/* --- RESTORED QUICK COPY BUTTON --- */}
-                                    <button 
-                                        onClick={handleCopyCode}
-                                        className="hidden md:flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1 rounded transition-all group"
-                                    >
+                                    <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-pink-600 animate-pulse"></span><h2 className="text-xl font-black uppercase italic tracking-tighter text-white">League Fight Card</h2></div>
+                                    <button onClick={handleCopyCode} className="hidden md:flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1 rounded transition-all group">
                                         <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Share:</span>
                                         <span className="text-xs font-mono font-bold text-pink-500">{league?.invite_code}</span>
-                                        <span className="text-[10px] text-gray-500 group-hover:text-white">
-                                            {copySuccess ? '✓' : '❐'}
-                                        </span>
+                                        <span className="text-[10px] text-gray-500 group-hover:text-white">{copySuccess ? '✓' : '❐'}</span>
                                     </button>
                                 </div>
-
-                                <div className="text-[10px] font-black uppercase text-gray-500 tracking-widest">
-                                    Showing: <span className="text-pink-600">{cardFilter === 'full' ? 'Full Card' : 'Main Card (Last 5)'}</span>
-                                </div>
+                                <div className="text-[10px] font-black uppercase text-gray-500 tracking-widest">Showing: <span className="text-pink-600">{cardFilter === 'full' ? 'Full Card' : 'Main Card (Last 5)'}</span></div>
                             </div>
-                            
                             {visibleFights.length > 0 ? (
-                                <FightDashboard 
-                                    fights={visibleFights} 
-                                    groupedFights={groupedFights} 
-                                    initialPicks={existingPicks} 
-                                    userPicks={existingPicks} 
-                                    league_id={leagueId} 
-                                    onPickSelect={handlePickSelect} 
-                                    pendingPicks={pendingPicks} 
-                                    showOdds={showOdds} 
-                                />
-                            ) : (
-                                <div className="p-12 border border-gray-800 rounded-xl text-center text-gray-500 font-bold uppercase tracking-widest">
-                                    No fights scheduled.
-                                </div>
-                            )}
+                                <FightDashboard fights={visibleFights} groupedFights={groupedFights} initialPicks={existingPicks} userPicks={existingPicks} league_id={leagueId} onPickSelect={handlePickSelect} pendingPicks={pendingPicks} showOdds={showOdds} />
+                            ) : <div className="p-12 border border-gray-800 rounded-xl text-center text-gray-500 font-bold uppercase tracking-widest">No fights scheduled.</div>}
                         </>
                     )}
 
+                    {/* ACTIVITY FEED TAB */}
+                    {activeTab === 'feed' && (
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+                             <div className="flex items-center gap-2 mb-6">
+                                <span className="text-2xl">⚡</span>
+                                <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">Recent Activity</h2>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                {feedItems.map(item => (
+                                    <div key={item.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between hover:border-gray-700 transition-colors">
+                                        <div className="flex items-center gap-4">
+                                            {item.avatar ? (
+                                                <img src={item.avatar} alt={item.user} className="w-10 h-10 rounded-full object-cover border border-gray-700 shrink-0" />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center font-black text-gray-500 border border-gray-700 shrink-0">
+                                                    {item.user.charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
+                                            
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-white text-sm">{item.user}</span>
+                                                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">locked in</span>
+                                                </div>
+                                                <div className="text-lg font-black italic text-pink-500 uppercase leading-none mt-1">{item.fighter}</div>
+                                                <div className="text-[10px] text-gray-500 font-mono mt-1">{item.fight_context}</div>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            {showOdds && <div className="text-xs font-mono font-bold text-teal-400">{item.odds > 0 ? `+${item.odds}` : item.odds}</div>}
+                                            <div className="text-[9px] text-gray-600 font-bold uppercase tracking-widest mt-1">{new Date(item.timestamp).toLocaleDateString()}</div>
+                                            {item.result !== 'PENDING' && (
+                                                <span className={`inline-block mt-1 px-2 py-0.5 rounded text-[8px] font-black uppercase ${item.result === 'WIN' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>{item.result}</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                                {feedItems.length === 0 && (
+                                    <div className="p-12 border border-gray-800 rounded-xl text-center text-gray-500 font-bold uppercase tracking-widest">No activity yet. Be the first to make a pick!</div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* LEADERBOARD TAB */}
                     {activeTab === 'leaderboard' && (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
                              <div className="flex items-center gap-2 mb-6">
                                 <span className="text-2xl">🏆</span>
-                                <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
-                                    League Standings
-                                </h2>
+                                <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">League Standings</h2>
                             </div>
 
                             <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
@@ -570,47 +481,32 @@ export default function LeaguePage() {
                                 <div className="divide-y divide-gray-800">
                                     {leaderboard.map((player, index) => (
                                         <div key={player.user_id} className={`grid grid-cols-12 gap-4 p-4 items-center hover:bg-gray-800/30 transition-colors ${user?.email === player.user_id ? 'bg-pink-900/10' : ''}`}>
-                                            <div className="col-span-1 text-center font-black text-lg italic text-gray-600">
-                                                #{index + 1}
-                                            </div>
+                                            <div className="col-span-1 text-center font-black text-lg italic text-gray-600">#{index + 1}</div>
                                             <div className="col-span-6 flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-300">
-                                                    {player.displayName.charAt(0).toUpperCase()}
-                                                </div>
-                                                <div>
-                                                    <div className={`font-bold text-sm ${user?.email === player.user_id ? 'text-pink-500' : 'text-white'}`}>
-                                                        {player.displayName}
+                                                {player.avatarUrl ? (
+                                                    <img src={player.avatarUrl} alt={player.displayName} className="w-8 h-8 rounded-full object-cover border border-gray-700" />
+                                                ) : (
+                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-300">
+                                                        {player.displayName.charAt(0).toUpperCase()}
                                                     </div>
-                                                    
-                                                    {isEventConcluded && index === 0 && (
-                                                        <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest block mt-1">
-                                                            👑 Champion
-                                                        </span>
-                                                    )}
+                                                )}
+                                                <div>
+                                                    <div className={`font-bold text-sm ${user?.email === player.user_id ? 'text-pink-500' : 'text-white'}`}>{player.displayName}</div>
+                                                    {isEventConcluded && index === 0 && <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest block mt-1">👑 Champion</span>}
                                                 </div>
                                             </div>
-                                            <div className="col-span-2 text-center font-bold text-gray-400 text-xs">
-                                                <span className="text-white">{player.wins}</span> - {player.losses}
-                                            </div>
-                                            
-                                            <div className="col-span-3 text-right">
-                                                <span className={`px-2 py-1 rounded text-[10px] font-black ${player.totalScore >= 0 ? 'bg-teal-950 text-teal-400 border border-teal-900' : 'bg-red-950 text-red-400 border border-red-900'}`}>
-                                                    {player.totalScore > 0 ? '+' : ''}{player.totalScore} PTS
-                                                </span>
-                                            </div>
+                                            <div className="col-span-2 text-center font-bold text-gray-400 text-xs"><span className="text-white">{player.wins}</span> - {player.losses}</div>
+                                            <div className="col-span-3 text-right"><span className={`px-2 py-1 rounded text-[10px] font-black ${player.totalScore >= 0 ? 'bg-teal-950 text-teal-400 border border-teal-900' : 'bg-red-950 text-red-400 border border-red-900'}`}>{player.totalScore > 0 ? '+' : ''}{player.totalScore} PTS</span></div>
                                         </div>
                                     ))}
-                                    {leaderboard.length === 0 && (
-                                        <div className="p-8 text-center text-gray-500 text-xs font-bold uppercase tracking-widest">
-                                            No ranked members yet.
-                                        </div>
-                                    )}
+                                    {leaderboard.length === 0 && <div className="p-8 text-center text-gray-500 text-xs font-bold uppercase tracking-widest">No ranked members yet.</div>}
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {activeTab === 'settings' && (
+                    {/* SETTINGS TAB (RESTORED) */}
+                    {activeTab === 'settings' && isAdmin && (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-12">
                             
                             {/* 1. EDIT LEAGUE DETAILS */}
@@ -692,27 +588,7 @@ export default function LeaguePage() {
                                 </div>
                             </div>
 
-                            {/* 3. DANGER ZONE - UPDATED DELETE BUTTON */}
-                            <div className="pt-8 border-t border-gray-800">
-                                <div className="flex items-center justify-between gap-2 mb-4">
-                                    <h2 className="text-xl font-black uppercase italic tracking-tighter text-red-600">
-                                        Danger Zone
-                                    </h2>
-                                    <button 
-                                        onClick={handleDeleteLeague}
-                                        disabled={deleting}
-                                        className={`px-6 py-3 rounded text-[10px] font-black uppercase tracking-widest transition-all ${
-                                            deleteConfirm 
-                                            ? "bg-red-600 text-white animate-pulse shadow-[0_0_15px_rgba(220,38,38,0.5)]" 
-                                            : "bg-red-950/20 text-red-500 hover:bg-red-950/40 border border-red-900/50 hover:text-white"
-                                        }`}
-                                    >
-                                        {deleting ? 'Deleting...' : (deleteConfirm ? '⚠️ Confirm Delete?' : 'Delete League')}
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* 4. ROSTER */}
+                            {/* 3. ROSTER */}
                             <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
                                 <div className="p-4 border-b border-gray-800 bg-black/20 flex justify-between items-center">
                                     <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest">Member Roster</h3>
@@ -722,9 +598,13 @@ export default function LeaguePage() {
                                     {members.map((member) => (
                                         <div key={member.user_id} className="p-4 flex items-center justify-between hover:bg-gray-800/30 transition-colors">
                                             <div className="flex items-center gap-4">
-                                                <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-xs font-black text-gray-400 border border-gray-700">
-                                                    {member.displayName ? member.displayName.charAt(0).toUpperCase() : '?'}
-                                                </div>
+                                                {member.avatarUrl ? (
+                                                    <img src={member.avatarUrl} alt={member.displayName} className="w-10 h-10 rounded-full object-cover border border-gray-700" />
+                                                ) : (
+                                                    <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-xs font-black text-gray-400 border border-gray-700">
+                                                        {member.displayName ? member.displayName.charAt(0).toUpperCase() : '?'}
+                                                    </div>
+                                                )}
                                                 <div>
                                                     <p className="text-sm font-bold text-white">{member.displayName}</p>
                                                     <p className="text-[10px] text-gray-500 uppercase font-mono">
@@ -747,6 +627,26 @@ export default function LeaguePage() {
                                             )}
                                         </div>
                                     ))}
+                                </div>
+                            </div>
+
+                            {/* 4. DANGER ZONE - UPDATED DELETE BUTTON */}
+                            <div className="pt-8 border-t border-gray-800">
+                                <div className="flex items-center justify-between gap-2 mb-4">
+                                    <h2 className="text-xl font-black uppercase italic tracking-tighter text-red-600">
+                                        Danger Zone
+                                    </h2>
+                                    <button 
+                                        onClick={handleDeleteLeague}
+                                        disabled={deleting}
+                                        className={`px-6 py-3 rounded text-[10px] font-black uppercase tracking-widest transition-all ${
+                                            deleteConfirm 
+                                            ? "bg-red-600 text-white animate-pulse shadow-[0_0_15px_rgba(220,38,38,0.5)]" 
+                                            : "bg-red-950/20 text-red-500 hover:bg-red-950/40 border border-red-900/50 hover:text-white"
+                                        }`}
+                                    >
+                                        {deleting ? 'Deleting...' : (deleteConfirm ? '⚠️ Confirm Delete?' : 'Delete League')}
+                                    </button>
                                 </div>
                             </div>
                         </div>

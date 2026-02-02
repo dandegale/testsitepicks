@@ -45,7 +45,11 @@ export default function LeaderboardPage() {
     // 2. Fetch DATA
     const { data: picks } = await supabase.from('picks').select('*');
     const { data: fights } = await supabase.from('fights').select('*');
-    const { data: profiles } = await supabase.from('profiles').select('email, username');
+    
+    // --- UPDATED: Fetch avatar_url ---
+    const { data: profiles } = await supabase
+        .from('profiles')
+        .select('email, username, avatar_url');
 
     if (picks && fights) {
       processLeaderboard(picks, fights, profiles || []);
@@ -57,21 +61,14 @@ export default function LeaderboardPage() {
   // --- THE MATH ENGINE (Fixed: +10 Stake & 1 Decimal) ---
   const calculatePoints = (odds) => {
     const numericOdds = parseInt(odds, 10);
-    
-    // Default fallback: Return stake (10) + flat profit (10) = 20
     if (isNaN(numericOdds) || numericOdds === 0) return 20;
 
     let profit = 0;
-    
     if (numericOdds > 0) {
-        // Positive Odds (e.g. +180 -> 18 profit)
         profit = (numericOdds / 100) * 10;
     } else {
-        // Negative Odds (e.g. -200 -> 5 profit)
         profit = (100 / Math.abs(numericOdds)) * 10;
     }
-    
-    // Add Stake (10) back to profit and round to 1 decimal place
     return parseFloat((profit + 10).toFixed(1));
   };
 
@@ -90,9 +87,13 @@ export default function LeaderboardPage() {
             if (!scores[userId]) {
                 const userProfile = profiles.find(p => p.email === userId);
                 const displayName = userProfile?.username || pick.username || userId.split('@')[0];
+                
+                // --- NEW: Get Avatar URL ---
+                const avatarUrl = userProfile?.avatar_url || null;
 
                 scores[userId] = { 
                     name: displayName, 
+                    avatarUrl: avatarUrl, // Store it
                     score: 0, 
                     wins: 0,
                     fullEmail: userId 
@@ -101,21 +102,17 @@ export default function LeaderboardPage() {
 
             // --- WIN / LOSS LOGIC ---
             if (fight.winner === pick.selected_fighter) {
-                // Win: Add Profit + Stake
                 const points = calculatePoints(pick.odds_at_pick);
                 scores[userId].score += points;
                 scores[userId].wins += 1;
             } else {
-                // Loss: Subtract Stake (10)
                 scores[userId].score -= 10;
             }
         }
     });
 
-    // Sort
     const sorted = Object.values(scores).sort((a, b) => b.score - a.score);
     
-    // Clean to 1 decimal place for final display
     const cleaned = sorted.map(p => ({
         ...p,
         score: parseFloat(p.score.toFixed(1))
@@ -253,9 +250,19 @@ export default function LeaderboardPage() {
                                     </td>
                                     <td className="p-4 md:p-6">
                                         <div className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-3">
-                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500'}`}>
-                                                {player.name ? player.name.substring(0, 2).toUpperCase() : '?'}
-                                            </div>
+                                            {/* --- UPDATED: AVATAR LOGIC --- */}
+                                            {player.avatarUrl ? (
+                                                <img 
+                                                    src={player.avatarUrl} 
+                                                    alt={player.name} 
+                                                    className="w-8 h-8 rounded-full object-cover border border-gray-700"
+                                                />
+                                            ) : (
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500'}`}>
+                                                    {player.name ? player.name.substring(0, 2).toUpperCase() : '?'}
+                                                </div>
+                                            )}
+                                            
                                             {player.name}
                                             {player.fullEmail === user?.email && (
                                                 <span className="bg-pink-600 text-[8px] px-1.5 py-0.5 rounded text-white ml-2">YOU</span>

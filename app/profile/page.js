@@ -1,7 +1,7 @@
 'use client';
 
 import { createClient } from '@supabase/supabase-js';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import LogOutButton from '../components/LogOutButton'; 
@@ -15,23 +15,19 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   
-  // --- PROFILE EDIT STATE ---
+  // --- PROFILE STATE ---
   const [username, setUsername] = useState('');
   const [newUsername, setNewUsername] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const fileInputRef = useRef(null);
 
-  // --- ODDS PREFERENCE STATE ---
+  // --- PREFERENCES & STATS ---
   const [showOdds, setShowOdds] = useState(false); 
-  const [savingPref, setSavingPref] = useState(false);
-
-  const [stats, setStats] = useState({
-    totalBets: 0,
-    wins: 0,
-    losses: 0,
-    pending: 0,
-    netProfit: 0,
-  });
+  const [stats, setStats] = useState({ totalBets: 0, wins: 0, losses: 0, pending: 0, netProfit: 0 });
   const [history, setHistory] = useState([]);
   const router = useRouter();
 
@@ -40,72 +36,87 @@ export default function Profile() {
   }, []);
 
   const fetchData = async () => {
-    // 1. Get Auth User
     const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-        router.push('/login');
-        return;
-    }
+    if (!user) { router.push('/login'); return; }
     setUser(user);
 
-    // 2. Get Profile from DB
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*') 
-      .eq('id', user.id)
-      .single();
+    // Get Profile
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
     
-    // 3. RESOLVE USERNAME
-    const dbName = profile?.username;
-    const metaName = user.user_metadata?.username; 
-    const emailName = user.email?.split('@')[0];
-    const finalName = dbName || metaName || emailName || 'Unknown Fighter';
-
+    // Resolve Identity
+    const finalName = profile?.username || user.user_metadata?.username || user.email?.split('@')[0] || 'Fighter';
     setUsername(finalName);
     setNewUsername(finalName); 
+    setAvatarUrl(profile?.avatar_url || null);
+    if (profile) setShowOdds(profile.show_odds === true);
 
-    // 4. RESOLVE PREFERENCES
-    if (profile) {
-        setShowOdds(profile.show_odds === true);
-    }
-
-    // Get User's Picks
+    // Get Picks & Stats
     const { data: picks, error } = await supabase
       .from('picks')
       .select('*, leagues(name)') 
       .eq('user_id', user.email) 
       .order('id', { ascending: false });
 
-    // Fallback logic for missing relations
+    // Fallback if relation fails
     let finalPicks = picks;
     if (error) {
-        const { data: fallback } = await supabase
-            .from('picks')
-            .select('*')
-            .eq('user_id', user.email)
-            .order('id', { ascending: false });
+        const { data: fallback } = await supabase.from('picks').select('*').eq('user_id', user.email).order('id', { ascending: false });
         finalPicks = fallback;
     }
 
-    // Get Fights
     const { data: fights } = await supabase.from('fights').select('*');
     calculateStats(finalPicks || [], fights || [], !!error);
     setLoading(false);
   };
 
-  // --- SAVE PROFILE NAME ---
+  // --- AVATAR UPLOAD LOGIC ---
+  const handleAvatarUpload = async (event) => {
+    try {
+      setUploading(true);
+      if (!event.target.files || event.target.files.length === 0) {
+        throw new Error('You must select an image to upload.');
+      }
+
+      const file = event.target.files[0];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      // 1. Upload to Storage
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // 2. Get Public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      // 3. Update Profile
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl, updated_at: new Date() })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      setAvatarUrl(publicUrl);
+      alert('Avatar updated!');
+    } catch (error) {
+      alert('Error uploading avatar: ' + error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleSaveProfile = async () => {
     if (!newUsername.trim()) return;
     setSaving(true);
-
-    const { error } = await supabase
-        .from('profiles')
-        .upsert({ id: user.id, username: newUsername, updated_at: new Date() });
-
-    if (error) {
-        alert("Error updating name: " + error.message);
-    } else {
+    const { error } = await supabase.from('profiles').upsert({ id: user.id, username: newUsername, updated_at: new Date() });
+    if (error) alert("Error: " + error.message);
+    else {
         setUsername(newUsername);
         await supabase.auth.updateUser({ data: { username: newUsername } });
         setIsEditing(false);
@@ -113,292 +124,198 @@ export default function Profile() {
     setSaving(false);
   };
 
-  // --- TOGGLE ODDS PREFERENCE ---
   const toggleOdds = async () => {
       const newValue = !showOdds;
       setShowOdds(newValue);
-      setSavingPref(true);
-
-      const { error } = await supabase
-          .from('profiles')
-          .update({ show_odds: newValue })
-          .eq('id', user.id);
-
-      if (error) {
-          alert("Error saving setting");
-          setShowOdds(!newValue); 
-      }
-      setSavingPref(false);
+      await supabase.from('profiles').update({ show_odds: newValue }).eq('id', user.id);
   };
 
-  // --- FIXED MATH LOGIC ---
   const calculateStats = (picks, fights, missingLeagues) => {
-    let wins = 0;
-    let losses = 0;
-    let pending = 0;
-    let netProfit = 0;
+    let wins = 0, losses = 0, pending = 0, netProfit = 0;
     const historyData = [];
 
     picks.forEach(pick => {
         const fight = fights.find(f => f.id == pick.fight_id);
-        const fightName = fight 
-            ? `${fight.fighter_1_name} vs ${fight.fighter_2_name}` 
-            : `Fight #${pick.fight_id}`;
-
-        let result = 'Pending';
-        let profitChange = 0;
+        const fightName = fight ? `${fight.fighter_1_name} vs ${fight.fighter_2_name}` : `Fight #${pick.fight_id}`;
+        let result = 'Pending', profitChange = 0;
 
         if (fight && fight.winner) {
             if (fight.winner === pick.selected_fighter) {
-                result = 'Win';
-                wins++;
+                result = 'Win'; wins++;
                 const odds = parseInt(pick.odds_at_pick || -110, 10);
-                
-                // Calculate pure profit based on 10 unit stake
-                let profit = 0;
-                if (odds > 0) {
-                    profit = (odds / 100) * 10;
-                } else {
-                    profit = (100 / Math.abs(odds)) * 10;
-                }
-
-                // THE FIX: Add the Stake (10) back to the profit
-                // Example: Profit 8 + Stake 10 = +18 Points
-                profitChange = profit + 10;
-
+                const profit = odds > 0 ? (odds / 100) * 10 : (100 / Math.abs(odds)) * 10;
+                profitChange = profit + 10; 
             } else {
-                result = 'Loss';
-                losses++;
-                // Loss subtracts the 10 point stake
+                result = 'Loss'; losses++;
                 profitChange = -10; 
             }
-        } else {
-            result = 'Pending';
-            pending++;
-        }
+        } else { result = 'Pending'; pending++; }
 
-        if (result !== 'Pending') {
-            netProfit += profitChange;
-        }
+        if (result !== 'Pending') netProfit += profitChange;
 
-        let leagueName = 'Global Feed';
+        let leagueName = 'Global';
         if (!missingLeagues && pick.leagues) {
-            if (Array.isArray(pick.leagues) && pick.leagues.length > 0) {
-                leagueName = pick.leagues[0].name;
-            } else if (typeof pick.leagues === 'object' && pick.leagues.name) {
-                leagueName = pick.leagues.name;
-            }
+            if (Array.isArray(pick.leagues) && pick.leagues.length > 0) leagueName = pick.leagues[0].name;
+            else if (typeof pick.leagues === 'object' && pick.leagues.name) leagueName = pick.leagues.name;
         }
 
-        historyData.push({
-            id: pick.id,
-            fightName: fightName,
-            selection: pick.selected_fighter,
-            odds: pick.odds_at_pick,
-            result,
-            profitChange,
-            leagueName
-        });
+        historyData.push({ id: pick.id, fightName, selection: pick.selected_fighter, odds: pick.odds_at_pick, result, profitChange, leagueName });
     });
 
-    setStats({
-        totalBets: picks.length,
-        wins,
-        losses,
-        pending,
-        netProfit: parseFloat(netProfit.toFixed(1)) // Round total to 1 decimal
-    });
-
+    setStats({ totalBets: picks.length, wins, losses, pending, netProfit: parseFloat(netProfit.toFixed(1)) });
     setHistory(historyData);
   };
 
-  if (loading) return <div className="min-h-screen bg-black text-teal-500 p-10 text-center font-bold uppercase animate-pulse">Loading Profile...</div>;
+  if (loading) return <div className="min-h-screen bg-black flex items-center justify-center"><div className="w-8 h-8 border-4 border-pink-600 border-t-transparent rounded-full animate-spin"></div></div>;
 
   return (
-    <main className="min-h-screen bg-black text-white p-4 md:p-8 pb-24">
+    <main className="min-h-screen bg-black text-white pb-24 font-sans">
       
-      {/* HEADER WITH EDIT FUNCTIONALITY */}
-      <div className="max-w-4xl mx-auto mb-8 border-b border-gray-800 pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* HEADER HERO */}
+      <div className="relative bg-gradient-to-b from-gray-900 to-black border-b border-gray-800 pt-12 pb-8 px-6">
         
-        <div className="flex-1 w-full md:w-auto">
-            {isEditing ? (
-                <div className="flex items-center gap-2 w-full">
-                    <input 
-                        type="text" 
-                        value={newUsername} 
-                        onChange={(e) => setNewUsername(e.target.value)}
-                        className="bg-gray-900 border border-pink-500 text-white text-2xl font-black italic uppercase p-2 rounded w-full max-w-xs focus:outline-none"
-                        placeholder="Enter Fighter Name"
-                        autoFocus
-                    />
-                    <button 
-                        onClick={handleSaveProfile} 
-                        disabled={saving}
-                        className="bg-green-600 text-white px-3 py-2 rounded font-bold uppercase text-xs hover:bg-green-500 disabled:opacity-50"
-                    >
-                        {saving ? '...' : 'Save'}
-                    </button>
-                    <button 
-                        onClick={() => setIsEditing(false)} 
-                        className="text-gray-500 px-2 font-bold uppercase text-xs hover:text-white"
-                    >
-                        Cancel
-                    </button>
-                </div>
-            ) : (
-                <div className="group flex items-center gap-3">
-                    <h1 className="text-4xl font-black text-white uppercase italic tracking-tighter">
-                        {username}
-                    </h1>
-                    <button 
-                        onClick={() => setIsEditing(true)}
-                        className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-pink-500 transition-all text-xs font-bold uppercase border border-gray-800 hover:border-pink-500 px-2 py-1 rounded"
-                    >
-                        ✎ Edit Name
-                    </button>
-                </div>
-            )}
-            
-            <p className="text-gray-500 text-sm uppercase tracking-widest font-bold mt-1">
-                {user?.email}
-            </p>
-        </div>
-        
-        <div className="flex items-center gap-3">
-            <Link href="/" className="text-gray-400 hover:text-white font-bold uppercase text-xs border border-gray-700 px-4 py-2 rounded transition-colors">
+        {/* Top Nav */}
+        <div className="absolute top-6 left-6 right-6 flex justify-between items-center">
+            <Link href="/" className="text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition-colors">
                 ← Dashboard
             </Link>
             <LogOutButton />
         </div>
-      </div>
 
-      {/* STATS GRID */}
-      <div className="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-gray-900 p-6 rounded border border-gray-800 text-center">
-            <div className="text-gray-500 text-xs uppercase font-bold mb-2">Record</div>
-            <div className="text-3xl font-black text-white">
-                {stats.wins} - {stats.losses}
-            </div>
-            <div className="text-xs text-gray-600 font-mono mt-1">W - L</div>
-        </div>
-        <div className="bg-gray-900 p-6 rounded border border-gray-800 text-center">
-            <div className="text-gray-500 text-xs uppercase font-bold mb-2">Accuracy</div>
-            <div className="text-3xl font-black text-teal-500">
-                {stats.totalBets > 0 && (stats.wins + stats.losses) > 0
-                    ? Math.round((stats.wins / (stats.wins + stats.losses)) * 100) 
-                    : 0}%
-            </div>
-        </div>
-        <div className="bg-gray-900 p-6 rounded border border-gray-800 text-center">
-            <div className="text-gray-500 text-xs uppercase font-bold mb-2">Active Bets</div>
-            <div className="text-3xl font-black text-yellow-500">
-                {stats.pending}
-            </div>
-        </div>
-        <div className="bg-gray-900 p-6 rounded border border-gray-800 text-center">
-            <div className="text-gray-500 text-xs uppercase font-bold mb-2">Career Earnings</div>
-            <div className={`text-3xl font-black ${stats.netProfit >= 0 ? 'text-green-500' : 'text-pink-500'}`}>
-                {stats.netProfit >= 0 ? '+' : ''}{stats.netProfit}
-            </div>
-        </div>
-      </div>
-
-      {/* PREFERENCES */}
-      <div className="max-w-4xl mx-auto mb-12">
-          <h2 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-4">Preferences</h2>
-          
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between shadow-lg">
-              <div>
-                  <h4 className="font-bold text-white text-sm">Vegas Odds</h4>
-                  <p className="text-[10px] text-gray-500 mt-1">
-                      Show payouts on the fight dashboard. Keep OFF to play blind.
-                  </p>
-              </div>
-              
-              <div className="flex flex-col items-end">
-                <button 
-                    onClick={toggleOdds}
-                    className={`relative w-12 h-6 rounded-full transition-colors duration-300 ${showOdds ? 'bg-green-600' : 'bg-gray-700'}`}
+        <div className="max-w-xl mx-auto text-center mt-8">
+            {/* AVATAR CIRCLE */}
+            <div className="relative group mx-auto w-32 h-32 mb-6">
+                <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-32 h-32 rounded-full overflow-hidden border-4 border-gray-800 shadow-2xl bg-gray-900 cursor-pointer hover:border-pink-600 transition-all relative"
                 >
-                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-300 ${showOdds ? 'left-7' : 'left-1'}`} />
-                </button>
-                <span className="text-[9px] font-bold text-gray-500 mt-2 uppercase tracking-widest">
-                    {showOdds ? 'ON' : 'OFF'}
-                </span>
-              </div>
-          </div>
+                    {avatarUrl ? (
+                        <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center text-4xl font-black text-gray-700">
+                            {username.charAt(0).toUpperCase()}
+                        </div>
+                    )}
+                    
+                    {/* Hover Overlay */}
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="text-[10px] font-black uppercase text-white tracking-widest">
+                            {uploading ? '...' : 'Upload'}
+                        </span>
+                    </div>
+                </div>
+                <input 
+                    type="file" 
+                    ref={fileInputRef}
+                    onChange={handleAvatarUpload}
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploading}
+                />
+            </div>
+
+            {/* USERNAME & EDIT */}
+            {isEditing ? (
+                <div className="flex items-center justify-center gap-2 mb-2">
+                    <input 
+                        type="text" 
+                        value={newUsername} 
+                        onChange={(e) => setNewUsername(e.target.value)}
+                        className="bg-black/50 border border-pink-600 text-white text-xl font-black italic uppercase p-2 rounded text-center w-full max-w-[200px] focus:outline-none"
+                        autoFocus
+                    />
+                    <button onClick={handleSaveProfile} className="bg-pink-600 p-2 rounded text-xs font-bold hover:bg-pink-500">✓</button>
+                    <button onClick={() => setIsEditing(false)} className="bg-gray-800 p-2 rounded text-xs font-bold hover:bg-gray-700">✕</button>
+                </div>
+            ) : (
+                <div className="flex items-center justify-center gap-2 mb-2 group cursor-pointer" onClick={() => setIsEditing(true)}>
+                    <h1 className="text-3xl md:text-4xl font-black italic text-white uppercase tracking-tighter">
+                        {username}
+                    </h1>
+                    <span className="opacity-0 group-hover:opacity-100 text-gray-600 text-xs">✎</span>
+                </div>
+            )}
+            <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">{user?.email}</p>
+        </div>
       </div>
 
-      {/* BET HISTORY LIST */}
-      <div className="max-w-4xl mx-auto">
-        <h2 className="text-xl font-bold mb-4 text-gray-400 uppercase tracking-widest text-sm">
-            Fight History
-        </h2>
-        <div className="bg-gray-900 rounded-lg overflow-hidden border border-gray-700">
-            {history.length === 0 ? (
-                <div className="p-8 text-center text-gray-500 italic">No fights recorded yet. Go make some picks!</div>
-            ) : (
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead className="bg-gray-950 text-gray-500 uppercase text-xs font-bold tracking-wider">
-                            <tr>
-                                <th className="p-4">Fight</th>
-                                <th className="p-4">Pick</th>
-                                <th className="p-4">League</th>
-                                <th className="p-4">Result</th>
-                                <th className="p-4 text-right">P/L</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-800 text-sm">
-                            {history.map((item) => {
-                                const isGlobal = item.leagueName === 'Global Feed';
-                                const leagueStyle = isGlobal 
-                                    ? 'bg-gray-800 text-gray-400 border-gray-700' 
-                                    : 'bg-teal-900/30 text-teal-400 border-teal-800';
+      {/* CONTENT CONTAINER */}
+      <div className="max-w-4xl mx-auto px-4 -mt-6">
+        
+        {/* STATS CARDS */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+            <StatCard label="Record" value={`${stats.wins}-${stats.losses}`} sub="W-L" color="text-white" />
+            <StatCard 
+                label="Accuracy" 
+                value={`${stats.totalBets > 0 ? Math.round((stats.wins / (stats.wins + stats.losses)) * 100) : 0}%`} 
+                color="text-teal-400" 
+            />
+            <StatCard label="Pending" value={stats.pending} color="text-yellow-500" />
+            <StatCard 
+                label="Earnings" 
+                value={`${stats.netProfit >= 0 ? '+' : ''}${stats.netProfit}`} 
+                color={stats.netProfit >= 0 ? 'text-green-500' : 'text-pink-500'} 
+            />
+        </div>
 
-                                return (
-                                    <tr key={item.id} className="hover:bg-gray-800 transition-colors">
-                                        <td className="p-4 font-medium text-gray-300">
-                                            {item.fightName}
-                                        </td>
-                                        <td className="p-4">
-                                            <span className="font-bold text-white block">{item.selection}</span>
-                                            <span className="text-xs text-yellow-600 font-mono">({item.odds > 0 ? '+' : ''}{item.odds})</span>
-                                        </td>
-                                        <td className="p-4">
-                                            <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded border ${leagueStyle}`}>
-                                                {item.leagueName}
-                                            </span>
-                                        </td>
-                                        <td className="p-4">
-                                            <span className={`uppercase font-bold text-xs px-2 py-1 rounded 
-                                                ${item.result === 'Win' ? 'text-green-400' : ''}
-                                                ${item.result === 'Loss' ? 'text-pink-500' : ''}
-                                                ${item.result === 'Pending' ? 'text-yellow-500' : ''}
-                                            `}>
-                                                {item.result}
-                                            </span>
-                                        </td>
-                                        <td className={`p-4 text-right font-mono font-bold 
-                                            ${item.profitChange > 0 ? 'text-green-400' : ''}
-                                            ${item.profitChange < 0 ? 'text-pink-500' : ''}
-                                            ${item.profitChange === 0 ? 'text-gray-500' : ''}
-                                        `}>
-                                            {item.result === 'Pending' ? '-' : (
-                                                <>
-                                                    {item.profitChange > 0 ? '+' : ''}{item.profitChange.toFixed(1)}
-                                                </>
-                                            )}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+        {/* SETTINGS TOGGLE */}
+        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4 flex items-center justify-between mb-10">
+            <div>
+                <h4 className="text-xs font-black text-white uppercase tracking-widest">Show Vegas Odds</h4>
+                <p className="text-[10px] text-gray-500 font-bold mt-1">Reveal potential payouts on dashboard.</p>
+            </div>
+            <button onClick={toggleOdds} className={`w-10 h-5 rounded-full relative transition-colors ${showOdds ? 'bg-pink-600' : 'bg-gray-700'}`}>
+                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-transform ${showOdds ? 'left-6' : 'left-1'}`} />
+            </button>
+        </div>
+
+        {/* HISTORY */}
+        <h2 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-4 px-1">Fight History</h2>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            {history.length === 0 ? (
+                <div className="p-12 text-center">
+                    <p className="text-gray-600 text-xs font-bold uppercase tracking-widest">No fights recorded yet.</p>
+                </div>
+            ) : (
+                <div className="divide-y divide-gray-800">
+                    {history.map((item) => (
+                        <div key={item.id} className="p-4 flex items-center justify-between hover:bg-gray-800/50 transition-colors">
+                            <div>
+                                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1">{item.leagueName}</div>
+                                <div className="font-bold text-white text-sm">{item.selection}</div>
+                                <div className="text-[10px] text-gray-400">{item.fightName}</div>
+                            </div>
+                            <div className="text-right">
+                                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded border mb-1 inline-block ${
+                                    item.result === 'Win' ? 'bg-green-900/20 text-green-400 border-green-900' : 
+                                    item.result === 'Loss' ? 'bg-red-900/20 text-red-400 border-red-900' : 
+                                    'bg-yellow-900/20 text-yellow-400 border-yellow-900'
+                                }`}>
+                                    {item.result}
+                                </span>
+                                <div className={`text-sm font-mono font-bold ${item.profitChange > 0 ? 'text-green-500' : item.profitChange < 0 ? 'text-red-500' : 'text-gray-500'}`}>
+                                    {item.result === 'Pending' ? '--' : `${item.profitChange > 0 ? '+' : ''}${item.profitChange.toFixed(1)}`}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             )}
         </div>
+
       </div>
     </main>
   );
+}
+
+// Sub-component for cleaner code
+function StatCard({ label, value, sub, color }) {
+    return (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center shadow-lg relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-gray-700 to-transparent opacity-0 group-hover:opacity-50 transition-opacity" />
+            <div className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">{label}</div>
+            <div className={`text-2xl md:text-3xl font-black italic tracking-tighter ${color}`}>{value}</div>
+            {sub && <div className="text-[9px] text-gray-600 font-bold mt-1">{sub}</div>}
+        </div>
+    );
 }
