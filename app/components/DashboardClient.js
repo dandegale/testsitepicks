@@ -11,7 +11,6 @@ import GlobalActivityFeed from './GlobalActivityFeed';
 import LeagueRail from './LeagueRail'; 
 import BettingSlip from './BettingSlip'; 
 import MobileNav from './MobileNav'; 
-// 1. IMPORT YOUR EXISTING MODAL
 import CreateLeagueModal from './CreateLeagueModal';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
@@ -41,7 +40,7 @@ const CountdownDisplay = ({ targetDate }) => {
 };
 
 export default function DashboardClient({ 
-  fights, groupedFights: initialGroupedFights, allPicks, myPicks, userEmail, myLeagues, totalWins, totalLosses, nextEventName, mainEvent 
+  fights, groupedFights, allPicks, myPicks, userEmail, myLeagues, totalWins, totalLosses, nextEventName, mainEvent 
 }) {
   const router = useRouter();
   const [isFocusMode, setIsFocusMode] = useState(false);
@@ -49,12 +48,15 @@ export default function DashboardClient({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showMobileLeagues, setShowMobileLeagues] = useState(false); 
   const [showMobileSlip, setShowMobileSlip] = useState(false);
-  
-  // 2. ADD MODAL STATE
   const [showCreateModal, setShowCreateModal] = useState(false);
-  
   const [showOdds, setShowOdds] = useState(false); 
+  
   const [clientPicks, setClientPicks] = useState(myPicks || []);
+  
+  // --- NEW: Client-side Leagues State ---
+  // Initialize with props, but allow fetching to update it
+  const [clientLeagues, setClientLeagues] = useState(myLeagues || []);
+
   const [careerStats, setCareerStats] = useState({ wins: 0, losses: 0 });
 
   const liveWinPercentage = (careerStats.wins + careerStats.losses) > 0 
@@ -109,6 +111,8 @@ export default function DashboardClient({
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user && user.email) {
+        
+        // 1. Fetch Picks
         const { data: picksData } = await supabase.from('picks').select('*').eq('user_id', user.email);
         if (picksData) {
             setClientPicks(picksData); 
@@ -127,6 +131,19 @@ export default function DashboardClient({
                 setCareerStats({ wins: w, losses: l });
             }
         }
+
+        // 2. Fetch Leagues (Fix for Mobile Drawer)
+        const { data: memberships } = await supabase
+            .from('league_members')
+            .select('leagues ( id, name, image_url, invite_code )')
+            .eq('user_id', user.email);
+        
+        if (memberships) {
+            const validLeagues = memberships.map(m => m.leagues).filter(Boolean);
+            setClientLeagues(validLeagues);
+        }
+
+        // 3. Fetch Odds Pref
         const { data: profile } = await supabase.from('profiles').select('show_odds').eq('id', user.id).single();
         if (profile && profile.show_odds === true) setShowOdds(true);
     }
@@ -177,7 +194,8 @@ export default function DashboardClient({
       
       {/* DESKTOP RAIL */}
       <div className={`hidden md:block transition-all duration-500 ${isFocusMode ? '-ml-20' : 'ml-0'}`}>
-        <LeagueRail initialLeagues={myLeagues} />
+        {/* Pass clientLeagues here too for consistency */}
+        <LeagueRail initialLeagues={clientLeagues} />
       </div>
 
       {/* MOBILE DRAWER */}
@@ -190,12 +208,12 @@ export default function DashboardClient({
             
             <div className="p-4 space-y-6">
                 <div className="flex flex-col gap-3">
-                    {/* Render Leagues List */}
-                    {myLeagues && myLeagues.length > 0 ? (
-                        myLeagues.map(league => (
+                    {/* Render clientLeagues List (Fixed variable name) */}
+                    {clientLeagues && clientLeagues.length > 0 ? (
+                        clientLeagues.map(league => (
                             <Link key={league.id} href={`/league/${league.id}`} className="flex items-center gap-4 p-3 rounded-xl bg-gray-800/40 hover:bg-gray-800 border border-gray-700/50 hover:border-pink-500/50 transition-all group">
                                 <div className="w-10 h-10 rounded-full bg-gray-900 border border-gray-600 flex items-center justify-center text-[10px] font-black text-gray-400 group-hover:text-pink-500 group-hover:border-pink-500 transition-all shrink-0">
-                                     {league.name.substring(0,2).toUpperCase()}
+                                     {league.name ? league.name.substring(0,2).toUpperCase() : 'LG'}
                                 </div>
                                 <span className="font-bold text-sm text-gray-300 group-hover:text-white truncate">
                                     {league.name}
@@ -206,7 +224,6 @@ export default function DashboardClient({
                         <div className="p-4 border border-dashed border-gray-800 rounded-xl text-center">
                             <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest mb-2">No Leagues Joined</p>
                             
-                            {/* 3. FIX: BUTTON TRIGGERS MODAL */}
                             <button 
                                 onClick={() => { setShowMobileLeagues(false); setShowCreateModal(true); }}
                                 className="text-pink-500 text-xs font-black uppercase hover:underline"
@@ -216,8 +233,7 @@ export default function DashboardClient({
                         </div>
                     )}
                     
-                    {/* Always show "Create" option even if list has items */}
-                    {myLeagues && myLeagues.length > 0 && (
+                    {clientLeagues && clientLeagues.length > 0 && (
                         <button 
                             onClick={() => { setShowMobileLeagues(false); setShowCreateModal(true); }}
                             className="w-full py-3 mt-2 border border-dashed border-gray-700 text-gray-500 rounded hover:text-teal-400 hover:border-teal-500 transition-all text-xs font-bold uppercase"
@@ -308,7 +324,7 @@ export default function DashboardClient({
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
             <div className={`mb-8 transition-all duration-500 origin-top ${isFocusMode ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100'}`}>
                 <div className="flex overflow-x-auto pb-4 gap-4 md:flex-wrap scrollbar-hide">
-                    {(myLeagues || []).map(league => (
+                    {(clientLeagues || []).map(league => (
                         <Link key={league.id} href={`/league/${league.id}`} className="group flex flex-col items-center shrink-0" title={league.name}>
                             <div className="w-12 h-12 rounded-full bg-gray-950 border border-gray-800 group-hover:border-pink-600 flex items-center justify-center text-[10px] font-bold text-gray-500 group-hover:text-pink-600 transition-all shadow-lg overflow-hidden shrink-0">
                                 {league.name.substring(0,2).toUpperCase()}
