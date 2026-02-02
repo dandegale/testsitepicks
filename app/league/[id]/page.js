@@ -160,7 +160,6 @@ export default function LeaguePage() {
         setLeague(leagueData);
 
         if (currentUser && leagueData) {
-            // Check both Email and ID to ensure Admin access is granted correctly
             const isCreator = (leagueData.created_by === currentUser.email) || (leagueData.created_by === currentUser.id);
             setIsAdmin(isCreator);
         }
@@ -249,7 +248,6 @@ export default function LeaguePage() {
                             } else {
                                 profit = 10; 
                             }
-                            // Fixed Math: Profit + 10 Stake
                             totalScore += (profit + 10);
                         } else {
                             losses++;
@@ -279,11 +277,18 @@ export default function LeaguePage() {
     }
   };
 
+  // --- UPDATED: Copy Link with Correct Name ---
   const handleCopyCode = () => {
     if (league?.invite_code) {
-        navigator.clipboard.writeText(league.invite_code);
-        setCopySuccess(true);
-        setTimeout(() => setCopySuccess(false), 2000);
+        const inviteUrl = `${window.location.origin}/league/${leagueId}?invite=${league.invite_code}`;
+        
+        // Corrected Name: FightIQ
+        const shareMessage = `Join my fight league on FightIQ! 👊\n${inviteUrl}`;
+
+        navigator.clipboard.writeText(shareMessage).then(() => {
+            setCopySuccess(true);
+            setTimeout(() => setCopySuccess(false), 2000);
+        });
     }
   };
 
@@ -416,7 +421,7 @@ export default function LeaguePage() {
                         {league?.name}
                     </h1>
                     
-                    {/* Invite Code */}
+                    {/* Invite Code / Share Button */}
                     <div className="flex items-center gap-4 text-gray-400 text-xs font-bold uppercase tracking-widest">
                         <button 
                             onClick={handleCopyCode}
@@ -427,7 +432,7 @@ export default function LeaguePage() {
                                 {league?.invite_code}
                             </span>
                             <span className="text-pink-500 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
-                                {copySuccess ? 'COPIED!' : '❐ COPY'}
+                                {copySuccess ? 'LINK COPIED!' : '❐ SHARE LINK'}
                             </span>
                         </button>
                     </div>
@@ -451,7 +456,7 @@ export default function LeaguePage() {
                 >
                     Leaderboard
                 </button>
-                {/* Admin Tab - Renders if isAdmin is true */}
+                {/* Admin Tab - Only visible if isAdmin is true */}
                 {isAdmin && (
                     <button 
                         onClick={() => setActiveTab('settings')}
@@ -480,12 +485,12 @@ export default function LeaguePage() {
                                         </h2>
                                     </div>
                                     
-                                    {/* --- RESTORED QUICK COPY BUTTON --- */}
+                                    {/* --- QUICK COPY BUTTON --- */}
                                     <button 
                                         onClick={handleCopyCode}
                                         className="hidden md:flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1 rounded transition-all group"
                                     >
-                                        <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Code:</span>
+                                        <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Share:</span>
                                         <span className="text-xs font-mono font-bold text-pink-500">{league?.invite_code}</span>
                                         <span className="text-[10px] text-gray-500 group-hover:text-white">
                                             {copySuccess ? '✓' : '❐'}
