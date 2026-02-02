@@ -375,7 +375,7 @@ export default function LeaguePage() {
             </div>
         </header>
 
-        {/* League Hero - RESTORED BUTTON */}
+        {/* League Hero */}
         <div className="relative w-full bg-gray-900 overflow-hidden border-b border-gray-800 h-[180px] md:h-[200px]">
             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent z-10" />
             {league?.image_url && (
@@ -390,7 +390,6 @@ export default function LeaguePage() {
                         {league?.name}
                     </h1>
                     
-                    {/* RESTORED SHARE BUTTON (Visible on Mobile) */}
                     <div className="flex items-center gap-4 text-gray-400 text-xs font-bold uppercase tracking-widest">
                         <button 
                             onClick={handleCopyCode}
@@ -450,7 +449,7 @@ export default function LeaguePage() {
                     {activeTab === 'card' && (
                         <>
                             <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
-                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-start">
                                     <div className="flex items-center gap-2">
                                         <span className="w-2 h-2 rounded-full bg-pink-600 animate-pulse"></span>
                                         <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
@@ -458,12 +457,15 @@ export default function LeaguePage() {
                                         </h2>
                                     </div>
                                     
-                                    {/* RESTORED QUICK COPY BUTTON (Hidden on Mobile, Visible on Desktop) */}
+                                    {/* 🔴 FIXED: VISIBLE ON MOBILE NOW 🔴 */}
                                     <button 
                                         onClick={handleCopyCode}
-                                        className="hidden md:flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1 rounded transition-all group"
+                                        className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1 rounded transition-all group"
                                     >
-                                        <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Share:</span>
+                                        <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">
+                                            <span className="hidden sm:inline">Share:</span>
+                                            <span className="sm:hidden">Invite</span>
+                                        </span>
                                         <span className="text-xs font-mono font-bold text-pink-500">{league?.invite_code}</span>
                                         <span className="text-[10px] text-gray-500 group-hover:text-white">
                                             {copySuccess ? '✓' : '❐'}
