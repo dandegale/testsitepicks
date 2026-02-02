@@ -15,11 +15,11 @@ export default function LoginPage() {
   // Form State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [username, setUsername] = useState(''); // <--- NEW STATE
+  const [username, setUsername] = useState(''); 
   const [loading, setLoading] = useState(false);
   
   // Auth Logic State
-  const [mode, setMode] = useState('login'); // 'login' or 'signup'
+  const [mode, setMode] = useState('login'); 
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
@@ -31,40 +31,29 @@ export default function LoginPage() {
 
     try {
       if (mode === 'signup') {
-        // --- SIGN UP LOGIC ---
-        
-        // 1. Validation
-        if (!username.trim()) {
-            throw new Error("Please create a username.");
-        }
+        if (!username.trim()) throw new Error("Please create a username.");
 
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            // 2. Pass the real username here
-            data: { username: username }, 
-          },
+          options: { data: { username: username } },
         });
 
         if (error) throw error;
 
-        // Check if session is null (implies email verification is required)
         if (data.user && !data.session) {
           setSuccessMsg("Account created! Check your email to confirm.");
         } else {
-          router.push('/'); // Auto-login if no verification needed
+          router.push('/'); 
         }
 
       } else {
-        // --- LOGIN LOGIC ---
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
 
         if (error) throw error;
-        
         router.push('/');
       }
     } catch (error) {
@@ -77,12 +66,12 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-black flex items-center justify-center relative overflow-hidden selection:bg-pink-600 selection:text-white font-sans">
       
-      {/* --- BACKGROUND EFFECTS --- */}
+      {/* BACKGROUND EFFECTS */}
       <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-gray-900 via-black to-black opacity-80"></div>
       <div className="absolute -top-[20%] -left-[10%] w-[500px] h-[500px] bg-pink-600/10 rounded-full blur-[100px]"></div>
       <div className="absolute top-[40%] -right-[10%] w-[400px] h-[400px] bg-teal-600/10 rounded-full blur-[100px]"></div>
 
-      {/* --- LOGIN CARD --- */}
+      {/* LOGIN CARD */}
       <div className="relative z-10 w-full max-w-md p-4">
         
         <div className="bg-gray-950/80 backdrop-blur-xl border border-gray-800 rounded-2xl p-8 shadow-2xl shadow-black ring-1 ring-white/5 relative overflow-hidden transition-all duration-500">
@@ -93,25 +82,22 @@ export default function LoginPage() {
             {/* LOGO HEADER */}
             <div className="text-center mb-8">
                 
-                {/* BIGGER LOGO CONTAINER */}
-                <div className="inline-block p-6 rounded-full bg-gray-900/50 border border-gray-800 mb-6 shadow-inner relative group">
-                    <div className="absolute inset-0 bg-pink-600/20 rounded-full blur-md group-hover:bg-pink-600/40 transition-all"></div>
+                {/* --- UPDATED LOGO SIZE --- */}
+                {/* Changed w-64 to w-72 md:w-80 for a slightly larger look */}
+                <div className="mb-4 relative group">
                     <img 
-                        src="/fightiq-logo.jpg" 
+                        src="/fightiq-logo.png" 
                         alt="FightIQ" 
-                        className="w-24 h-24 md:w-32 md:h-32 object-contain relative z-10 rounded-full" 
+                        className="w-72 md:w-80 h-auto mx-auto object-contain drop-shadow-[0_0_20px_rgba(219,39,119,0.4)] hover:scale-105 transition-transform duration-300" 
                     />
                 </div>
                 
-                <h1 className="text-4xl md:text-5xl font-black italic text-white tracking-tighter uppercase mb-2 leading-none">
-                    FIGHT<span className="text-pink-600">IQ</span>
-                </h1>
                 <p className="text-gray-500 text-[10px] font-bold uppercase tracking-[0.3em]">
                     {mode === 'login' ? 'Fantasy Management Suite' : 'Join the Roster'}
                 </p>
             </div>
 
-            {/* ERROR / SUCCESS MESSAGES */}
+            {/* ERROR / SUCCESS */}
             {errorMsg && (
                 <div className="mb-6 p-4 bg-red-950/30 border border-red-900/50 rounded-lg text-red-400 text-xs font-bold text-center animate-in fade-in slide-in-from-top-2">
                     ⚠ {errorMsg}
@@ -126,7 +112,6 @@ export default function LoginPage() {
             {/* FORM */}
             <form onSubmit={handleAuth} className="space-y-5">
                 
-                {/* --- NEW: USERNAME FIELD (Signup Only) --- */}
                 {mode === 'signup' && (
                   <div className="space-y-1 animate-in fade-in slide-in-from-left-2 duration-300">
                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Username</label>
@@ -140,7 +125,6 @@ export default function LoginPage() {
                               required={mode === 'signup'}
                           />
                           <div className="absolute right-4 top-3.5 text-gray-700 group-focus-within:text-pink-600 transition-colors">
-                            {/* User Icon SVG */}
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                                 <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
                             </svg>
@@ -200,7 +184,7 @@ export default function LoginPage() {
                         </span>
                     ) : (
                         <span className="flex items-center justify-center gap-2">
-                            {mode === 'login' ? 'Enter The Octagon' : 'Create Account'}
+                            {mode === 'login' ? 'Log In' : 'Create Account'}
                             <span className="group-hover:translate-x-1 transition-transform">→</span>
                         </span>
                     )}
@@ -220,14 +204,13 @@ export default function LoginPage() {
                     }}
                     className="text-xs font-black text-white uppercase tracking-widest hover:text-pink-500 transition-colors"
                 >
-                    {mode === 'login' ? 'Join the Fight' : 'Log In Here'}
+                    {mode === 'login' ? 'Sign Up' : 'Log In Here'}
                 </button>
             </div>
 
         </div>
       </div>
       
-      {/* Bottom corner branding */}
       <div className="absolute bottom-6 right-6 text-right hidden md:block opacity-30">
         <h2 className="text-4xl font-black italic text-gray-800 uppercase tracking-tighter">UFC</h2>
         <p className="text-[10px] font-bold text-gray-600 uppercase tracking-[0.5em]">Official Data</p>

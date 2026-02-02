@@ -47,9 +47,13 @@ export default function LeagueRail({ initialLeagues = [] }) {
       {/* --- DESKTOP RAIL --- */}
       <div className="hidden md:flex flex-col items-center w-20 bg-gray-950 border-r border-pink-900/30 h-screen sticky top-0 py-6 gap-6 z-40">
         
-        {/* LOGO UPDATE: Made bigger (w-[70px] h-[70px]) to fit rail snugly */}
+        {/* LOGO UPDATE: Changed .jpg to .png for transparency */}
         <Link href="/" className="w-[70px] h-[70px] flex items-center justify-center hover:scale-105 transition-transform shrink-0 px-1">
-            <img src="/fightiq-logo.jpg" alt="FightIQ" className="w-full h-full object-contain rounded-xl" />
+            <img 
+              src="/fightiq-logo.png" 
+              alt="FightIQ" 
+              className="w-full h-full object-contain" 
+            />
         </Link>
 
         {/* Separator */}
@@ -108,9 +112,13 @@ export default function LeagueRail({ initialLeagues = [] }) {
             <div className="fixed inset-0 bg-black/80 z-40 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
             <div className="fixed inset-y-0 left-0 w-72 bg-gray-950 border-r border-pink-900 z-50 p-6 flex flex-col shadow-2xl animate-in slide-in-from-left duration-300">
                 <div className="flex justify-between items-center mb-8">
-                    {/* LOGO UPDATE MOBILE */}
+                    {/* LOGO UPDATE MOBILE: Changed .jpg to .png */}
                     <div className="flex items-center gap-3">
-                        <img src="/fightiq-logo.jpg" alt="FightIQ" className="w-12 h-12 object-contain rounded-lg" />
+                        <img 
+                          src="/fightiq-logo.png" 
+                          alt="FightIQ" 
+                          className="w-12 h-12 object-contain" 
+                        />
                         <span className="text-xl font-black text-white italic tracking-tighter uppercase">FIGHT<span className="text-pink-600">IQ</span></span>
                     </div>
                     <button onClick={() => setIsOpen(false)} className="text-gray-500 hover:text-white">✕</button>
