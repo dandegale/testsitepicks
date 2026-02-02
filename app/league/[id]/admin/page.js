@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 // 1. IMPORT TOAST
-import Toast from '../../components/Toast'; 
+import Toast from '../../../components/Toast'; 
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
