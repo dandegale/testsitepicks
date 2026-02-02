@@ -21,6 +21,7 @@ const CountdownDisplay = ({ targetDate }) => {
   const [isExpired, setIsExpired] = useState(false);
 
   useEffect(() => {
+    if (!targetDate) return; // Safety check
     const rawTime = targetDate;
     const timeString = rawTime && !rawTime.endsWith('Z') ? `${rawTime}Z` : rawTime;
     const eventTime = new Date(timeString).getTime();
@@ -50,10 +51,10 @@ export default function DashboardClient({
   const [showMobileSlip, setShowMobileSlip] = useState(false);
   
   const [showCreateModal, setShowCreateModal] = useState(false);
-  
   const [showOdds, setShowOdds] = useState(false); 
   const [clientPicks, setClientPicks] = useState(myPicks || []);
   
+  // Initialize with props
   const [clientLeagues, setClientLeagues] = useState(myLeagues || []);
 
   const [careerStats, setCareerStats] = useState({ wins: 0, losses: 0 });
@@ -65,12 +66,24 @@ export default function DashboardClient({
   const eventDate = mainEvent?.start_time || "2026-02-01T22:00:00"; 
   const safeEventName = nextEventName || "Upcoming Event";
 
+  // --- 1. NEW: Sync Prop Updates to State (Fixes Mobile Drawer Empty Issue) ---
+  useEffect(() => {
+    if (myLeagues && myLeagues.length > 0) {
+      setClientLeagues(myLeagues);
+    }
+  }, [myLeagues]);
+
   // --- GHOST FILTER LOGIC ---
   const { cleanFights, cleanGroups } = useMemo(() => {
       if (!fights) return { cleanFights: [], cleanGroups: {} };
       const now = new Date().getTime();
       const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+      
       const validFights = fights.filter(f => {
+          // --- 2. NEW: Safety Checks (Prevents Crash) ---
+          if (!f) return false; 
+          if (!f.start_time) return false; 
+          
           if (f.winner) return true; 
           const fTime = new Date(f.start_time).getTime();
           return fTime > (now - TWELVE_HOURS);
@@ -137,6 +150,7 @@ export default function DashboardClient({
         
         if (memberships) {
             const validLeagues = memberships.map(m => m.leagues).filter(Boolean);
+            // This updates state if client-side fetch finds something new
             setClientLeagues(validLeagues);
         }
 
@@ -315,11 +329,8 @@ export default function DashboardClient({
             </div>
         </div>
 
-        {/* --- LEAGUES REMOVED HERE --- */}
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
             <div className={`mb-8 transition-all duration-500 origin-top ${isFocusMode ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100'}`}>
-                {/* I removed the horizontal league list block here per your request */}
-
                 {/* --- MOBILE LEADERBOARD BANNER --- */}
                 <div className="md:hidden mt-4 px-1">
                     <Link href="/leaderboard" className="block w-full bg-gradient-to-r from-gray-900 to-black border border-gray-800 p-4 rounded-xl flex items-center justify-between shadow-lg active:scale-95 transition-transform group">
@@ -340,7 +351,6 @@ export default function DashboardClient({
             </div>
 
             <div className="relative flex w-full">
-                {/* ... rest of your layout ... */}
                 <div className={`transition-all duration-700 ease-in-out w-full xl:w-[66%] ${isFocusMode ? 'xl:mx-auto' : ''}`}>
                     <div className="flex items-center gap-2 mb-6">
                         <span className={`w-2 h-2 rounded-full bg-teal-500 animate-pulse ${isFocusMode ? 'opacity-0' : ''}`}></span>

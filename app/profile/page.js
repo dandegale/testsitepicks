@@ -21,8 +21,8 @@ export default function Profile() {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // --- NEW: ODDS PREFERENCE STATE ---
-  const [showOdds, setShowOdds] = useState(false); // Default OFF
+  // --- ODDS PREFERENCE STATE ---
+  const [showOdds, setShowOdds] = useState(false); 
   const [savingPref, setSavingPref] = useState(false);
 
   const [stats, setStats] = useState({
@@ -49,14 +49,14 @@ export default function Profile() {
     }
     setUser(user);
 
-    // 2. Get Profile from DB (if exists)
+    // 2. Get Profile from DB
     const { data: profile } = await supabase
       .from('profiles')
-      .select('*') // Select ALL so we get show_odds
+      .select('*') 
       .eq('id', user.id)
       .single();
     
-    // 3. RESOLVE USERNAME:
+    // 3. RESOLVE USERNAME
     const dbName = profile?.username;
     const metaName = user.user_metadata?.username; 
     const emailName = user.email?.split('@')[0];
@@ -65,7 +65,7 @@ export default function Profile() {
     setUsername(finalName);
     setNewUsername(finalName); 
 
-    // 4. RESOLVE PREFERENCES (Default to FALSE if null or false)
+    // 4. RESOLVE PREFERENCES
     if (profile) {
         setShowOdds(profile.show_odds === true);
     }
@@ -126,11 +126,12 @@ export default function Profile() {
 
       if (error) {
           alert("Error saving setting");
-          setShowOdds(!newValue); // Revert UI on error
+          setShowOdds(!newValue); 
       }
       setSavingPref(false);
   };
 
+  // --- FIXED MATH LOGIC ---
   const calculateStats = (picks, fights, missingLeagues) => {
     let wins = 0;
     let losses = 0;
@@ -151,16 +152,24 @@ export default function Profile() {
             if (fight.winner === pick.selected_fighter) {
                 result = 'Win';
                 wins++;
-                const odds = pick.odds_at_pick || -110;
-                const stake = 10;
-                const totalPayout = odds > 0 
-                  ? ((odds / 100) * stake) + stake 
-                  : ((100 / Math.abs(odds)) * stake) + stake;
+                const odds = parseInt(pick.odds_at_pick || -110, 10);
                 
-                profitChange = totalPayout - stake; 
+                // Calculate pure profit based on 10 unit stake
+                let profit = 0;
+                if (odds > 0) {
+                    profit = (odds / 100) * 10;
+                } else {
+                    profit = (100 / Math.abs(odds)) * 10;
+                }
+
+                // THE FIX: Add the Stake (10) back to the profit
+                // Example: Profit 8 + Stake 10 = +18 Points
+                profitChange = profit + 10;
+
             } else {
                 result = 'Loss';
                 losses++;
+                // Loss subtracts the 10 point stake
                 profitChange = -10; 
             }
         } else {
@@ -197,7 +206,7 @@ export default function Profile() {
         wins,
         losses,
         pending,
-        netProfit
+        netProfit: parseFloat(netProfit.toFixed(1)) // Round total to 1 decimal
     });
 
     setHistory(historyData);
@@ -211,7 +220,6 @@ export default function Profile() {
       {/* HEADER WITH EDIT FUNCTIONALITY */}
       <div className="max-w-4xl mx-auto mb-8 border-b border-gray-800 pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         
-        {/* Left Side: Name Display / Edit Form */}
         <div className="flex-1 w-full md:w-auto">
             {isEditing ? (
                 <div className="flex items-center gap-2 w-full">
@@ -256,7 +264,6 @@ export default function Profile() {
             </p>
         </div>
         
-        {/* Right Side: Nav Buttons */}
         <div className="flex items-center gap-3">
             <Link href="/" className="text-gray-400 hover:text-white font-bold uppercase text-xs border border-gray-700 px-4 py-2 rounded transition-colors">
                 ← Dashboard
@@ -291,12 +298,12 @@ export default function Profile() {
         <div className="bg-gray-900 p-6 rounded border border-gray-800 text-center">
             <div className="text-gray-500 text-xs uppercase font-bold mb-2">Career Earnings</div>
             <div className={`text-3xl font-black ${stats.netProfit >= 0 ? 'text-green-500' : 'text-pink-500'}`}>
-                {stats.netProfit >= 0 ? '+' : ''}{stats.netProfit.toFixed(2)}
+                {stats.netProfit >= 0 ? '+' : ''}{stats.netProfit}
             </div>
         </div>
       </div>
 
-      {/* --- NEW: PREFERENCES SECTION --- */}
+      {/* PREFERENCES */}
       <div className="max-w-4xl mx-auto mb-12">
           <h2 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-4">Preferences</h2>
           
@@ -356,7 +363,6 @@ export default function Profile() {
                                         </td>
                                         <td className="p-4">
                                             <span className="font-bold text-white block">{item.selection}</span>
-                                            {/* Only show historical odds if you want, or respect the toggle here too. Currently showing history regardless. */}
                                             <span className="text-xs text-yellow-600 font-mono">({item.odds > 0 ? '+' : ''}{item.odds})</span>
                                         </td>
                                         <td className="p-4">
@@ -380,7 +386,7 @@ export default function Profile() {
                                         `}>
                                             {item.result === 'Pending' ? '-' : (
                                                 <>
-                                                    {item.profitChange > 0 ? '+' : ''}{item.profitChange.toFixed(2)}
+                                                    {item.profitChange > 0 ? '+' : ''}{item.profitChange.toFixed(1)}
                                                 </>
                                             )}
                                         </td>

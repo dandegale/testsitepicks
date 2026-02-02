@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import LeagueRail from '../components/LeagueRail';
 import LogOutButton from '../components/LogOutButton'; 
+import MobileNav from '../components/MobileNav'; 
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -17,7 +18,7 @@ export default function MyPicksPage() {
   const [activePicks, setActivePicks] = useState([]);
   const [myLeagues, setMyLeagues] = useState([]);
   
-  // Stats for the HUD
+  const [showMobileLeagues, setShowMobileLeagues] = useState(false);
   const [stats, setStats] = useState({ wins: 0, losses: 0, winPercentage: 0 });
 
   useEffect(() => {
@@ -25,12 +26,11 @@ export default function MyPicksPage() {
   }, []);
 
   const fetchData = async () => {
-    // 1. Check Login
     const { data: { user: currentUser } } = await supabase.auth.getUser();
     setUser(currentUser);
 
     if (currentUser) {
-      // 2. Fetch Leagues (Sidebar)
+      // Fetch Leagues
       const { data: memberships } = await supabase
         .from('league_members')
         .select('leagues ( id, name, image_url, invite_code )')
@@ -40,23 +40,21 @@ export default function MyPicksPage() {
         setMyLeagues(memberships.map(m => m.leagues).filter(Boolean));
       }
 
-      // 3. Fetch All Picks (for Stats & Active List)
+      // Fetch Picks
       const { data: picks } = await supabase
         .from('picks')
         .select('*')
         .eq('user_id', currentUser.email);
 
       if (picks && picks.length > 0) {
-        
-        // --- CALCULATE HUD STATS ---
+        // Calculate Stats
         const wins = picks.filter(p => p.result === 'Win').length;
         const losses = picks.filter(p => p.result === 'Loss').length;
         const total = wins + losses;
         const percentage = total > 0 ? (wins / total) * 100 : 0;
         setStats({ wins, losses, winPercentage: percentage });
 
-        // --- FETCH DETAILS FOR ACTIVE PICKS ---
-        // 4. Fetch Fights & Leagues manually
+        // Fetch Details
         const fightIds = picks.map(p => p.fight_id);
         const leagueIds = picks.map(p => p.league_id).filter(Boolean);
 
@@ -68,7 +66,6 @@ export default function MyPicksPage() {
         const fights = fightsResult.data || [];
         const leagues = leaguesResult.data || [];
 
-        // 5. Merge Data
         const picksWithDetails = picks.map(pick => {
             const fight = fights.find(f => f.id === pick.fight_id) || {};
             const league = pick.league_id 
@@ -78,16 +75,13 @@ export default function MyPicksPage() {
             return { ...pick, fight, league };
         });
 
-        // 6. Sort (Newest ID first)
+        // Sort: Newest First
         picksWithDetails.sort((a, b) => b.id - a.id);
 
-        // 7. Filter: Show anything pending
-        // UPDATED: Now filters out if pick is resolved OR if fight has a winner declared
+        // Filter: Only Active Picks
         const active = picksWithDetails.filter(p => {
              const isPickResolved = ['Win', 'Loss', 'Draw'].includes(p.result);
-             const isFightEnded = p.fight && p.fight.winner; // Check if the fight has a winner
-             
-             // Keep pick only if it's NOT resolved AND the fight is NOT ended
+             const isFightEnded = p.fight && p.fight.winner; 
              return !isPickResolved && !isFightEnded;
         });
         
@@ -97,22 +91,28 @@ export default function MyPicksPage() {
         setStats({ wins: 0, losses: 0, winPercentage: 0 });
       }
     }
-    
     setLoading(false);
   };
 
-  // --- HELPER: CALCULATE POTENTIAL GAIN (10 PTS WAGER) ---
+  // --- FIXED MATH: ADD STAKE (+10) TO RETURN ---
   const getPotentialGain = (odds) => {
-    if (!odds) return 0;
     const numericOdds = parseInt(odds, 10);
-    if (isNaN(numericOdds)) return 0;
-    let standardWin = 0;
+    
+    // Default fallback if odds are missing: 
+    // Return Stake (10) + Assumed Even Money Profit (10) = 20
+    if (!odds || isNaN(numericOdds) || numericOdds === 0) return 20;
+
+    let profit = 0;
+    
+    // 1. Calculate Profit
     if (numericOdds > 0) {
-        standardWin = numericOdds; 
+        profit = (numericOdds / 100) * 10;
     } else {
-        standardWin = (100 / Math.abs(numericOdds)) * 100;
+        profit = (100 / Math.abs(numericOdds)) * 10;
     }
-    return Math.round(standardWin / 10);
+
+    // 2. Add Stake (10) to get Total Return
+    return parseFloat((profit + 10).toFixed(1));
   };
 
   if (loading) {
@@ -142,26 +142,66 @@ export default function MyPicksPage() {
 
   return (
     <div className="flex min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
-      {/* Sidebar */}
+      
+      {/* Sidebar (Desktop) */}
       <div className="hidden md:block">
         <LeagueRail initialLeagues={myLeagues} />
       </div>
 
-      <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col">
+      {/* --- MOBILE DRAWER --- */}
+      <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
+         <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-800 flex justify-between items-center">
+                <span className="font-black italic text-xl">YOUR LEAGUES</span>
+                <button onClick={() => setShowMobileLeagues(false)} className="text-gray-500 hover:text-white transition-colors">✕</button>
+            </div>
+            
+            <div className="p-4 space-y-6">
+                <div className="flex flex-col gap-3">
+                    {myLeagues && myLeagues.length > 0 ? (
+                        myLeagues.map(league => (
+                            <Link key={league.id} href={`/league/${league.id}`} className="flex items-center gap-4 p-3 rounded-xl bg-gray-800/40 hover:bg-gray-800 border border-gray-700/50 hover:border-pink-500/50 transition-all group">
+                                <div className="w-10 h-10 rounded-full bg-gray-900 border border-gray-600 flex items-center justify-center text-[10px] font-black text-gray-400 group-hover:text-pink-500 group-hover:border-pink-500 transition-all shrink-0">
+                                     {league.name.substring(0,2).toUpperCase()}
+                                </div>
+                                <span className="font-bold text-sm text-gray-300 group-hover:text-white truncate">
+                                    {league.name}
+                                </span>
+                            </Link>
+                        ))
+                    ) : (
+                        <div className="p-4 border border-dashed border-gray-800 rounded-xl text-center">
+                            <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest mb-2">No Leagues Joined</p>
+                        </div>
+                    )}
+                </div>
+                
+                <div className="border-t border-gray-800 pt-6">
+                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Menu</p>
+                    <Link href="/leaderboard" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all mb-2">
+                        <span className="text-xl">🏆</span>
+                        <span className="text-sm font-bold text-gray-300">Global Leaderboard</span>
+                    </Link>
+                     <Link href="/profile" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all">
+                        <span className="text-xl">👤</span>
+                        <span className="text-sm font-bold text-gray-300">My Profile</span>
+                    </Link>
+                </div>
+            </div>
+         </div>
+      </div>
+
+      <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24">
         
-        {/* --- STICKY TOP HUD (COPIED FROM DASHBOARD) --- */}
+        {/* --- HEADER --- */}
         <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
             <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    {/* Header Logo */}
                     <Link href="/" className="text-2xl font-black italic text-white tracking-tighter uppercase">
                         FIGHT<span className="text-pink-600">IQ</span>
                     </Link>
-
                     <div className="h-4 w-px bg-gray-800 mx-2"></div>
-                    
                     <nav className="hidden md:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
-                        {/* Current Page Indicator */}
                         <span className="text-pink-600 cursor-default">My Picks</span>
                         <Link href="/" className="hover:text-white transition-colors">Global Feed</Link>
                         <Link href="/leaderboard" className="hover:text-white transition-colors">Leaderboards</Link>
@@ -169,7 +209,6 @@ export default function MyPicksPage() {
                 </div>
 
                 <div className="flex items-center gap-4 md:gap-6">
-                    {/* Career Record Stats */}
                     <div className="flex items-center gap-3 pr-4 border-r border-gray-800">
                         <div className="text-right">
                             <p className="text-[9px] font-black text-gray-600 uppercase tracking-tighter leading-none mb-1">Career Record</p>
@@ -183,24 +222,18 @@ export default function MyPicksPage() {
                             </svg>
                         </div>
                     </div>
-
-                    <Link 
-                        href="/profile" 
-                        className="bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all flex items-center gap-2"
-                    >
-                        <span className="hidden sm:inline">My Profile</span>
-                        <span className="sm:hidden">👤</span>
+                    <Link href="/profile" className="hidden md:flex bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all items-center gap-2">
+                        <span>My Profile</span>
                     </Link>
-
-                    <LogOutButton />
+                    <div className="hidden md:block">
+                        <LogOutButton />
+                    </div>
                 </div>
             </div>
         </header>
 
         {/* --- MAIN CONTENT --- */}
         <div className="p-6 md:p-12">
-            
-            {/* Page Title Section */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 border-b border-gray-800 pb-6 gap-4">
                 <div>
                     <h1 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter mb-2">
@@ -213,7 +246,6 @@ export default function MyPicksPage() {
                 </Link>
             </div>
 
-            {/* Content Area */}
             {activePicks.length === 0 ? (
                 <div className="p-12 border-2 border-dashed border-gray-900 rounded-2xl text-center bg-gray-950/50">
                     <h3 className="text-2xl font-black text-gray-700 uppercase italic mb-4">No Active Picks</h3>
@@ -296,6 +328,9 @@ export default function MyPicksPage() {
             )}
         </div>
       </main>
+
+      {/* Pass toggle handler to mobile nav */}
+      <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
     </div>
   );
 }

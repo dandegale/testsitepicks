@@ -11,9 +11,13 @@ export default function FightCard({
   showOdds = true 
 }) {
   
-  // --- 1. ROBUST TIME PARSING (The "3 AM" Fix) ---
-  // If the string is "2026-02-08T03:00:00" (missing Z), we force it to "2026-02-08T03:00:00Z"
-  // This ensures the browser treats it as UTC and subtracts 5 hours for EST (becoming 10 PM).
+  // --- 1. CRITICAL SAFETY GUARD (Prevents Red Screen Crash) ---
+  if (!fight || !fight.start_time) {
+      return null; 
+  }
+
+  // --- 2. ROBUST TIME PARSING ---
+  // If the string is "2026-02-08T03:00:00" (missing Z), force it to UTC
   const rawTime = fight.start_time;
   const timeString = rawTime && !rawTime.endsWith('Z') ? `${rawTime}Z` : rawTime;
   const startTime = new Date(timeString);
@@ -23,20 +27,15 @@ export default function FightCard({
                       && startTime.getFullYear() > 2024;
 
   const hasStarted = isValidDate && startTime < new Date();
-
   const isLocked = !!existingPick || hasStarted; 
   
   const isSelected = pendingPick?.fighterName === fight.fighter_1_name || pendingPick?.fighterName === fight.fighter_2_name;
   
-  // --- 2. TIME FORMATTING HELPER ---
+  // --- 3. FORMATTING HELPERS ---
   const formatFightTime = (date) => {
     if (!isValidDate) return 'TBD';
-
     return new Intl.DateTimeFormat('en-US', {
-      weekday: 'short',     // "Sat"
-      hour: 'numeric',      // "10"
-      minute: '2-digit',    // "00"
-      timeZoneName: 'short' // "EST"
+      weekday: 'short', hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
     }).format(date);
   };
 
@@ -50,13 +49,45 @@ export default function FightCard({
 
   const renderOddsText = (odds) => {
       if (!showOdds) return <span className="opacity-0">---</span>; 
-      return (
-          <>
-            {odds > 0 ? '+' : ''}{odds}
-          </>
-      );
+      return <>{odds > 0 ? '+' : ''}{odds}</>;
   };
 
+  // --- 4. BADGE RENDERER (New: Handles BMF & Champ Badges) ---
+  const renderFighterName = (name, badgeLabel) => {
+    const isBMF = badgeLabel === 'BMF';
+    
+    // Style: Dark/Silver for BMF, Gold for Champ
+    const badgeStyle = isBMF 
+      ? "bg-zinc-800 text-white border border-zinc-500 shadow-[0_0_10px_rgba(255,255,255,0.2)]" 
+      : "bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]"; 
+
+    return (
+      <div className="flex flex-col items-center justify-center mb-2">
+        <div className="flex items-center justify-center gap-2">
+          <h3 className="text-xl md:text-2xl font-black text-white uppercase leading-none">
+            <Link 
+              href={`/fighter/${createFighterSlug(name)}`}
+              className="hover:text-pink-500 hover:underline decoration-pink-500 decoration-2 underline-offset-4 transition-all"
+            >
+              {name}
+            </Link>
+          </h3>
+          
+          {/* Render Badge if label exists */}
+          {badgeLabel && (
+            <span 
+              className={`${badgeStyle} text-[9px] font-black px-1.5 py-0.5 rounded flex items-center justify-center min-w-[24px] h-5 tracking-tighter transform translate-y-[-1px]`} 
+              title={isBMF ? "BMF Champion" : "Champion"}
+            >
+              {badgeLabel}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // --- 5. RENDER CARD ---
   if (fight.winner) {
     return (
       <div className="bg-gray-900 border-2 border-gray-800 rounded-lg p-4 flex justify-between items-center opacity-75 grayscale mb-4">
@@ -82,8 +113,6 @@ export default function FightCard({
       {/* HEADER SECTION */}
       <div className="flex justify-between items-center mb-6 text-gray-400 text-xs uppercase tracking-widest font-bold">
         <span>{fight.event_name || 'UFC Fight Night'}</span>
-        
-        {/* --- CHANGED TO WHITE TEXT --- */}
         <span className="text-white font-mono tracking-tighter">
             {formatFightTime(startTime)}
         </span>
@@ -92,15 +121,9 @@ export default function FightCard({
       <div className="flex justify-between items-center gap-4">
         
         {/* FIGHTER 1 */}
-        <div className="flex-1 text-center">
-          <h3 className="text-xl md:text-2xl font-black text-white uppercase leading-none mb-2">
-            <Link 
-              href={`/fighter/${createFighterSlug(fight.fighter_1_name)}`}
-              className="hover:text-pink-500 hover:underline decoration-pink-500 decoration-2 underline-offset-4 transition-all"
-            >
-              {fight.fighter_1_name}
-            </Link>
-          </h3>
+        <div className="flex-1 text-center group">
+          {/* Use the new Badge Renderer */}
+          {renderFighterName(fight.fighter_1_name, fight.fighter_1_badge)}
           
           <div className="text-yellow-500 font-mono text-sm mb-4 min-h-[20px]">
             {renderOddsText(fight.fighter_1_odds)}
@@ -135,18 +158,12 @@ export default function FightCard({
           </button>
         </div>
 
-        <div className="text-gray-700 font-black text-2xl italic opacity-50">VS</div>
+        <div className="text-gray-700 font-black text-2xl italic opacity-50 select-none">VS</div>
 
         {/* FIGHTER 2 */}
-        <div className="flex-1 text-center">
-          <h3 className="text-xl md:text-2xl font-black text-white uppercase leading-none mb-2">
-            <Link 
-              href={`/fighter/${createFighterSlug(fight.fighter_2_name)}`}
-              className="hover:text-pink-500 hover:underline decoration-pink-500 decoration-2 underline-offset-4 transition-all"
-            >
-              {fight.fighter_2_name}
-            </Link>
-          </h3>
+        <div className="flex-1 text-center group">
+           {/* Use the new Badge Renderer */}
+           {renderFighterName(fight.fighter_2_name, fight.fighter_2_badge)}
           
           <div className="text-yellow-500 font-mono text-sm mb-4 min-h-[20px]">
              {renderOddsText(fight.fighter_2_odds)}

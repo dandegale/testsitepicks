@@ -9,15 +9,16 @@ export default function FightDashboard({
     onInteractionStart, 
     onPickSelect,
     pendingPicks = [],
-    showOdds = true // <--- 1. Receive the setting (default to true)
+    showOdds = true 
 }) {
 
   const handlePickClick = (fightId, fighterName, odds) => {
     if (onInteractionStart) onInteractionStart();
     
     let fightEventName = '';
+    // Safely look for the event name
     Object.values(groupedFights).forEach(group => {
-        const found = group.find(f => f.id === fightId);
+        const found = group.find(f => f && f.id === fightId);
         if (found) fightEventName = found.event_name;
     });
 
@@ -31,8 +32,13 @@ export default function FightDashboard({
     }
   };
 
+  // 1. Handle Empty State Gracefully
   if (!groupedFights || Object.keys(groupedFights).length === 0) {
-      return <div className="text-zinc-500 text-center py-20">No active fights found.</div>;
+      return (
+        <div className="text-zinc-500 text-center py-20 font-bold uppercase tracking-widest text-xs">
+            No active fights found.
+        </div>
+      );
   }
 
   return (
@@ -57,6 +63,10 @@ export default function FightDashboard({
           <div className="grid grid-cols-1 gap-4">
             {groupFights.map((fight) => {
               
+              // --- CRITICAL FIX: SAFETY CHECK ---
+              // If the data is bad/undefined, skip this card to prevent the crash
+              if (!fight) return null;
+
               const existingPick = userPicks.find(p => p.fight_id === fight.id);
               const pendingForThisFight = pendingPicks.find(p => p.fightId === fight.id);
               
@@ -67,7 +77,7 @@ export default function FightDashboard({
                   existingPick={existingPick} 
                   pendingPick={pendingForThisFight} 
                   onPick={handlePickClick}
-                  showOdds={showOdds} // <--- 2. Pass it down to the card
+                  showOdds={showOdds} 
                 />
               );
             })}

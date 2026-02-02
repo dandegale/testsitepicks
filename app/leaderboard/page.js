@@ -45,7 +45,6 @@ export default function LeaderboardPage() {
     // 2. Fetch DATA
     const { data: picks } = await supabase.from('picks').select('*');
     const { data: fights } = await supabase.from('fights').select('*');
-    // Fetch profiles to try and get the latest username
     const { data: profiles } = await supabase.from('profiles').select('email, username');
 
     if (picks && fights) {
@@ -55,23 +54,27 @@ export default function LeaderboardPage() {
     setLoading(false);
   };
 
-  // --- THE MATH ENGINE ---
+  // --- THE MATH ENGINE (Fixed: +10 Stake & 1 Decimal) ---
   const calculatePoints = (odds) => {
     const numericOdds = parseInt(odds, 10);
-    if (isNaN(numericOdds) || numericOdds === 0) return 0;
+    
+    // Default fallback: Return stake (10) + flat profit (10) = 20
+    if (isNaN(numericOdds) || numericOdds === 0) return 20;
 
-    let standardWin = 0;
+    let profit = 0;
+    
     if (numericOdds > 0) {
-        standardWin = numericOdds; // +150 = 150 win
+        // Positive Odds (e.g. +180 -> 18 profit)
+        profit = (numericOdds / 100) * 10;
     } else {
-        standardWin = (100 / Math.abs(numericOdds)) * 100; // -200 = 50 win
+        // Negative Odds (e.g. -200 -> 5 profit)
+        profit = (100 / Math.abs(numericOdds)) * 10;
     }
     
-    // Scale to 10 point wager
-    return Math.round(standardWin / 10);
+    // Add Stake (10) back to profit and round to 1 decimal place
+    return parseFloat((profit + 10).toFixed(1));
   };
 
-  // --- UPDATED LOGIC: USERNAME FIX ---
   const processLeaderboard = (picks, fights, profiles) => {
     const scores = {};
 
@@ -81,18 +84,11 @@ export default function LeaderboardPage() {
 
         const fight = fights.find(f => f.id === pick.fight_id);
 
-        // Only process if the fight is OVER (has a winner)
         if (fight && fight.winner) {
-            
             const userId = pick.user_id; 
 
-            // Initialize User if missing
             if (!scores[userId]) {
-                // 1. Try to find LIVE profile (best case)
                 const userProfile = profiles.find(p => p.email === userId);
-                
-                // 2. Fallback to the username SAVED ON THE PICK (second best)
-                // 3. Last resort: Use the email handle
                 const displayName = userProfile?.username || pick.username || userId.split('@')[0];
 
                 scores[userId] = { 
@@ -105,17 +101,27 @@ export default function LeaderboardPage() {
 
             // --- WIN / LOSS LOGIC ---
             if (fight.winner === pick.selected_fighter) {
+                // Win: Add Profit + Stake
                 const points = calculatePoints(pick.odds_at_pick);
                 scores[userId].score += points;
                 scores[userId].wins += 1;
             } else {
+                // Loss: Subtract Stake (10)
                 scores[userId].score -= 10;
             }
         }
     });
 
+    // Sort
     const sorted = Object.values(scores).sort((a, b) => b.score - a.score);
-    setLeaderboard(sorted);
+    
+    // Clean to 1 decimal place for final display
+    const cleaned = sorted.map(p => ({
+        ...p,
+        score: parseFloat(p.score.toFixed(1))
+    }));
+
+    setLeaderboard(cleaned);
   };
 
   if (loading) {
@@ -132,27 +138,44 @@ export default function LeaderboardPage() {
   return (
     <div className="flex min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white pb-20 md:pb-0">
       
-      {/* --- DESKTOP SIDEBAR --- */}
+      {/* Sidebar */}
       <div className="hidden md:block">
         <LeagueRail initialLeagues={myLeagues} />
       </div>
 
-      {/* --- MOBILE LEAGUE DRAWER --- */}
+      {/* Mobile Drawer */}
       <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
          <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
             <div className="p-6 border-b border-gray-800 flex justify-between items-center">
                 <span className="font-black italic text-xl">YOUR LEAGUES</span>
                 <button onClick={() => setShowMobileLeagues(false)} className="text-gray-500 hover:text-white transition-colors">✕</button>
             </div>
-            <div className="p-4">
-                <LeagueRail initialLeagues={myLeagues} />
+            <div className="p-4 space-y-6">
+                <div className="flex flex-col gap-4">
+                    {myLeagues.length > 0 ? (
+                        <LeagueRail initialLeagues={myLeagues} />
+                    ) : (
+                        <div className="p-4 border border-dashed border-gray-800 rounded-xl text-center">
+                            <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest">No Leagues Joined</p>
+                        </div>
+                    )}
+                </div>
+                <div className="border-t border-gray-800 pt-6">
+                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Menu</p>
+                    <span className="flex items-center gap-3 p-3 rounded-lg bg-gray-900 border border-gray-800 text-pink-500 cursor-default mb-2">
+                        <span className="text-xl">🏆</span>
+                        <span className="text-sm font-bold">Global Leaderboard</span>
+                    </span>
+                     <Link href="/profile" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all">
+                        <span className="text-xl">👤</span>
+                        <span className="text-sm font-bold text-gray-300">My Profile</span>
+                    </Link>
+                </div>
             </div>
          </div>
       </div>
 
       <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col">
-        
-        {/* --- HEADER --- */}
         <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -178,7 +201,6 @@ export default function LeaderboardPage() {
         </header>
 
         <div className="p-4 md:p-12 max-w-5xl mx-auto w-full">
-            {/* Page Title */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 md:mb-12 border-b border-gray-800 pb-6 gap-4">
                 <div>
                     <h1 className="text-3xl md:text-5xl font-black italic uppercase tracking-tighter mb-2">
@@ -196,7 +218,6 @@ export default function LeaderboardPage() {
                 )}
             </div>
 
-            {/* Scrollable Table Container */}
             <div className="bg-gray-950 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[600px] md:min-w-0">
                     <thead>
@@ -246,7 +267,7 @@ export default function LeaderboardPage() {
                                     </td>
                                     <td className="p-4 md:p-6 text-right">
                                         <span className={`font-black text-xl italic tracking-tighter ${player.score < 0 ? 'text-red-500' : 'text-teal-400'}`}>
-                                            {player.score} <span className="text-[10px] text-teal-700 not-italic ml-1">PTS</span>
+                                            {player.score > 0 ? '+' : ''}{player.score} <span className="text-[10px] text-teal-700 not-italic ml-1">PTS</span>
                                         </span>
                                     </td>
                                 </tr>
