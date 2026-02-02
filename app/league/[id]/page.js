@@ -11,8 +11,6 @@ import BettingSlip from '../../components/BettingSlip';
 import LogOutButton from '../../components/LogOutButton';
 import MobileNav from '../../components/MobileNav'; 
 
-// --- DELETED LINE: export const revalidate = 0; ---
-
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -162,6 +160,7 @@ export default function LeaguePage() {
         setLeague(leagueData);
 
         if (currentUser && leagueData) {
+            // Check both Email and ID to ensure Admin access is granted correctly
             const isCreator = (leagueData.created_by === currentUser.email) || (leagueData.created_by === currentUser.id);
             setIsAdmin(isCreator);
         }
@@ -219,24 +218,21 @@ export default function LeaguePage() {
             setExistingPicks(picksData || []);
         }
 
-        // --- FETCH RESULTS ---
         const { data: completedFights } = await supabase
             .from('fights')
             .select('id, winner')
             .not('winner', 'is', null);
 
-        // --- FETCH LEAGUE PICKS (Added odds_at_pick) ---
         const { data: allLeaguePicks } = await supabase
             .from('picks')
             .select('user_id, fight_id, selected_fighter, odds_at_pick')
             .eq('league_id', leagueId);
 
-        // --- SCORING ENGINE ---
         if (processedMembers && allLeaguePicks) {
             const scores = processedMembers.map(member => {
                 let wins = 0;
                 let losses = 0;
-                let totalScore = 0; // NEW: Track points
+                let totalScore = 0;
 
                 const memberPicks = allLeaguePicks.filter(p => p.user_id === member.user_id);
 
@@ -244,24 +240,18 @@ export default function LeaguePage() {
                     const fight = completedFights?.find(f => f.id === pick.fight_id);
                     if (fight && fight.winner) {
                         if (fight.winner === pick.selected_fighter) {
-                            // WIN LOGIC
                             wins++;
+                            const numericOdds = parseInt(pick.odds_at_pick, 10);
                             let profit = 0;
-                            const odds = parseInt(pick.odds_at_pick); // Ensure number
-                            
-                            if (odds > 0) {
-                                // Positive Odds (e.g. +180 -> 18 pts)
-                                profit = (odds / 100) * 10;
-                            } else if (odds < 0) {
-                                // Negative Odds (e.g. -200 -> 5 pts)
-                                profit = (100 / Math.abs(odds)) * 10;
+                            if (!isNaN(numericOdds) && numericOdds !== 0) {
+                                if (numericOdds > 0) profit = (numericOdds / 100) * 10;
+                                else profit = (100 / Math.abs(numericOdds)) * 10;
+                            } else {
+                                profit = 10; 
                             }
-                            // Fallback if odds are missing/0 (e.g. 10 pts flat?)
-                            if (isNaN(profit)) profit = 10; 
-
-                            totalScore += profit;
+                            // Fixed Math: Profit + 10 Stake
+                            totalScore += (profit + 10);
                         } else {
-                            // LOSS LOGIC
                             losses++;
                             totalScore -= 10;
                         }
@@ -273,12 +263,11 @@ export default function LeaguePage() {
                     displayName: member.displayName, 
                     wins,
                     losses,
-                    totalScore: parseFloat(totalScore.toFixed(2)), // Clean decimal
+                    totalScore: parseFloat(totalScore.toFixed(1)),
                     winRate: (wins + losses) > 0 ? Math.round((wins / (wins + losses)) * 100) : 0
                 };
             });
 
-            // Sort by Score first, then Wins
             scores.sort((a, b) => b.totalScore - a.totalScore || b.wins - a.wins);
             setLeaderboard(scores);
         }
@@ -462,6 +451,7 @@ export default function LeaguePage() {
                 >
                     Leaderboard
                 </button>
+                {/* Admin Tab - Renders if isAdmin is true */}
                 {isAdmin && (
                     <button 
                         onClick={() => setActiveTab('settings')}
@@ -489,6 +479,18 @@ export default function LeaguePage() {
                                             League Fight Card
                                         </h2>
                                     </div>
+                                    
+                                    {/* --- RESTORED QUICK COPY BUTTON --- */}
+                                    <button 
+                                        onClick={handleCopyCode}
+                                        className="hidden md:flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1 rounded transition-all group"
+                                    >
+                                        <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Code:</span>
+                                        <span className="text-xs font-mono font-bold text-pink-500">{league?.invite_code}</span>
+                                        <span className="text-[10px] text-gray-500 group-hover:text-white">
+                                            {copySuccess ? '✓' : '❐'}
+                                        </span>
+                                    </button>
                                 </div>
 
                                 <div className="text-[10px] font-black uppercase text-gray-500 tracking-widest">
@@ -529,7 +531,6 @@ export default function LeaguePage() {
                                     <div className="col-span-1 text-center">Rank</div>
                                     <div className="col-span-6">Manager</div>
                                     <div className="col-span-2 text-center">Record</div>
-                                    {/* Updated Header for Points */}
                                     <div className="col-span-3 text-right">Points</div>
                                 </div>
                                 <div className="divide-y divide-gray-800">
@@ -558,7 +559,6 @@ export default function LeaguePage() {
                                                 <span className="text-white">{player.wins}</span> - {player.losses}
                                             </div>
                                             
-                                            {/* Points Display */}
                                             <div className="col-span-3 text-right">
                                                 <span className={`px-2 py-1 rounded text-[10px] font-black ${player.totalScore >= 0 ? 'bg-teal-950 text-teal-400 border border-teal-900' : 'bg-red-950 text-red-400 border border-red-900'}`}>
                                                     {player.totalScore > 0 ? '+' : ''}{player.totalScore} PTS
@@ -578,13 +578,137 @@ export default function LeaguePage() {
 
                     {activeTab === 'settings' && (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-12">
-                            {/* Settings Content... (Keep existing code here) */}
+                            
+                            {/* 1. EDIT LEAGUE DETAILS */}
                             <div>
                                 <h2 className="text-xs font-black text-white uppercase tracking-widest mb-4 flex items-center gap-2">
                                     <span className="w-2 h-2 rounded-full bg-pink-600"></span>
                                     Edit League Details
                                 </h2>
-                                {/* ... Form ... */}
+                                <form 
+                                    onSubmit={async (e) => {
+                                        e.preventDefault();
+                                        const form = e.target;
+                                        const newName = form.leagueName.value;
+                                        const newImage = form.leagueImage.value;
+
+                                        const { error } = await supabase
+                                            .from('leagues')
+                                            .update({ name: newName, image_url: newImage })
+                                            .eq('id', leagueId);
+
+                                        if (error) alert("Error: " + error.message);
+                                        else {
+                                            alert("League updated!");
+                                            window.location.reload(); 
+                                        }
+                                    }}
+                                    className="bg-gray-900 border border-gray-800 rounded-xl p-6"
+                                >
+                                    <div className="grid md:grid-cols-2 gap-6 mb-6">
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">League Name</label>
+                                            <input 
+                                                name="leagueName"
+                                                defaultValue={league?.name}
+                                                className="w-full bg-black border border-gray-700 p-3 rounded text-white text-sm font-bold focus:border-pink-500 outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">Logo Image URL</label>
+                                            <input 
+                                                name="leagueImage"
+                                                defaultValue={league?.image_url}
+                                                className="w-full bg-black border border-gray-700 p-3 rounded text-white text-xs font-mono focus:border-pink-500 outline-none"
+                                                placeholder="https://..."
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end">
+                                        <button type="submit" className="bg-white text-black text-[10px] font-black uppercase px-6 py-3 rounded hover:bg-pink-600 hover:text-white transition-all">
+                                            Save Changes
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+
+                            {/* 2. CONFIGURE FIGHT CARD */}
+                            <div>
+                                <h2 className="text-xs font-black text-white uppercase tracking-widest mb-4">
+                                    Configure Fight Card
+                                </h2>
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-4">
+                                        Select which fights are visible to league members.
+                                    </p>
+                                    <div className="flex gap-4">
+                                        <button 
+                                            onClick={() => setCardFilter('full')}
+                                            className={`flex-1 py-3 px-4 rounded border text-[10px] font-black uppercase tracking-widest transition-all ${cardFilter === 'full' ? 'bg-pink-600 border-pink-600 text-white' : 'bg-black border-gray-700 text-gray-500 hover:text-white'}`}
+                                        >
+                                            Show Full Card
+                                        </button>
+                                        <button 
+                                            onClick={() => setCardFilter('main')}
+                                            className={`flex-1 py-3 px-4 rounded border text-[10px] font-black uppercase tracking-widest transition-all ${cardFilter === 'main' ? 'bg-pink-600 border-pink-600 text-white' : 'bg-black border-gray-700 text-gray-500 hover:text-white'}`}
+                                        >
+                                            Main Card Only
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 3. DANGER ZONE */}
+                            <div className="pt-8 border-t border-gray-800">
+                                <div className="flex items-center justify-between gap-2 mb-4">
+                                    <h2 className="text-xl font-black uppercase italic tracking-tighter text-red-600">
+                                        Danger Zone
+                                    </h2>
+                                    <button 
+                                        onClick={handleDeleteLeague}
+                                        className="bg-red-950/20 text-red-500 hover:bg-red-950/40 border border-red-900/50 px-6 py-3 rounded text-[10px] font-black uppercase tracking-widest transition-all hover:text-white"
+                                    >
+                                        ⚠ Delete League
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* 4. ROSTER */}
+                            <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+                                <div className="p-4 border-b border-gray-800 bg-black/20 flex justify-between items-center">
+                                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest">Member Roster</h3>
+                                    <span className="text-[10px] font-bold text-gray-600">{members.length} Users</span>
+                                </div>
+                                <div className="divide-y divide-gray-800">
+                                    {members.map((member) => (
+                                        <div key={member.user_id} className="p-4 flex items-center justify-between hover:bg-gray-800/30 transition-colors">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-xs font-black text-gray-400 border border-gray-700">
+                                                    {member.displayName ? member.displayName.charAt(0).toUpperCase() : '?'}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-bold text-white">{member.displayName}</p>
+                                                    <p className="text-[10px] text-gray-500 uppercase font-mono">
+                                                        Joined: {new Date(member.joined_at).toLocaleDateString()}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            
+                                            {(member.user_id !== user?.email && member.user_id !== user?.id) ? (
+                                                <button 
+                                                    onClick={() => handleKickMember(member.user_id)}
+                                                    className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-900/20 transition-all active:scale-95"
+                                                >
+                                                    KICK
+                                                </button>
+                                            ) : (
+                                                <span className="text-[9px] font-black uppercase text-teal-500 bg-teal-950/30 px-3 py-1 rounded border border-teal-900/50">
+                                                    You
+                                                </span>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     )}
