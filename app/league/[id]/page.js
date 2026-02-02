@@ -10,6 +10,8 @@ import LeagueRail from '../../components/LeagueRail';
 import BettingSlip from '../../components/BettingSlip'; 
 import LogOutButton from '../../components/LogOutButton';
 import MobileNav from '../../components/MobileNav'; 
+// 1. IMPORT TOAST
+import Toast from '../../components/Toast'; 
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -53,6 +55,11 @@ export default function LeaguePage() {
   const [existingPicks, setExistingPicks] = useState([]); 
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // --- NEW: TOAST & DELETE STATE ---
+  const [toast, setToast] = useState(null); 
+  const [deleteConfirm, setDeleteConfirm] = useState(false); 
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchLeagueData();
@@ -277,15 +284,13 @@ export default function LeaguePage() {
     }
   };
 
-  // --- UPDATED: Copy Link with Correct Name ---
   const handleCopyCode = () => {
     if (league?.invite_code) {
         const inviteUrl = `${window.location.origin}/league/${leagueId}?invite=${league.invite_code}`;
-        
-        // Corrected Name: FightIQ
         const shareMessage = `Join my fight league on FightIQ! 👊\n${inviteUrl}`;
 
         navigator.clipboard.writeText(shareMessage).then(() => {
+            // Using Toast instead of simple state if desired, but kept simple state for "Code Copy"
             setCopySuccess(true);
             setTimeout(() => setCopySuccess(false), 2000);
         });
@@ -293,17 +298,40 @@ export default function LeaguePage() {
   };
 
   const handleKickMember = async (memberUserId) => {
+    // Kept browser confirm for kick (minor action)
     if (!confirm(`Are you sure you want to KICK ${memberUserId}?`)) return;
     const { error } = await supabase.from('league_members').delete().eq('league_id', leagueId).eq('user_id', memberUserId);
     if (error) alert('Error: ' + error.message);
-    else setMembers(members.filter(m => m.user_id !== memberUserId));
+    else {
+        setMembers(members.filter(m => m.user_id !== memberUserId));
+        setToast({ message: "Member Removed", type: "success" });
+    }
   };
 
+  // --- UPDATED DELETE LOGIC (NO BROWSER ALERT) ---
   const handleDeleteLeague = async () => {
-      if (!confirm('WARNING: This will permanently DELETE this league. Continue?')) return;
+      // 1. First Click: Show Warning Toast
+      if (!deleteConfirm) {
+          setDeleteConfirm(true);
+          setToast({ message: "⚠️ Click DELETE again to confirm!", type: "error" });
+          
+          // Reset confirm state after 3 seconds
+          setTimeout(() => setDeleteConfirm(false), 3000);
+          return;
+      }
+
+      // 2. Second Click: Perform Delete
+      setDeleting(true);
       const { error } = await supabase.from('leagues').delete().eq('id', leagueId);
-      if (error) alert(error.message);
-      else router.push('/');
+      
+      if (error) {
+          setToast({ message: "Delete Failed: " + error.message, type: "error" });
+          setDeleting(false);
+          setDeleteConfirm(false);
+      } else {
+          setToast({ message: "League Deleted", type: "success" });
+          router.push('/');
+      }
   };
 
   const handlePickSelect = (newPick) => {
@@ -333,7 +361,7 @@ export default function LeaguePage() {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user || !user.email) {
-        alert("You must be logged in to lock picks.");
+        setToast({ message: "Please log in first", type: "error" });
         setIsSubmitting(false);
         return;
     }
@@ -354,10 +382,11 @@ export default function LeaguePage() {
     setIsSubmitting(false);
 
     if (error) {
-        alert('Error saving picks: ' + error.message);
+        setToast({ message: "Error saving picks", type: "error" });
     } else {
         setPendingPicks([]); 
-        window.location.reload(); 
+        setToast({ message: "Picks Locked In!", type: "success" });
+        setTimeout(() => window.location.reload(), 1000); 
     }
   };
 
@@ -421,7 +450,7 @@ export default function LeaguePage() {
                         {league?.name}
                     </h1>
                     
-                    {/* Invite Code / Share Button */}
+                    {/* Invite Code / Share Button (Hero Section) */}
                     <div className="flex items-center gap-4 text-gray-400 text-xs font-bold uppercase tracking-widest">
                         <button 
                             onClick={handleCopyCode}
@@ -485,7 +514,7 @@ export default function LeaguePage() {
                                         </h2>
                                     </div>
                                     
-                                    {/* --- QUICK COPY BUTTON --- */}
+                                    {/* --- RESTORED QUICK COPY BUTTON --- */}
                                     <button 
                                         onClick={handleCopyCode}
                                         className="hidden md:flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1 rounded transition-all group"
@@ -602,10 +631,10 @@ export default function LeaguePage() {
                                             .update({ name: newName, image_url: newImage })
                                             .eq('id', leagueId);
 
-                                        if (error) alert("Error: " + error.message);
+                                        if (error) setToast({ message: error.message, type: "error" });
                                         else {
-                                            alert("League updated!");
-                                            window.location.reload(); 
+                                            setToast({ message: "League updated!", type: "success" });
+                                            setTimeout(() => window.location.reload(), 1000); 
                                         }
                                     }}
                                     className="bg-gray-900 border border-gray-800 rounded-xl p-6"
@@ -663,7 +692,7 @@ export default function LeaguePage() {
                                 </div>
                             </div>
 
-                            {/* 3. DANGER ZONE */}
+                            {/* 3. DANGER ZONE - UPDATED DELETE BUTTON */}
                             <div className="pt-8 border-t border-gray-800">
                                 <div className="flex items-center justify-between gap-2 mb-4">
                                     <h2 className="text-xl font-black uppercase italic tracking-tighter text-red-600">
@@ -671,9 +700,14 @@ export default function LeaguePage() {
                                     </h2>
                                     <button 
                                         onClick={handleDeleteLeague}
-                                        className="bg-red-950/20 text-red-500 hover:bg-red-950/40 border border-red-900/50 px-6 py-3 rounded text-[10px] font-black uppercase tracking-widest transition-all hover:text-white"
+                                        disabled={deleting}
+                                        className={`px-6 py-3 rounded text-[10px] font-black uppercase tracking-widest transition-all ${
+                                            deleteConfirm 
+                                            ? "bg-red-600 text-white animate-pulse shadow-[0_0_15px_rgba(220,38,38,0.5)]" 
+                                            : "bg-red-950/20 text-red-500 hover:bg-red-950/40 border border-red-900/50 hover:text-white"
+                                        }`}
                                     >
-                                        ⚠ Delete League
+                                        {deleting ? 'Deleting...' : (deleteConfirm ? '⚠️ Confirm Delete?' : 'Delete League')}
                                     </button>
                                 </div>
                             </div>
@@ -822,6 +856,15 @@ export default function LeaguePage() {
       </div>
 
       <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
+
+      {/* --- RENDER TOAST --- */}
+      {toast && (
+        <Toast 
+          message={toast.message} 
+          type={toast.type} 
+          onClose={() => setToast(null)} 
+        />
+      )}
 
     </div>
   );

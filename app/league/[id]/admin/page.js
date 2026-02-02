@@ -4,6 +4,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
+// 1. IMPORT TOAST
+import Toast from '../../components/Toast'; 
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -18,16 +20,20 @@ export default function LeagueAdminPage() {
   const [loading, setLoading] = useState(true);
   const [members, setMembers] = useState([]);
   
-  // --- EDITABLE FIELDS ---
+  // Editable Fields
   const [leagueName, setLeagueName] = useState('');
   const [leagueImage, setLeagueImage] = useState('');
   
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // --- CARD SELECTION STATE ---
+  // Card Selection
   const [eventType, setEventType] = useState('full_card');
   const [syncing, setSyncing] = useState(false);
+
+  // --- NEW STATES FOR TOAST & DELETE ---
+  const [toast, setToast] = useState(null); 
+  const [deleteConfirm, setDeleteConfirm] = useState(false); 
 
   useEffect(() => {
     if (id) fetchAdminData();
@@ -38,7 +44,6 @@ export default function LeagueAdminPage() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { router.push('/login'); return; }
 
-        // 1. Fetch League Data
         const { data: league, error: leagueError } = await supabase
           .from('leagues')
           .select('*')
@@ -46,24 +51,20 @@ export default function LeagueAdminPage() {
           .single();
 
         if (leagueError || !league) {
-            alert("Error loading league. You might not have permission.");
             router.push('/');
             return;
         }
 
-        // 2. Strict Admin Check
+        // Strict Admin Check
         const isCreator = (league.created_by === user.email) || (league.created_by === user.id);
         if (!isCreator) {
-            alert("⛔ Access Denied: You are not the admin.");
             router.push(`/league/${id}`);
             return;
         }
 
-        // 3. Populate Inputs (Handle nulls safely)
         setLeagueName(league.name || '');
         setLeagueImage(league.image_url || '');
 
-        // 4. Fetch Active Card Settings
         const { data: config } = await supabase
             .from('league_events')
             .select('event_type')
@@ -72,7 +73,6 @@ export default function LeagueAdminPage() {
         
         if (config) setEventType(config.event_type);
 
-        // 5. Fetch Members
         const { data: memberList } = await supabase
           .from('league_members')
           .select('*')
@@ -98,12 +98,15 @@ export default function LeagueAdminPage() {
         is_active: true
     }, { onConflict: 'league_id' });
     setSyncing(false);
+    setToast({ message: "Card Settings Saved", type: "success" });
   };
 
-  // --- SAVE NAME & IMAGE ---
   const handleUpdateLeague = async (e) => {
     e.preventDefault();
-    if (!leagueName.trim()) return alert("League name is required.");
+    if (!leagueName.trim()) {
+        setToast({ message: "League name required", type: "error" });
+        return;
+    }
 
     setSaving(true);
     const { error } = await supabase
@@ -112,42 +115,50 @@ export default function LeagueAdminPage() {
         .eq('id', id);
 
     if (error) {
-        alert("Save Failed: " + error.message);
+        setToast({ message: error.message, type: "error" });
     } else {
-        alert("✅ League updated successfully!");
+        setToast({ message: "League Updated", type: "success" });
     }
     setSaving(false);
   };
 
-  // --- DELETE LEAGUE (DANGER ZONE) ---
+  // --- NEW DELETE LOGIC (NO BROWSER ALERT) ---
   const handleDeleteLeague = async () => {
-    const confirmed = window.confirm(
-        "⚠️ WARNING: This will permanently delete your league and all member picks.\n\nAre you sure you want to proceed?"
-    );
-    if (!confirmed) return;
+    // 1. If not yet confirmed, ask for confirmation via Toast
+    if (!deleteConfirm) {
+        setDeleteConfirm(true);
+        setToast({ message: "⚠️ Press again to CONFIRM DELETE", type: "error" });
+        
+        // Reset the button after 3 seconds if they don't click
+        setTimeout(() => setDeleteConfirm(false), 3000);
+        return;
+    }
 
+    // 2. Second click: Actually Delete
     setDeleting(true);
     const { error } = await supabase.from('leagues').delete().eq('id', id);
 
     if (error) {
-        alert("Delete Failed: " + error.message);
+        setToast({ message: error.message, type: "error" });
         setDeleting(false);
+        setDeleteConfirm(false);
     } else {
-        alert("League Deleted.");
+        setToast({ message: "League Deleted", type: "success" });
         router.push('/');
     }
   };
 
   const handleKick = async (memberId) => {
-    if (!confirm("Kick this member?")) return;
+    if (!confirm("Kick this member?")) return; // Kept browser alert for kicking (less critical)
     setMembers(prev => prev.filter(m => m.id !== memberId));
     await supabase.from('league_members').delete().eq('id', memberId);
+    setToast({ message: "Member Kicked", type: "info" });
   };
 
   if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-pink-600 font-bold animate-pulse">LOADING ADMIN SUITE...</div>;
 
   return (
-    <div className="min-h-screen bg-black text-white p-6 md:p-12 font-sans selection:bg-pink-600">
+    <div className="min-h-screen bg-black text-white p-6 md:p-12 font-sans selection:bg-pink-600 pb-32">
       
       {/* HEADER */}
       <div className="max-w-4xl mx-auto border-b border-gray-800 pb-8 mb-12 flex justify-between items-end">
@@ -160,7 +171,7 @@ export default function LeagueAdminPage() {
         </Link>
       </div>
 
-      {/* 1. EDIT LEAGUE DETAILS (MOVED TO TOP) */}
+      {/* 1. EDIT LEAGUE DETAILS */}
       <div className="max-w-4xl mx-auto mb-16">
         <h2 className="text-sm font-black text-white uppercase tracking-widest mb-6 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-pink-600"></span> 
@@ -239,20 +250,37 @@ export default function LeagueAdminPage() {
       {/* 4. DANGER ZONE (DELETE) */}
       <div className="max-w-4xl mx-auto pb-24">
         <h2 className="text-sm font-black text-red-600 uppercase tracking-widest mb-6">Danger Zone</h2>
-        <div className="border border-red-900/30 bg-red-950/10 rounded-3xl p-8 flex justify-between items-center">
+        <div className={`border rounded-3xl p-8 flex justify-between items-center transition-all duration-300 ${deleteConfirm ? 'bg-red-950/30 border-red-500 shadow-[0_0_30px_rgba(220,38,38,0.2)]' : 'bg-red-950/10 border-red-900/30'}`}>
             <div>
                 <h3 className="font-bold text-white mb-1">Delete League</h3>
-                <p className="text-xs text-red-400">Permanently remove this league and all data.</p>
+                <p className="text-xs text-red-400">
+                    {deleteConfirm ? "⚠️ ARE YOU SURE? THIS CANNOT BE UNDONE." : "Permanently remove this league and all data."}
+                </p>
             </div>
+            
+            {/* --- UPDATED DELETE BUTTON --- */}
             <button 
                 onClick={handleDeleteLeague}
                 disabled={deleting}
-                className="bg-red-600 text-white font-black uppercase text-xs px-6 py-3 rounded-xl hover:bg-red-700 transition-all"
+                className={`font-black uppercase text-xs px-6 py-3 rounded-xl transition-all duration-200 ${
+                    deleteConfirm 
+                    ? "bg-red-600 text-white scale-105 shadow-xl animate-pulse" 
+                    : "bg-red-900/20 text-red-500 border border-red-900 hover:bg-red-900/40"
+                }`}
             >
-                {deleting ? 'Deleting...' : 'Delete League'}
+                {deleting ? 'Deleting...' : (deleteConfirm ? 'CONFIRM DELETE?' : 'Delete League')}
             </button>
         </div>
       </div>
+
+      {/* --- RENDER TOAST --- */}
+      {toast && (
+        <Toast 
+          message={toast.message} 
+          type={toast.type} 
+          onClose={() => setToast(null)} 
+        />
+      )}
 
     </div>
   );
