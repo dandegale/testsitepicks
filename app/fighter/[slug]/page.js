@@ -11,213 +11,448 @@ const supabase = createClient(
 );
 
 export default function FighterProfile() {
-  const { slug } = useParams(); 
-  const [fighterBio, setFighterBio] = useState(null);
-  const [fightHistory, setFightHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [trackedRecord, setTrackedRecord] = useState({ wins: 0, losses: 0, draws: 0 });
+  const params = useParams();
+  const slug = params?.slug;
 
-  // Display Name Helper
+  const [fighterBio, setFighterBio] = useState({
+    image: null,
+    height: '—',
+    weight: '—',
+    age: '—',
+    reach: '—',
+    stance: '—',
+    record: '—',
+    ranking: '', 
+    country: '—',
+    nickname: '',
+    history: [],
+    winStats: { ko: 0, koPct: 0, sub: 0, subPct: 0, dec: 0, decPct: 0, totalWins: 0 }
+  });
+  
+  const [loading, setLoading] = useState(true);
+
   const formatName = (s) => {
-    if (!s) return "Unknown Fighter";
+    if (!s) return "Loading...";
     return s.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
 
-  const displayName = formatName(slug);
+  const cleanHeight = (raw) => {
+      if (!raw) return '—';
+      if (raw.includes("'")) return raw; 
+      if (raw.match(/^\d+(\.\d+)?$/)) {
+          const inches = Math.round(parseFloat(raw));
+          const feet = Math.floor(inches / 12);
+          const left = inches % 12;
+          return `${feet}' ${left}"`;
+      }
+      return raw;
+  };
+
+  const displayName = slug ? formatName(slug) : "Loading...";
 
   useEffect(() => {
-    async function fetchFighterData() {
-      // 1. Fetch Official Bio (API)
+    if (!slug) return;
+
+    async function fetchData() {
+      const searchName = slug.replace(/-/g, ' '); 
+      console.log("🔍 Fetching Data for:", searchName);
+      
+      let tempBio = { ...fighterBio };
+      let nextFight = null;
+
+      // ---------------------------------------------------------
+      // 1. FETCH IMAGE (TheSportsDB)
+      // ---------------------------------------------------------
       try {
-        const bioRes = await fetch(`https://api.octagon-api.com/fighter/${slug}`);
-        if (bioRes.ok) {
-          setFighterBio(await bioRes.json());
+        const tsdbRes = await fetch(`https://www.thesportsdb.com/api/v1/json/3/searchplayers.php?p=${encodeURIComponent(searchName)}`);
+        const tsdbData = await tsdbRes.json();
+        if (tsdbData.player && tsdbData.player.length > 0) {
+           const p = tsdbData.player.find(x => x.strCutout) || tsdbData.player[0];
+           if (p) {
+               tempBio.image = p.strCutout || p.strThumb || null;
+               tempBio.country = p.strNationality || tempBio.country;
+           }
         }
-      } catch (err) {
-        console.warn("Bio API Error", err);
-      }
+      } catch (e) { console.warn("TSDB Error:", e); }
 
-      // 2. SMART FUZZY SEARCH (The "First 4 Letters" Logic)
-      if (slug) {
-          const parts = slug.split('-');
+      // ---------------------------------------------------------
+      // 2. FETCH STATS (UFC.COM - FUZZY LABEL MATCHER)
+      // ---------------------------------------------------------
+      try {
+          console.log("🥊 Mining Stats from UFC.com...");
+          const ufcSlug = slug.toLowerCase(); 
+          const targetUrl = `https://www.ufc.com/athlete/${ufcSlug}`;
+          const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`);
           
-          if (parts.length > 0) {
-              // Get "Safe" 4-letter snippets. 
-              // substring(0,4) is safe even if name is shorter (e.g. "Jon" -> "jon")
-              const fNameFrag = parts[0].substring(0, 4).toLowerCase(); 
-              const lNameFrag = parts[parts.length - 1].substring(0, 4).toLowerCase();
+          if (res.ok) {
+              const htmlText = await res.text();
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(htmlText, 'text/html');
 
-              // Pattern: "Anything" + "First4" + "Anything" + "Last4" + "Anything"
-              // Matches: "alex-volk" -> "%alex%volk%" -> matches "Alexander Volkanovski"
-              const searchPattern = `%${fNameFrag}%${lNameFrag}%`;
+              // A. Nickname & Record
+              const nickEl = doc.querySelector('.hero-profile__nickname');
+              if (nickEl) tempBio.nickname = nickEl.textContent.replace(/["“”]/g, '').trim();
 
-              const { data: fights } = await supabase
-                .from('fights')
-                .select('*')
-                .or(`fighter_1_name.ilike.${searchPattern},fighter_2_name.ilike.${searchPattern}`)
-                .order('start_time', { ascending: false });
+              const recordEl = doc.querySelector('.hero-profile__division-body');
+              if (recordEl) {
+                  const recMatch = recordEl.textContent.match(/(\d+-\d+-\d+(\s*\(.*?\))?)/);
+                  if (recMatch) tempBio.record = recMatch[1];
+              }
 
-              if (fights) {
-                setFightHistory(fights);
-                
-                // Calculate Record using the same fuzzy logic
-                let w = 0, l = 0, d = 0;
-                fights.forEach(f => {
-                   if (f.winner) {
-                       const wName = f.winner.toLowerCase();
-                       // If the winner name contains our First AND Last fragments, it's a win
-                       if (wName.includes(fNameFrag) && wName.includes(lNameFrag)) {
-                           w++;
-                       } else {
-                           l++;
-                       }
-                   }
-                });
-                setTrackedRecord({ wins: w, losses: l, draws: d });
+              // B. Ranking
+              const heroText = doc.querySelector('.hero-profile__division-title')?.textContent || "";
+              if (heroText.toLowerCase().includes('champion')) {
+                  tempBio.ranking = 'C';
+              } else {
+                  const rankMatch = doc.body.innerText.match(/#\s*(\d+)/);
+                  if (rankMatch) tempBio.ranking = `#${rankMatch[1]}`;
+              }
+
+              // C. "Fuzzy" Stat Scanner
+              // Instead of relying on specific classes, we search all small text elements for labels
+              const allLabels = Array.from(doc.querySelectorAll('div, span, p, h6'));
+              
+              allLabels.forEach(el => {
+                  const text = el.textContent?.trim().toLowerCase();
+                  const sibling = el.nextElementSibling;
+                  
+                  // We only care if there is a sibling element (the value)
+                  if (!sibling) return;
+                  const value = sibling.textContent?.trim();
+
+                  if (text === 'height') tempBio.height = cleanHeight(value);
+                  if (text === 'weight') tempBio.weight = value + " lbs";
+                  if (text === 'age') tempBio.age = value;
+                  
+                  // Specific Reach Logic
+                  if (text === 'reach') {
+                      // Clean "71.00" to "71""
+                      const reachMatch = value.match(/(\d+(\.\d+)?)/);
+                      if (reachMatch) {
+                          tempBio.reach = Math.round(parseFloat(reachMatch[1])) + '"';
+                      }
+                  }
+
+                  // Specific Stance Logic
+                  if (text === 'stance') {
+                      tempBio.stance = value;
+                  }
+              });
+
+              // D. NEXT FIGHT
+              const firstCard = doc.querySelector('.c-card-event--result'); 
+              if (firstCard) {
+                  const outcome = firstCard.querySelector('.c-card-event--result__outcome')?.textContent?.trim();
+                  if (!outcome || outcome === "") {
+                      const opponent = firstCard.querySelector('.c-card-event--result__fighter')?.textContent?.trim();
+                      const date = firstCard.querySelector('.c-card-event--result__date')?.textContent?.trim();
+                      const headline = firstCard.querySelector('.c-card-event--result__headline')?.textContent?.trim();
+
+                      if (opponent) {
+                          nextFight = {
+                              outcome: "Upcoming",
+                              opponent: opponent.replace(/vs\.?/i, '').trim(),
+                              method: headline || "Scheduled",
+                              date: date || "Upcoming",
+                              event: "UFC Event"
+                          };
+                      }
+                  }
+              }
+          } 
+      } catch (err) { console.error("UFC Stats Failed:", err); }
+
+      // ---------------------------------------------------------
+      // 3. FETCH PAST HISTORY (WIKIPEDIA)
+      // ---------------------------------------------------------
+      try {
+          console.log("📖 Scraper Wikipedia History...");
+          let searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(searchName + " fighter")}&format=json&origin=*`);
+          let searchData = await searchRes.json();
+
+          if (!searchData.query?.search?.length) {
+               searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(searchName)}&format=json&origin=*`);
+               searchData = await searchRes.json();
+          }
+          
+          if (searchData.query?.search?.length) {
+              const title = searchData.query.search[0].title;
+              const htmlRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`);
+              const htmlText = await htmlRes.text();
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(htmlText, 'text/html');
+
+              const tables = Array.from(doc.querySelectorAll('table.wikitable'));
+              let bestTable = null;
+              let maxScore = 0;
+
+              tables.forEach(table => {
+                  const text = table.textContent.toLowerCase();
+                  let score = 0;
+                  if (text.includes("res")) score += 2;
+                  if (text.includes("record")) score += 2;
+                  if (text.includes("opponent")) score += 3;
+                  if (text.includes("kickboxing")) score -= 5;
+                  if (text.includes("amateur")) score -= 3;
+                  if (score > maxScore) { maxScore = score; bestTable = table; }
+              });
+
+              if (bestTable) {
+                  const rows = bestTable.querySelectorAll('tbody tr');
+                  const scrapedHistory = [];
+                  let wins = 0, losses = 0, draws = 0; 
+                  let winsKO = 0, winsSub = 0, winsDec = 0;
+
+                  rows.forEach(row => {
+                      const cells = row.querySelectorAll('td');
+                      if (cells.length > 5) {
+                          const resText = cells[0].textContent.trim();
+                          
+                          if (!['Win', 'Loss', 'Draw', 'NC', 'No Contest'].some(r => resText.includes(r))) return;
+
+                          const opponent = cells[2].textContent.replace(/\n/g, '').trim();
+                          const method = cells[3].textContent.split('[')[0].trim();
+                          const event = cells[4].textContent.trim();
+                          const date = cells[5].textContent.trim();
+                          
+                          let outcome = "—";
+                          if (row.classList.contains("table-yes2") || resText.includes("Win")) {
+                              outcome = "Win"; wins++;
+                              const m = method.toLowerCase();
+                              if (m.includes('ko') || m.includes('tko')) winsKO++;
+                              else if (m.includes('sub') || m.includes('choke')) winsSub++;
+                              else if (m.includes('dec') || m.includes('unanimous') || m.includes('split')) winsDec++;
+                          } else if (row.classList.contains("table-no2") || resText.includes("Loss")) {
+                              outcome = "Loss"; losses++;
+                          } else if (row.classList.contains("table-draw") || resText.includes("Draw")) {
+                              outcome = "Draw"; draws++;
+                          }
+
+                          if (opponent) {
+                              scrapedHistory.push({
+                                  outcome,
+                                  opponent,
+                                  method,
+                                  event,
+                                  date
+                              });
+                          }
+                      }
+                  });
+
+                  if (nextFight) scrapedHistory.unshift(nextFight);
+
+                  if (scrapedHistory.length > 0) {
+                      tempBio.history = scrapedHistory;
+                      if (tempBio.record === '—') tempBio.record = `${wins}-${losses}-${draws}`;
+                      
+                      if (wins > 0) {
+                          tempBio.winStats = {
+                              ko: winsKO,
+                              koPct: Math.round((winsKO / wins) * 100),
+                              sub: winsSub,
+                              subPct: Math.round((winsSub / wins) * 100),
+                              dec: winsDec,
+                              decPct: Math.round((winsDec / wins) * 100),
+                              totalWins: wins
+                          };
+                      }
+                  }
               }
           }
-      }
+      } catch (err) { console.error("Wikipedia Scrape Failed:", err); }
+
+      setFighterBio(tempBio);
       setLoading(false);
     }
 
-    if (slug) fetchFighterData();
+    fetchData();
   }, [slug]);
 
-  // Official Record Helper
-  const getOfficialRecord = () => {
-      if (!fighterBio) return 'N/A';
-      if (fighterBio.record) return fighterBio.record; // "26-4-0"
-      if (fighterBio.wins !== undefined) {
-          return `${fighterBio.wins}-${fighterBio.losses}-${fighterBio.draws || 0}`;
-      }
-      return 'N/A';
-  };
+  const displayRecord = (fighterBio?.record && fighterBio.record !== '—') ? fighterBio.record : `0-0-0`;
 
-  if (loading) return <div className="min-h-screen bg-black text-white flex items-center justify-center font-black animate-pulse">LOADING FIGHTER...</div>;
+  if (!slug || loading) {
+      return (
+        <div className="min-h-screen bg-black text-white flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+                <div className="w-12 h-12 border-4 border-pink-600 border-t-transparent rounded-full animate-spin"></div>
+                <div className="text-xs font-black uppercase tracking-widest text-gray-500">Loading Fighter Info...</div>
+            </div>
+        </div>
+      );
+  }
 
   return (
     <div className="min-h-screen bg-black text-white font-sans selection:bg-pink-500">
       
       {/* HERO SECTION */}
-      <div className="relative h-[40vh] min-h-[300px] w-full overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent z-10"></div>
-        {fighterBio?.image ? (
-            <img src={fighterBio.image} alt={displayName} className="absolute inset-0 w-full h-full object-cover opacity-50 object-top" />
+      <div className="relative h-[45vh] min-h-[350px] w-full overflow-hidden bg-black border-b border-gray-800">
+        <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-black to-black z-0" />
+
+        {/* IMAGE */}
+        {fighterBio.image ? (
+            <>
+                <div 
+                    className="absolute right-0 top-0 h-full w-full md:w-2/3 bg-cover bg-center opacity-20 blur-3xl scale-110"
+                    style={{ backgroundImage: `url(${fighterBio.image})` }} 
+                />
+                <img 
+                    src={fighterBio.image} 
+                    alt={displayName} 
+                    className="absolute right-0 bottom-0 h-[90%] w-auto max-w-[60%] object-contain object-bottom z-10 mr-4 md:mr-10 opacity-90 drop-shadow-2xl" 
+                />
+                <div className="absolute inset-0 bg-gradient-to-r from-black via-black/60 to-transparent z-20" />
+            </>
         ) : (
-            <div className="absolute inset-0 bg-gray-900 flex items-center justify-center">
-                <span className="text-gray-800 font-black text-9xl opacity-20 uppercase">{displayName.charAt(0)}</span>
+            <div className="absolute inset-0 flex items-center justify-end pr-20 opacity-10">
+                <span className="text-9xl font-black uppercase text-gray-700">{displayName.charAt(0)}</span>
             </div>
         )}
         
-        <div className="absolute bottom-0 left-0 w-full p-6 z-20 max-w-5xl mx-auto">
-            <Link href="/" className="text-pink-500 text-xs font-black uppercase tracking-widest mb-4 inline-block hover:underline">← Back to Dashboard</Link>
-            <h1 className="text-5xl md:text-7xl font-black italic uppercase tracking-tighter leading-none">{displayName}</h1>
-            {fighterBio?.nickname && <p className="text-xl text-gray-400 font-bold uppercase tracking-widest mt-2">"{fighterBio.nickname}"</p>}
+        {/* TEXT CONTENT */}
+        <div className="absolute bottom-0 left-0 w-full p-6 md:p-10 z-30 max-w-7xl mx-auto flex flex-col justify-end h-full pointer-events-none">
+            <Link href="/" className="text-pink-500 text-xs font-black uppercase tracking-widest mb-4 inline-block hover:text-white transition-colors pointer-events-auto">← Back to Dashboard</Link>
+            
+            <div className="relative z-40 max-w-[85%]">
+                <div className="flex flex-wrap items-baseline gap-4 mb-2">
+                    <h1 className="text-5xl md:text-8xl font-black italic uppercase tracking-tighter leading-none">{displayName}</h1>
+                    
+                    {/* RANKING */}
+                    {fighterBio.ranking && (
+                        <span className="self-center text-3xl md:text-5xl font-black italic text-white ml-2">
+                            {fighterBio.ranking}
+                        </span>
+                    )}
+
+                    {/* RECORD */}
+                    {displayRecord !== '0-0-0' && (
+                        <span className="self-center text-3xl md:text-5xl font-black italic text-teal-400 bg-teal-900/20 px-4 py-1 rounded-lg border border-teal-800/50 ml-4">
+                            {displayRecord}
+                        </span>
+                    )}
+                </div>
+            </div>
+            {fighterBio.nickname && <p className="text-xl text-gray-400 font-bold uppercase tracking-widest pl-1">"{fighterBio.nickname}"</p>}
+            {fighterBio.country && fighterBio.country !== '—' && (
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-600 mt-4 pl-1">Representing: <span className="text-white">{fighterBio.country}</span></p>
+            )}
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-10">
+      <div className="max-w-7xl mx-auto p-6 md:p-10 grid grid-cols-1 lg:grid-cols-3 gap-10">
         
-        {/* STATS CARD */}
+        {/* STATS */}
         <div className="space-y-6">
-            <div className="bg-gray-950 border border-gray-800 rounded-2xl p-6 shadow-xl">
-                <h3 className="text-gray-500 text-xs font-black uppercase tracking-widest mb-6">Physical Stats</h3>
-                <div className="grid grid-cols-2 gap-y-6">
+            <div className="bg-gray-950 border border-gray-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1 h-full bg-pink-600"></div>
+                <h3 className="text-gray-500 text-xs font-black uppercase tracking-widest mb-6">Stats</h3>
+                
+                <div className="grid grid-cols-2 gap-y-6 gap-x-4">
                     <div>
                         <p className="text-[10px] text-gray-600 uppercase font-bold">Height</p>
-                        <p className="text-xl font-black italic text-white">{fighterBio?.height || 'N/A'}</p>
+                        <p className="text-xl font-black italic text-white">{fighterBio.height}</p>
                     </div>
                     <div>
                         <p className="text-[10px] text-gray-600 uppercase font-bold">Weight</p>
-                        <p className="text-xl font-black italic text-white">{fighterBio?.weight || 'N/A'}</p>
+                        <p className="text-xl font-black italic text-white">{fighterBio.weight}</p>
                     </div>
                     <div>
                         <p className="text-[10px] text-gray-600 uppercase font-bold">Reach</p>
-                        <p className="text-xl font-black italic text-white">{fighterBio?.reach || 'N/A'}</p>
+                        <p className="text-xl font-black italic text-white">{fighterBio.reach}</p>
                     </div>
                     <div>
+                        <p className="text-[10px] text-gray-600 uppercase font-bold">Age</p>
+                        <p className="text-xl font-black italic text-white">{fighterBio.age}</p>
+                    </div>
+                    <div className="col-span-2">
                         <p className="text-[10px] text-gray-600 uppercase font-bold">Stance</p>
-                        <p className="text-xl font-black italic text-white">{fighterBio?.stance || 'Orthodox'}</p>
+                        <p className="text-xl font-black italic text-white">{fighterBio.stance}</p>
                     </div>
                 </div>
+
+                {/* WIN BREAKDOWN CHART */}
+                {fighterBio.winStats.totalWins > 0 && (
+                    <div className="mt-8 pt-6 border-t border-gray-800">
+                         <h4 className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-4">
+                            Win Breakdown ({fighterBio.winStats.totalWins} Wins)
+                         </h4>
+                         <div className="space-y-4">
+                            {/* KO */}
+                            <div>
+                                <div className="flex justify-between text-xs font-bold uppercase mb-1">
+                                    <span className="text-white">KO / TKO</span>
+                                    <span className="text-pink-500">{fighterBio.winStats.ko} ({fighterBio.winStats.koPct}%)</span>
+                                </div>
+                                <div className="w-full bg-gray-900 rounded-full h-1.5">
+                                    <div className="bg-pink-600 h-1.5 rounded-full" style={{ width: `${fighterBio.winStats.koPct}%` }}></div>
+                                </div>
+                            </div>
+                            {/* SUB */}
+                            <div>
+                                <div className="flex justify-between text-xs font-bold uppercase mb-1">
+                                    <span className="text-white">Submission</span>
+                                    <span className="text-teal-400">{fighterBio.winStats.sub} ({fighterBio.winStats.subPct}%)</span>
+                                </div>
+                                <div className="w-full bg-gray-900 rounded-full h-1.5">
+                                    <div className="bg-teal-500 h-1.5 rounded-full" style={{ width: `${fighterBio.winStats.subPct}%` }}></div>
+                                </div>
+                            </div>
+                            {/* DEC */}
+                            <div>
+                                <div className="flex justify-between text-xs font-bold uppercase mb-1">
+                                    <span className="text-white">Decision</span>
+                                    <span className="text-blue-400">{fighterBio.winStats.dec} ({fighterBio.winStats.decPct}%)</span>
+                                </div>
+                                <div className="w-full bg-gray-900 rounded-full h-1.5">
+                                    <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${fighterBio.winStats.decPct}%` }}></div>
+                                </div>
+                            </div>
+                         </div>
+                    </div>
+                )}
             </div>
 
-            {/* RECORD CARD */}
+            {/* STATUS BOX */}
             <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-6 flex justify-between items-center">
                  <div>
-                    <p className="text-[10px] text-gray-500 uppercase font-bold">Career Record</p>
-                    <p className="text-4xl font-black italic text-white">
-                        {getOfficialRecord()}
-                    </p>
-                    <p className="text-[9px] text-gray-600 mt-1 uppercase font-bold">
-                        League: {trackedRecord.wins}-{trackedRecord.losses}
-                    </p>
+                    <p className="text-[10px] text-gray-500 uppercase font-bold">Current Status</p>
+                    <p className="text-2xl font-black italic text-white">ACTIVE</p>
                  </div>
                  <div className="text-right">
-                    <p className="text-[10px] text-gray-500 uppercase font-bold">League Win %</p>
-                    <p className="text-3xl font-black italic text-teal-500">
-                        {trackedRecord.wins + trackedRecord.losses > 0 
-                            ? Math.round((trackedRecord.wins / (trackedRecord.wins + trackedRecord.losses)) * 100) + '%'
-                            : '—'
-                        }
-                    </p>
+                    <p className="text-[10px] text-gray-500 uppercase font-bold">Total Fights</p>
+                    <p className="text-2xl font-black italic text-teal-500">{fighterBio.history.length}</p>
                  </div>
             </div>
         </div>
 
-        {/* FIGHT HISTORY LIST */}
+        {/* FIGHT HISTORY */}
         <div className="md:col-span-2">
-            <h3 className="text-2xl font-black italic uppercase tracking-tighter mb-6">League History</h3>
+            <h3 className="text-2xl font-black italic uppercase tracking-tighter mb-6">FIGHT HISTORY</h3>
             
             <div className="space-y-4">
-                {fightHistory.length === 0 ? (
+                {fighterBio.history.length === 0 ? (
                     <div className="p-8 border border-dashed border-gray-800 rounded-xl text-center text-gray-500 text-sm">
-                        No recorded fights in this league.
+                        No recent fight history found.
                     </div>
                 ) : (
-                    fightHistory.map(fight => {
-                        // RE-USE THE FRAGMENTS FOR MATCHING OPPONENT NAME
-                        const parts = slug.split('-');
-                        const fFrag = parts[0].substring(0, 4).toLowerCase();
-                        const lFrag = parts[parts.length - 1].substring(0, 4).toLowerCase();
-
-                        const f1Raw = fight.fighter_1_name.toLowerCase();
-                        // "Am I Fighter 1?" -> Check if name contains BOTH fragments
-                        const isF1Me = f1Raw.includes(fFrag) && f1Raw.includes(lFrag);
+                    fighterBio.history.map((fight, i) => {
+                        const isWin = fight.outcome === 'Win';
+                        const isUpcoming = fight.outcome === 'Upcoming';
                         
-                        const opponent = isF1Me ? fight.fighter_2_name : fight.fighter_1_name;
-
-                        // RESULT LOGIC
-                        const hasWinner = !!fight.winner;
-                        const wRaw = (fight.winner || '').toLowerCase();
-                        const isWin = hasWinner && wRaw.includes(fFrag) && wRaw.includes(lFrag);
-                        const isPending = !hasWinner;
-
                         return (
-                            <div key={fight.id} className="group bg-gray-950 border border-gray-900 hover:border-gray-700 rounded-xl p-4 transition-all flex items-center justify-between">
-                                <div>
-                                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1">
-                                        {new Date(fight.start_time).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                                    </p>
-                                    <h4 className="text-lg font-black italic uppercase text-white group-hover:text-pink-500 transition-colors">
-                                        vs. {opponent}
-                                    </h4>
-                                    <p className="text-xs text-gray-400 font-bold uppercase">{fight.event_name}</p>
+                            <div key={i} className={`group border rounded-xl p-4 transition-all flex items-center justify-between ${isUpcoming ? 'bg-yellow-900/10 border-yellow-600/50' : 'bg-gray-950 border-gray-900 hover:border-gray-700'}`}>
+                                <div className="min-w-0 flex-1 pr-4">
+                                    <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${isUpcoming ? 'text-yellow-500' : 'text-gray-500'}`}>{fight.date}</p>
+                                    <h4 className="text-lg font-black italic uppercase text-white group-hover:text-pink-500 transition-colors truncate">vs. {fight.opponent}</h4>
+                                    <p className="text-xs text-gray-400 font-bold uppercase truncate">{fight.event} • {fight.method}</p>
                                 </div>
-                                
-                                <div>
-                                    {isPending ? (
-                                        <span className="bg-gray-800 text-gray-400 px-3 py-1 rounded text-xs font-black uppercase tracking-widest">
-                                            Upcoming
-                                        </span>
+                                <div className="shrink-0">
+                                    {isUpcoming ? (
+                                        <span className="bg-yellow-900/30 text-yellow-400 border border-yellow-800 px-4 py-2 rounded text-sm font-black italic uppercase tracking-widest">NEXT</span>
                                     ) : isWin ? (
-                                        <span className="bg-teal-900/30 text-teal-400 border border-teal-800 px-4 py-2 rounded text-sm font-black italic uppercase tracking-widest">
-                                            WIN
-                                        </span>
+                                        <span className="bg-teal-900/30 text-teal-400 border border-teal-800 px-4 py-2 rounded text-sm font-black italic uppercase tracking-widest">WIN</span>
                                     ) : (
-                                        <span className="bg-red-900/20 text-red-500 border border-red-900 px-4 py-2 rounded text-sm font-black italic uppercase tracking-widest">
-                                            LOSS
-                                        </span>
+                                        <span className="bg-red-900/20 text-red-500 border border-red-900 px-4 py-2 rounded text-sm font-black italic uppercase tracking-widest">{fight.outcome.toUpperCase()}</span>
                                     )}
                                 </div>
                             </div>
@@ -226,7 +461,6 @@ export default function FighterProfile() {
                 )}
             </div>
         </div>
-
       </div>
     </div>
   );
