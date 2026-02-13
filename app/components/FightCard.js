@@ -11,31 +11,38 @@ export default function FightCard({
   showOdds = true 
 }) {
   
-  // --- 1. CRITICAL SAFETY GUARD (Prevents Red Screen Crash) ---
+  // 1. SAFETY GUARD
   if (!fight || !fight.start_time) {
       return null; 
   }
 
-  // --- 2. ROBUST TIME PARSING ---
-  // If the string is "2026-02-08T03:00:00" (missing Z), force it to UTC
+  // 2. FIXED TIME PARSING
+  // We parse the Supabase string directly. The browser handles ISO strings better natively.
+  // We only add 'Z' as a fallback if the date is completely invalid without it.
   const rawTime = fight.start_time;
-  const timeString = rawTime && !rawTime.endsWith('Z') ? `${rawTime}Z` : rawTime;
-  const startTime = new Date(timeString);
-  
-  const isValidDate = timeString 
-                      && !isNaN(startTime.getTime()) 
-                      && startTime.getFullYear() > 2024;
+  let startTime = new Date(rawTime);
 
+  // Fallback: If parsing failed (Invalid Date), try appending Z (assuming it was a raw UTC string)
+  if (isNaN(startTime.getTime())) {
+      startTime = new Date(`${rawTime}Z`);
+  }
+
+  const isValidDate = !isNaN(startTime.getTime());
   const hasStarted = isValidDate && startTime < new Date();
   const isLocked = !!existingPick || hasStarted; 
   
   const isSelected = pendingPick?.fighterName === fight.fighter_1_name || pendingPick?.fighterName === fight.fighter_2_name;
   
-  // --- 3. FORMATTING HELPERS ---
+  // 3. FORMATTING HELPERS
   const formatFightTime = (date) => {
     if (!isValidDate) return 'TBD';
+    
+    // Shows distinct time for EVERY card (e.g., 6:00 PM, 6:30 PM) in the user's local time
     return new Intl.DateTimeFormat('en-US', {
-      weekday: 'short', hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+      weekday: 'short', 
+      hour: 'numeric', 
+      minute: '2-digit', 
+      timeZoneName: 'short'
     }).format(date);
   };
 
@@ -52,11 +59,8 @@ export default function FightCard({
       return <>{odds > 0 ? '+' : ''}{odds}</>;
   };
 
-  // --- 4. BADGE RENDERER (New: Handles BMF & Champ Badges) ---
   const renderFighterName = (name, badgeLabel) => {
     const isBMF = badgeLabel === 'BMF';
-    
-    // Style: Dark/Silver for BMF, Gold for Champ
     const badgeStyle = isBMF 
       ? "bg-zinc-800 text-white border border-zinc-500 shadow-[0_0_10px_rgba(255,255,255,0.2)]" 
       : "bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]"; 
@@ -72,8 +76,6 @@ export default function FightCard({
               {name}
             </Link>
           </h3>
-          
-          {/* Render Badge if label exists */}
           {badgeLabel && (
             <span 
               className={`${badgeStyle} text-[9px] font-black px-1.5 py-0.5 rounded flex items-center justify-center min-w-[24px] h-5 tracking-tighter transform translate-y-[-1px]`} 
@@ -87,7 +89,6 @@ export default function FightCard({
     );
   };
 
-  // --- 5. RENDER CARD ---
   if (fight.winner) {
     return (
       <div className="bg-gray-900 border-2 border-gray-800 rounded-lg p-4 flex justify-between items-center opacity-75 grayscale mb-4">
@@ -113,7 +114,7 @@ export default function FightCard({
       {/* HEADER SECTION */}
       <div className="flex justify-between items-center mb-6 text-gray-400 text-xs uppercase tracking-widest font-bold">
         <span>{fight.event_name || 'UFC Fight Night'}</span>
-        <span className="text-white font-mono tracking-tighter">
+        <span className="text-white font-mono tracking-tighter bg-gray-800 px-2 py-1 rounded">
             {formatFightTime(startTime)}
         </span>
       </div>
@@ -122,7 +123,6 @@ export default function FightCard({
         
         {/* FIGHTER 1 */}
         <div className="flex-1 text-center group">
-          {/* Use the new Badge Renderer */}
           {renderFighterName(fight.fighter_1_name, fight.fighter_1_badge)}
           
           <div className="text-yellow-500 font-mono text-sm mb-4 min-h-[20px]">
@@ -162,7 +162,6 @@ export default function FightCard({
 
         {/* FIGHTER 2 */}
         <div className="flex-1 text-center group">
-           {/* Use the new Badge Renderer */}
            {renderFighterName(fight.fighter_2_name, fight.fighter_2_badge)}
           
           <div className="text-yellow-500 font-mono text-sm mb-4 min-h-[20px]">

@@ -13,12 +13,15 @@ export default async function FightList() {
   const { data: { user } } = await supabase.auth.getUser();
   const currentUserEmail = user ? user.email : null;
 
-  // 1. Fetch Fights (Keep Ascending here so our grouping logic works chronologically)
+  // 1. Fetch Fights
+  // FIX APPLIED: Added secondary sort .order('id', { ascending: true })
+  // This ensures that if times are identical, they sort by ID (Prelims -> Main).
   const { data: fights } = await supabase
     .from('fights')
     .select('*')
     .is('winner', null) 
-    .order('start_time', { ascending: true });
+    .order('start_time', { ascending: true }) 
+    .order('id', { ascending: true }); // <--- THE TIE-BREAKER FIX
 
   // 2. Fetch User Data
   const { data: myMemberships } = await supabase.from('league_members').select('leagues ( id, name, image_url, invite_code )').eq('user_id', currentUserEmail);
@@ -63,13 +66,10 @@ export default async function FightList() {
           // Since the bucket is currently Oldest -> Newest, the Main Event is the LAST item.
           const mainEventFight = bucket[bucket.length - 1];
           
-          // --- DATE FIX: Force US Timezone ---
-          // This prevents 3 AM Sunday (UTC) from showing as "Feb 8"
-          // It will correctly show as "Feb 7" (Saturday)
           const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
               month: 'short', 
               day: 'numeric',
-              timeZone: 'America/New_York' // <--- ADDED THIS LINE
+              timeZone: 'America/New_York'
           });
 
           const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;

@@ -21,7 +21,7 @@ const CountdownDisplay = ({ targetDate }) => {
   const [isExpired, setIsExpired] = useState(false);
 
   useEffect(() => {
-    if (!targetDate) return; // Safety check
+    if (!targetDate) return; 
     const rawTime = targetDate;
     const timeString = rawTime && !rawTime.endsWith('Z') ? `${rawTime}Z` : rawTime;
     const eventTime = new Date(timeString).getTime();
@@ -53,10 +53,7 @@ export default function DashboardClient({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showOdds, setShowOdds] = useState(false); 
   const [clientPicks, setClientPicks] = useState(myPicks || []);
-  
-  // Initialize with props
   const [clientLeagues, setClientLeagues] = useState(myLeagues || []);
-
   const [careerStats, setCareerStats] = useState({ wins: 0, losses: 0 });
 
   const liveWinPercentage = (careerStats.wins + careerStats.losses) > 0 
@@ -66,29 +63,39 @@ export default function DashboardClient({
   const eventDate = mainEvent?.start_time || "2026-02-01T22:00:00"; 
   const safeEventName = nextEventName || "Upcoming Event";
 
-  // --- 1. NEW: Sync Prop Updates to State (Fixes Mobile Drawer Empty Issue) ---
   useEffect(() => {
     if (myLeagues && myLeagues.length > 0) {
       setClientLeagues(myLeagues);
     }
   }, [myLeagues]);
 
-  // --- GHOST FILTER LOGIC ---
+  // --- GHOST FILTER LOGIC (FIXED) ---
   const { cleanFights, cleanGroups } = useMemo(() => {
       if (!fights) return { cleanFights: [], cleanGroups: {} };
       const now = new Date().getTime();
       const TWELVE_HOURS = 12 * 60 * 60 * 1000;
       
       const validFights = fights.filter(f => {
-          // --- 2. NEW: Safety Checks (Prevents Crash) ---
           if (!f) return false; 
           if (!f.start_time) return false; 
-          
           if (f.winner) return true; 
           const fTime = new Date(f.start_time).getTime();
           return fTime > (now - TWELVE_HOURS);
       });
-      validFights.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+
+      // --- CRITICAL SORT FIX ---
+      // We sort by Time First, THEN by Fight Order/ID (Ascending)
+      // This matches the logic in page.js so the client doesn't ruin the order
+      validFights.sort((a, b) => {
+          const timeA = new Date(a.start_time).getTime();
+          const timeB = new Date(b.start_time).getTime();
+          
+          if (timeA !== timeB) return timeA - timeB; // Different times? Sort by time.
+          
+          // Same time? Tie-break using fight_order OR id (Ascending)
+          // Prelims (Low ID) -> Main Event (High ID)
+          return (a.fight_order || a.id) - (b.fight_order || b.id);
+      });
 
       let finalGroupedFights = {};
       const tempGroups = [];
@@ -110,11 +117,14 @@ export default function DashboardClient({
 
       tempGroups.forEach(bucket => {
           if (bucket.length === 0) return;
+          // Since bucket is sorted Ascending (Prelim -> Main), Main Event is LAST
           const mainEventFight = bucket[bucket.length - 1];
           const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
               month: 'short', day: 'numeric', timeZone: 'America/New_York' 
           });
           const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
+          
+          // Reverse it so Main Event is FIRST in the UI
           finalGroupedFights[title] = [...bucket].reverse();
       });
       return { cleanFights: validFights, cleanGroups: finalGroupedFights };
@@ -123,7 +133,6 @@ export default function DashboardClient({
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user && user.email) {
-        
         const { data: picksData } = await supabase.from('picks').select('*').eq('user_id', user.email);
         if (picksData) {
             setClientPicks(picksData); 
@@ -142,18 +151,8 @@ export default function DashboardClient({
                 setCareerStats({ wins: w, losses: l });
             }
         }
-
-        const { data: memberships } = await supabase
-            .from('league_members')
-            .select('leagues ( id, name, image_url, invite_code )')
-            .eq('user_id', user.email);
-        
-        if (memberships) {
-            const validLeagues = memberships.map(m => m.leagues).filter(Boolean);
-            // This updates state if client-side fetch finds something new
-            setClientLeagues(validLeagues);
-        }
-
+        const { data: memberships } = await supabase.from('league_members').select('leagues ( id, name, image_url, invite_code )').eq('user_id', user.email);
+        if (memberships) { setClientLeagues(memberships.map(m => m.leagues).filter(Boolean)); }
         const { data: profile } = await supabase.from('profiles').select('show_odds').eq('id', user.id).single();
         if (profile && profile.show_odds === true) setShowOdds(true);
     }
@@ -217,7 +216,6 @@ export default function DashboardClient({
             
             <div className="p-4 space-y-6">
                 <div className="flex flex-col gap-3">
-                    {/* Render clientLeagues List */}
                     {clientLeagues && clientLeagues.length > 0 ? (
                         clientLeagues.map(league => (
                             <Link key={league.id} href={`/league/${league.id}`} className="flex items-center gap-4 p-3 rounded-xl bg-gray-800/40 hover:bg-gray-800 border border-gray-700/50 hover:border-pink-500/50 transition-all group">
@@ -232,20 +230,14 @@ export default function DashboardClient({
                     ) : (
                         <div className="p-4 border border-dashed border-gray-800 rounded-xl text-center">
                             <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest mb-2">No Leagues Joined</p>
-                            <button 
-                                onClick={() => { setShowMobileLeagues(false); setShowCreateModal(true); }}
-                                className="text-pink-500 text-xs font-black uppercase hover:underline"
-                            >
+                            <button onClick={() => { setShowMobileLeagues(false); setShowCreateModal(true); }} className="text-pink-500 text-xs font-black uppercase hover:underline">
                                 + Create One
                             </button>
                         </div>
                     )}
                     
                     {clientLeagues && clientLeagues.length > 0 && (
-                        <button 
-                            onClick={() => { setShowMobileLeagues(false); setShowCreateModal(true); }}
-                            className="w-full py-3 mt-2 border border-dashed border-gray-700 text-gray-500 rounded hover:text-teal-400 hover:border-teal-500 transition-all text-xs font-bold uppercase"
-                        >
+                        <button onClick={() => { setShowMobileLeagues(false); setShowCreateModal(true); }} className="w-full py-3 mt-2 border border-dashed border-gray-700 text-gray-500 rounded hover:text-teal-400 hover:border-teal-500 transition-all text-xs font-bold uppercase">
                             + Create / Join
                         </button>
                     )}
@@ -254,12 +246,10 @@ export default function DashboardClient({
                 <div className="border-t border-gray-800 pt-6">
                     <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Menu</p>
                     <Link href="/leaderboard" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all mb-2">
-                        <span className="text-xl">🏆</span>
-                        <span className="text-sm font-bold text-gray-300">Global Leaderboard</span>
+                        <span className="text-xl">🏆</span><span className="text-sm font-bold text-gray-300">Global Leaderboard</span>
                     </Link>
                      <Link href="/profile" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all">
-                        <span className="text-xl">👤</span>
-                        <span className="text-sm font-bold text-gray-300">My Profile</span>
+                        <span className="text-xl">👤</span><span className="text-sm font-bold text-gray-300">My Profile</span>
                     </Link>
                 </div>
             </div>
@@ -267,7 +257,6 @@ export default function DashboardClient({
       </div>
 
       <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24 md:pb-0"> 
-        {/* HEADER */}
         <header className={`sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800 transition-all duration-500 ${isFocusMode ? '-translate-y-full' : 'translate-y-0'}`}>
             <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -285,9 +274,7 @@ export default function DashboardClient({
                     <div className="flex items-center gap-3 pr-4 border-r border-gray-800">
                         <div className="text-right">
                             <p className="text-[9px] font-black text-gray-600 uppercase tracking-tighter leading-none mb-1">Career Record</p>
-                            <p className="text-sm font-black italic text-white leading-none">
-                                {careerStats.wins}W - {careerStats.losses}L
-                            </p>
+                            <p className="text-sm font-black italic text-white leading-none">{careerStats.wins}W - {careerStats.losses}L</p>
                         </div>
                         <div className="w-8 h-8 rounded-full border border-gray-800 flex items-center justify-center relative text-[8px] font-black">
                             {Math.round(liveWinPercentage)}%
@@ -300,9 +287,7 @@ export default function DashboardClient({
                     <Link href="/profile" className="hidden md:flex bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all items-center gap-2">
                         <span>My Profile</span>
                     </Link>
-                    <div className="hidden md:block">
-                        <LogOutButton />
-                    </div>
+                    <div className="hidden md:block"><LogOutButton /></div>
                 </div>
             </div>
         </header>
@@ -331,21 +316,16 @@ export default function DashboardClient({
 
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
             <div className={`mb-8 transition-all duration-500 origin-top ${isFocusMode ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100'}`}>
-                {/* --- MOBILE LEADERBOARD BANNER --- */}
                 <div className="md:hidden mt-4 px-1">
                     <Link href="/leaderboard" className="block w-full bg-gradient-to-r from-gray-900 to-black border border-gray-800 p-4 rounded-xl flex items-center justify-between shadow-lg active:scale-95 transition-transform group">
                         <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-full bg-teal-500/10 border border-teal-500/30 flex items-center justify-center text-xl group-hover:bg-teal-500/20 transition-colors">
-                                🏆
-                            </div>
+                            <div className="w-10 h-10 rounded-full bg-teal-500/10 border border-teal-500/30 flex items-center justify-center text-xl group-hover:bg-teal-500/20 transition-colors">🏆</div>
                             <div className="flex flex-col">
                                 <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">Official Rankings</span>
                                 <span className="text-sm font-black italic text-white">VIEW GLOBAL LEADERBOARD</span>
                             </div>
                         </div>
-                        <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition-all text-gray-400">
-                             →
-                        </div>
+                        <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition-all text-gray-400">→</div>
                     </Link>
                 </div>
             </div>
@@ -452,16 +432,8 @@ export default function DashboardClient({
           </div>
       )}
 
-      {/* 4. RENDER THE EXISTING MODAL */}
-      <CreateLeagueModal 
-        isOpen={showCreateModal} 
-        onClose={() => setShowCreateModal(false)} 
-        onRefresh={() => window.location.reload()} 
-      />
-
-      {/* --- MOBILE BOTTOM NAV --- */}
+      <CreateLeagueModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} onRefresh={() => window.location.reload()} />
       <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
-
     </div>
   );
 }
