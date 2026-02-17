@@ -41,17 +41,17 @@ export default function FighterProfilePage() {
   const displayName = slug ? formatName(slug) : "Loading...";
 
   // ------------------------------------------------------------------
-  // FIX: Use internal API route proxy instead of corsproxy.io
-  // This prevents Vercel/Cloudflare blocks on public proxies
+  // FIX: Use AllOrigins (Browser-Side Proxy)
+  // This executes on the user's browser, bypassing Vercel's blocked server IP.
   // ------------------------------------------------------------------
   const smartFetch = async (url) => {
       try {
-          // We call our own API route: /api/proxy?url=...
-          const res = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`);
-          if (res.ok) return await res.text();
-          console.warn(`Proxy Failed for ${url}:`, res.status);
+          const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+          if (!res.ok) throw new Error('Proxy Error');
+          const data = await res.json();
+          return data.contents; // AllOrigins returns the HTML string in .contents
       } catch (e) { 
-          console.error("Fetch Error:", e); 
+          console.warn(`Fetch Failed for ${url}`, e); 
       }
       return null;
   };
@@ -92,9 +92,8 @@ export default function FighterProfilePage() {
 
       // 2. FETCH STATS (UFCSTATS.COM)
       try {
-          console.log("📊 Connecting to UFCStats Database...");
+          console.log("📊 Connecting to UFCStats via AllOrigins...");
           
-          // Use HTTPS to avoid mixed content errors
           const searchUrl = `https://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(lastName)}`;
           const searchHtml = await smartFetch(searchUrl);
           
@@ -113,6 +112,7 @@ export default function FighterProfilePage() {
 
               if (fighterLink) {
                   console.log("🔗 Found Fighter ID:", fighterLink);
+                  // Ensure https for the next fetch
                   const secureLink = fighterLink.replace('http://', 'https://');
                   const profileHtml = await smartFetch(secureLink);
                   
@@ -167,17 +167,20 @@ export default function FighterProfilePage() {
 
               const firstCard = uDoc.querySelector('.c-card-event--result'); 
               if (firstCard) {
-                  const opponent = firstCard.querySelector('.c-card-event--result__fighter')?.textContent?.trim();
-                  const date = firstCard.querySelector('.c-card-event--result__date')?.textContent?.trim();
-                  const headline = firstCard.querySelector('.c-card-event--result__headline')?.textContent?.trim();
-                  if (opponent) {
-                      nextFight = {
-                          outcome: "Upcoming",
-                          opponent: opponent.replace(/vs\.?/i, '').trim(),
-                          method: headline || "Scheduled",
-                          date: date || "Upcoming",
-                          event: "UFC Event"
-                      };
+                  const outcome = firstCard.querySelector('.c-card-event--result__outcome')?.textContent?.trim();
+                  if (!outcome || outcome === "") {
+                      const opponent = firstCard.querySelector('.c-card-event--result__fighter')?.textContent?.trim();
+                      const date = firstCard.querySelector('.c-card-event--result__date')?.textContent?.trim();
+                      const headline = firstCard.querySelector('.c-card-event--result__headline')?.textContent?.trim();
+                      if (opponent) {
+                          nextFight = {
+                              outcome: "Upcoming",
+                              opponent: opponent.replace(/vs\.?/i, '').trim(),
+                              method: headline || "Scheduled",
+                              date: date || "Upcoming",
+                              event: "UFC Event"
+                          };
+                      }
                   }
               }
           }
@@ -185,7 +188,6 @@ export default function FighterProfilePage() {
 
       // 4. FETCH HISTORY (WIKIPEDIA)
       try {
-          // Wiki fetch is native fetch, no proxy needed generally, but we can use smartFetch if blocked
           let searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(searchName + " fighter")}&format=json&origin=*`);
           let searchData = await searchRes.json();
           
@@ -196,7 +198,6 @@ export default function FighterProfilePage() {
 
           if (searchData.query?.search?.length) {
               const title = searchData.query.search[0].title;
-              // Use smartFetch for the HTML content to avoid any issues
               const htmlRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`);
               const htmlText = await htmlRes.text();
               
