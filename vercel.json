@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/update-fights",
-      "schedule": "0 */4 * * *"
+      "schedule": "0 22 * * *"
     }
   ]
 }
