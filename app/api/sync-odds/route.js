@@ -16,6 +16,32 @@ export async function GET() {
   const API_KEY = process.env.ODDS_API_KEY;
 
   try {
+    // ---------------------------------------------------------
+    // 1. FETCH ESPN UFC SCOREBOARD (The Ultimate Whitelist)
+    // ---------------------------------------------------------
+    let ufcNames = [];
+    try {
+        const espnRes = await fetch('https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard');
+        const espnData = await espnRes.json();
+        
+        if (espnData && espnData.events) {
+            espnData.events.forEach(event => {
+                event.competitions?.forEach(comp => {
+                    comp.competitors?.forEach(c => {
+                        if (c.athlete?.displayName) {
+                            ufcNames.push(c.athlete.displayName);
+                        }
+                    });
+                });
+            });
+        }
+    } catch (e) {
+        console.error("ESPN Fetch Error:", e);
+    }
+
+    // ---------------------------------------------------------
+    // 2. FETCH THE ODDS API
+    // ---------------------------------------------------------
     const response = await fetch(
       `https://api.the-odds-api.com/v4/sports/mma_mixed_martial_arts/odds/?apiKey=${API_KEY}&regions=us&markets=h2h&oddsFormat=american`
     );
@@ -23,7 +49,6 @@ export async function GET() {
     const apiData = await response.json();
     if (!apiData || !Array.isArray(apiData)) return NextResponse.json({ message: 'No fights found in API' });
 
-    // 1. Fetch ALL Active Fights (No winner yet)
     const { data: existingFights } = await supabase
         .from('fights')
         .select('*')
@@ -31,29 +56,22 @@ export async function GET() {
 
     const logs = [];
     const bookedFighters = new Set();
-    
-    // NEW: Track which DB IDs were confirmed by this API update
     const confirmedDbIds = new Set();
 
     const PREFERRED_BOOKS = ['fanduel', 'draftkings', 'betmgm', 'bovada'];
-    const MAX_DAYS_AHEAD = 120;
     const futureLimit = new Date();
-    futureLimit.setDate(new Date().getDate() + MAX_DAYS_AHEAD);
+    futureLimit.setDate(new Date().getDate() + 120);
 
     for (const event of apiData) {
         const fightDate = new Date(event.commence_time);
-
-        // FILTER 1: Date Limit
         if (fightDate > futureLimit) continue;
 
-        // Find best bookmaker
         let bestBookmaker = null;
         for (const book of PREFERRED_BOOKS) {
             bestBookmaker = event.bookmakers.find(b => b.key === book);
             if (bestBookmaker) break;
         }
         if (!bestBookmaker && event.bookmakers.length > 0) bestBookmaker = event.bookmakers[0];
-        
         if (!bestBookmaker) continue;
 
         const outcome1 = bestBookmaker.markets[0].outcomes[0];
@@ -62,88 +80,101 @@ export async function GET() {
         const f1Key = outcome1.name.toLowerCase().trim();
         const f2Key = outcome2.name.toLowerCase().trim();
 
-        // FILTER 2: No 'TBD' or 'TBA'
         if (f1Key.includes('tbd') || f2Key.includes('tbd') || f1Key.includes('tba') || f2Key.includes('tba')) {
             continue;
         }
 
-        // FILTER 3: Prevent duplicate entries within THIS specific API pull
         if (bookedFighters.has(f1Key) || bookedFighters.has(f2Key)) continue;
 
-        bookedFighters.add(f1Key);
-        bookedFighters.add(f2Key);
-
-        const dynamicEventName = event.sport_title && event.sport_title !== 'Mixed Martial Arts' && event.sport_title !== 'UFC'
-            ? event.sport_title 
-            : `UFC Fight Night`; 
-
-        const fightPayload = {
-            event_name: dynamicEventName,
-            start_time: event.commence_time,
-            fighter_1_name: outcome1.name,
-            fighter_1_odds: outcome1.price,
-            fighter_2_name: outcome2.name,
-            fighter_2_odds: outcome2.price,
-            source: bestBookmaker.key
-        };
-
-        // MATCHING LOGIC
         const match = existingFights.find(dbFight => {
             const dbF1 = dbFight.fighter_1_name.toLowerCase().trim();
             const dbF2 = dbFight.fighter_2_name.toLowerCase().trim();
 
-            const matchDirect = (dbF1.includes(f1Key) || f1Key.includes(dbF1)) && 
-                                (dbF2.includes(f2Key) || f2Key.includes(dbF2));
+            const isDirect = (dbF1.includes(f1Key) || f1Key.includes(dbF1)) && 
+                             (dbF2.includes(f2Key) || f2Key.includes(dbF2));
             
-            const matchReverse = (dbF1.includes(f2Key) || f2Key.includes(dbF1)) && 
-                                 (dbF2.includes(f1Key) || f1Key.includes(dbF2));
+            const isReverse = (dbF1.includes(f2Key) || f2Key.includes(dbF1)) && 
+                              (dbF2.includes(f1Key) || f1Key.includes(dbF2));
 
-            return matchDirect || matchReverse;
+            return isDirect || isReverse;
         });
 
         if (match) {
-            // ✅ MARK AS CONFIRMED (So we don't delete it later)
+            // Update Existing Fight
             confirmedDbIds.add(match.id);
+            bookedFighters.add(f1Key);
+            bookedFighters.add(f2Key);
 
-            // Only update if something changed
-            if (match.fighter_1_odds !== outcome1.price || match.fighter_2_odds !== outcome2.price) {
-                await supabase.from('fights').update(fightPayload).eq('id', match.id);
-                logs.push(`Updated Odds: ${outcome1.name} vs ${outcome2.name}`);
+            const dbF1 = match.fighter_1_name.toLowerCase().trim();
+            const isReversedMatch = dbF1.includes(f2Key) || f2Key.includes(dbF1);
+
+            const newFighter1Odds = isReversedMatch ? outcome2.price : outcome1.price;
+            const newFighter2Odds = isReversedMatch ? outcome1.price : outcome2.price;
+
+            if (match.fighter_1_odds !== newFighter1Odds || match.fighter_2_odds !== newFighter2Odds) {
+                await supabase
+                    .from('fights')
+                    .update({
+                        fighter_1_odds: newFighter1Odds,
+                        fighter_2_odds: newFighter2Odds,
+                        source: bestBookmaker.key
+                    })
+                    .eq('id', match.id);
+                
+                logs.push(`Updated Odds: ${match.fighter_1_name} vs ${match.fighter_2_name}`);
             }
         } else {
-            // Insert New Fight
-            // Only insert if it's in the future (prevents resurrecting old history)
-            if (new Date(event.commence_time) > new Date()) {
-                await supabase.from('fights').insert(fightPayload);
-                logs.push(`✅ CREATED: ${outcome1.name} vs ${outcome2.name}`);
+            // ---------------------------------------------------------
+            // 3. THE GATEKEEPER: Check Odds API against ESPN UFC List
+            // ---------------------------------------------------------
+            const clean = (str) => str.toLowerCase().replace(/['".,-]/g, '').trim();
+            const c1 = clean(f1Key);
+            const c2 = clean(f2Key);
+            
+            const isConfirmedUfc = ufcNames.some(name => {
+                const cn = clean(name);
+                return c1 === cn || c2 === cn || c1.includes(cn) || c2.includes(cn);
+            });
+
+            // If the fighter is on the ESPN list, automatically insert them into your database
+            if (isConfirmedUfc && new Date(event.commence_time) > new Date()) {
+                bookedFighters.add(f1Key);
+                bookedFighters.add(f2Key);
+
+                // --- NEW: THE TIMEZONE FIX ---
+                // Convert pure UTC to Eastern Time (EST/EDT) in a database-friendly string
+                const utcDate = new Date(event.commence_time);
+                const estString = utcDate.toLocaleString("sv-SE", { timeZone: "America/New_York" }).replace(" ", "T");
+
+                await supabase.from('fights').insert({
+                    event_name: `UFC Fight Night`, 
+                    start_time: estString, // <--- NOW USING EASTERN TIME
+                    fighter_1_name: outcome1.name,
+                    fighter_1_odds: outcome1.price,
+                    fighter_2_name: outcome2.name,
+                    fighter_2_odds: outcome2.price,
+                    source: bestBookmaker.key
+                });
+                logs.push(`✅ CREATED UFC FIGHT: ${outcome1.name} vs ${outcome2.name}`);
             }
         }
     }
 
-    // --- NEW: CLEANUP PHASE (The Fix) ---
-    // If a fight is in our DB, but was NOT found in the API response, it means it was cancelled or removed.
-    // We only delete fights that haven't been marked as "Winner" yet.
-    
     const ghostFights = existingFights.filter(f => !confirmedDbIds.has(f.id));
 
     if (ghostFights.length > 0) {
         const ghostIds = ghostFights.map(f => f.id);
-        
-        // Safety Check: We could add logic here to only delete future fights if you're worried about live glitching,
-        // but generally, if the Odds API drops it, it's gone.
         const { error: deleteError } = await supabase
             .from('fights')
             .delete()
             .in('id', ghostIds);
 
         if (!deleteError) {
-            logs.push(`🗑️ CLEANUP: Removed ${ghostFights.length} cancelled/ghost fights.`);
-        } else {
-            logs.push(`⚠️ CLEANUP ERROR: ${deleteError.message}`);
+            logs.push(`🗑️ CLEANUP: Removed ${ghostFights.length} cancelled or junk fights.`);
         }
     }
 
-    return NextResponse.json({ message: 'Sync & Cleanup Complete', logs: logs });
+    return NextResponse.json({ message: 'Sync Complete', ufc_fighters_found_via_espn: ufcNames.length, logs });
 
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

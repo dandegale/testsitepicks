@@ -2,7 +2,8 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+// FIX: Added useSearchParams to read the URL
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import FightDashboard from '../../components/FightDashboard';
 import ChatBox from '../../components/ChatBox';
@@ -20,6 +21,7 @@ const supabase = createClient(
 export default function LeaguePage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams(); // <-- ADDED THIS
   const leagueId = params.id;
 
   const [loading, setLoading] = useState(true);
@@ -141,6 +143,36 @@ export default function LeaguePage() {
 
         const { data: leagueData } = await supabase.from('leagues').select('*').eq('id', leagueId).single();
         setLeague(leagueData);
+
+        // ---------------------------------------------------------
+        // THE FIX: AUTO-JOIN LOGIC FOR INVITE LINKS
+        // ---------------------------------------------------------
+        const inviteCode = searchParams.get('invite');
+        
+        if (currentUser && leagueData && inviteCode === leagueData.invite_code) {
+            // Check if they are already in the league
+            const { data: existingMember } = await supabase
+                .from('league_members')
+                .select('*')
+                .eq('league_id', leagueId)
+                .eq('user_id', currentUser.email)
+                .single();
+
+            // If not a member, insert them!
+            if (!existingMember) {
+                await supabase.from('league_members').insert({
+                    league_id: leagueId,
+                    user_id: currentUser.email
+                });
+                
+                // Show a success message
+                setToast({ message: "Successfully joined the league! 👊", type: "success" });
+                
+                // Clean the URL so they don't rejoin on refresh
+                router.replace(`/league/${leagueId}`);
+            }
+        }
+        // ---------------------------------------------------------
 
         if (currentUser && leagueData) {
             const isCreator = (leagueData.created_by === currentUser.email) || (leagueData.created_by === currentUser.id);
@@ -457,7 +489,6 @@ export default function LeaguePage() {
                                         </h2>
                                     </div>
                                     
-                                    {/* 🔴 FIXED: VISIBLE ON MOBILE NOW 🔴 */}
                                     <button 
                                         onClick={handleCopyCode}
                                         className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1 rounded transition-all group"
