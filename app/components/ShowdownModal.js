@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import Link from 'next/link'; // ADDED: For routing to the matches
+import Link from 'next/link'; 
 
 // Initialize Supabase safely
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -78,7 +78,7 @@ export default function ShowdownModal({ isOpen, onClose }) {
       setTimeout(() => setCopied(false), 2000);
   };
 
-  // NEW: FETCH ACTIVE MATCHES
+  // UPDATED: FETCH ACTIVE MATCHES AND RESOLVE USERNAMES
   const fetchActiveMatches = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -88,15 +88,43 @@ export default function ShowdownModal({ isOpen, onClose }) {
       setCurrentUserEmail(user.email);
 
       // Fetch matches where you are either the creator OR the opponent
-      const { data, error } = await supabase
+      const { data: matches, error } = await supabase
           .from('h2h_matches')
           .select('*')
           .or(`creator_email.eq.${user.email},opponent_email.eq.${user.email}`)
           .order('created_at', { ascending: false });
 
-      if (!error) {
-          setActiveMatches(data || []);
+      if (!error && matches && matches.length > 0) {
+          // 1. Extract all unique emails from the matches
+          const emailsToFetch = new Set();
+          matches.forEach(m => {
+              if (m.creator_email) emailsToFetch.add(m.creator_email);
+              if (m.opponent_email) emailsToFetch.add(m.opponent_email);
+          });
+
+          // 2. Query the profiles table for these emails
+          const { data: profiles } = await supabase
+              .from('profiles')
+              .select('email, username')
+              .in('email', Array.from(emailsToFetch));
+
+          // 3. Map the usernames back into our match data
+          const enrichedMatches = matches.map(m => {
+              const creatorProfile = profiles?.find(p => p.email === m.creator_email);
+              const opponentProfile = profiles?.find(p => p.email === m.opponent_email);
+              
+              return {
+                  ...m,
+                  creator_username: creatorProfile?.username || m.creator_email.split('@')[0],
+                  opponent_username: m.opponent_email ? (opponentProfile?.username || m.opponent_email.split('@')[0]) : null
+              };
+          });
+
+          setActiveMatches(enrichedMatches);
+      } else {
+          setActiveMatches([]);
       }
+      
       setViewingActives(true);
   };
 
@@ -186,7 +214,7 @@ export default function ShowdownModal({ isOpen, onClose }) {
 
             {/* DYNAMIC RENDER: Active Matches List OR Creation Menu */}
             {viewingActives ? (
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 animate-in fade-in slide-in-from-right-4">
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 animate-in fade-in slide-in-from-right-4 custom-scrollbar">
                     <button onClick={() => setViewingActives(false)} className="text-[10px] text-gray-500 hover:text-white mb-2 uppercase font-black transition-colors">
                         ← Back to Menu
                     </button>
@@ -200,7 +228,8 @@ export default function ShowdownModal({ isOpen, onClose }) {
                             <div className="flex flex-col">
                                 <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Code: {m.invite_code}</span>
                                 <span className="text-sm font-bold text-white uppercase italic">
-                                    Vs {currentUserEmail === m.creator_email ? (m.opponent_email?.split('@')[0] || 'WAITING...') : m.creator_email.split('@')[0]}
+                                    {/* USE ENRICHED USERNAMES HERE */}
+                                    Vs {currentUserEmail === m.creator_email ? (m.opponent_username || 'WAITING...') : m.creator_username}
                                 </span>
                             </div>
                             <span className="text-pink-500 font-black group-hover:translate-x-1 transition-transform">→</span>
