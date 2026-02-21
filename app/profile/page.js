@@ -97,8 +97,7 @@ export default function Profile() {
       // 3. Update Profile
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({ avatar_url: publicUrl, updated_at: new Date() })
-        .eq('id', user.id);
+        .upsert({ id: user.id, avatar_url: publicUrl, updated_at: new Date() });
 
       if (updateError) throw updateError;
 
@@ -125,9 +124,21 @@ export default function Profile() {
   };
 
   const toggleOdds = async () => {
+      // Optimistic UI Update for instant visual feedback
       const newValue = !showOdds;
       setShowOdds(newValue);
-      await supabase.from('profiles').update({ show_odds: newValue }).eq('id', user.id);
+      
+      const { error } = await supabase.from('profiles').upsert({ 
+          id: user.id, 
+          show_odds: newValue,
+          updated_at: new Date()
+      });
+      
+      // Revert if database fails
+      if (error) {
+          console.error("Failed to save odds preference:", error);
+          setShowOdds(!newValue);
+      }
   };
 
   const calculateStats = (picks, fights, missingLeagues) => {
@@ -166,28 +177,32 @@ export default function Profile() {
     setHistory(historyData);
   };
 
-  if (loading) return <div className="min-h-screen bg-black flex items-center justify-center"><div className="w-8 h-8 border-4 border-pink-600 border-t-transparent rounded-full animate-spin"></div></div>;
+  if (loading) return (
+    <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-10 h-10 border-4 border-pink-600 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+  );
 
   return (
-    <main className="min-h-screen bg-black text-white pb-24 font-sans">
+    <main className="min-h-screen bg-black text-white pb-24 font-sans selection:bg-pink-500 selection:text-white">
       
       {/* HEADER HERO */}
-      <div className="relative bg-gradient-to-b from-gray-900 to-black border-b border-gray-800 pt-12 pb-8 px-6">
+      <div className="bg-gradient-to-b from-gray-900 to-black border-b border-gray-800 pt-10 pb-12 px-6">
         
         {/* Top Nav */}
-        <div className="absolute top-6 left-6 right-6 flex justify-between items-center">
-            <Link href="/" className="text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition-colors">
-                ← Dashboard
+        <div className="max-w-4xl mx-auto flex justify-between items-center mb-8">
+            <Link href="/" className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition-colors group">
+                <span className="group-hover:-translate-x-1 transition-transform">←</span> Dashboard
             </Link>
             <LogOutButton />
         </div>
 
-        <div className="max-w-xl mx-auto text-center mt-8">
+        <div className="max-w-xl mx-auto text-center">
             {/* AVATAR CIRCLE */}
             <div className="relative group mx-auto w-32 h-32 mb-6">
                 <div 
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-32 h-32 rounded-full overflow-hidden border-4 border-gray-800 shadow-2xl bg-gray-900 cursor-pointer hover:border-pink-600 transition-all relative"
+                    className="w-full h-full rounded-full overflow-hidden border-4 border-gray-900 shadow-2xl bg-gray-950 cursor-pointer group-hover:border-pink-600 transition-colors relative"
                 >
                     {avatarUrl ? (
                         <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
@@ -198,7 +213,7 @@ export default function Profile() {
                     )}
                     
                     {/* Hover Overlay */}
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <span className="text-[10px] font-black uppercase text-white tracking-widest">
                             {uploading ? '...' : 'Upload'}
                         </span>
@@ -221,80 +236,92 @@ export default function Profile() {
                         type="text" 
                         value={newUsername} 
                         onChange={(e) => setNewUsername(e.target.value)}
-                        className="bg-black/50 border border-pink-600 text-white text-xl font-black italic uppercase p-2 rounded text-center w-full max-w-[200px] focus:outline-none"
+                        className="bg-gray-950 border border-pink-600 text-white text-xl font-black italic uppercase p-2 rounded-lg text-center w-full max-w-[200px] focus:outline-none focus:ring-1 focus:ring-pink-500"
                         autoFocus
                     />
-                    <button onClick={handleSaveProfile} className="bg-pink-600 p-2 rounded text-xs font-bold hover:bg-pink-500">✓</button>
-                    <button onClick={() => setIsEditing(false)} className="bg-gray-800 p-2 rounded text-xs font-bold hover:bg-gray-700">✕</button>
+                    <button onClick={handleSaveProfile} className="bg-pink-600 w-10 h-10 rounded-lg text-white font-black hover:bg-pink-500 transition-colors">✓</button>
+                    <button onClick={() => setIsEditing(false)} className="bg-gray-800 w-10 h-10 rounded-lg text-gray-400 font-black hover:text-white hover:bg-gray-700 transition-colors">✕</button>
                 </div>
             ) : (
-                <div className="flex items-center justify-center gap-2 mb-2 group cursor-pointer" onClick={() => setIsEditing(true)}>
+                <div className="flex items-center justify-center gap-3 mb-2 group cursor-pointer" onClick={() => setIsEditing(true)}>
                     <h1 className="text-3xl md:text-4xl font-black italic text-white uppercase tracking-tighter">
                         {username}
                     </h1>
-                    <span className="opacity-0 group-hover:opacity-100 text-gray-600 text-xs">✎</span>
+                    <span className="opacity-0 group-hover:opacity-100 text-pink-600 text-sm transition-opacity">✎</span>
                 </div>
             )}
-            <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">{user?.email}</p>
+            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-[0.2em]">{user?.email}</p>
         </div>
       </div>
 
-      {/* CONTENT CONTAINER */}
-      <div className="max-w-4xl mx-auto px-4 -mt-6">
+      {/* MAIN CONTENT CONTAINER */}
+      <div className="max-w-4xl mx-auto px-4 py-8">
         
         {/* STATS CARDS */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
             <StatCard label="Record" value={`${stats.wins}-${stats.losses}`} sub="W-L" color="text-white" />
             <StatCard 
                 label="Accuracy" 
                 value={`${stats.totalBets > 0 ? Math.round((stats.wins / (stats.wins + stats.losses)) * 100) : 0}%`} 
                 color="text-teal-400" 
             />
-            <StatCard label="Pending" value={stats.pending} color="text-yellow-500" />
+            <StatCard label="Pending" value={stats.pending} color="text-pink-500" />
             <StatCard 
                 label="Earnings" 
                 value={`${stats.netProfit >= 0 ? '+' : ''}${stats.netProfit}`} 
-                color={stats.netProfit >= 0 ? 'text-green-500' : 'text-pink-500'} 
+                color={stats.netProfit >= 0 ? 'text-green-400' : 'text-pink-500'} 
             />
         </div>
 
-        {/* SETTINGS TOGGLE */}
-        <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4 flex items-center justify-between mb-10">
+        {/* 🎯 ULTRA-BULLETPROOF SETTINGS TOGGLE */}
+        <div className="bg-gray-950 border border-gray-900 rounded-xl p-5 flex items-center justify-between mb-12 shadow-lg">
             <div>
                 <h4 className="text-xs font-black text-white uppercase tracking-widest">Show Vegas Odds</h4>
-                <p className="text-[10px] text-gray-500 font-bold mt-1">Reveal potential payouts on dashboard.</p>
+                <p className="text-[10px] text-gray-500 font-bold mt-1 max-w-[200px] md:max-w-none">Reveal potential payouts and betting lines on the dashboard.</p>
             </div>
-            <button onClick={toggleOdds} className={`w-10 h-5 rounded-full relative transition-colors ${showOdds ? 'bg-pink-600' : 'bg-gray-700'}`}>
-                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-transform ${showOdds ? 'left-6' : 'left-1'}`} />
+            
+            <button 
+                onClick={toggleOdds}
+                className={`relative w-12 h-6 rounded-full p-1 cursor-pointer transition-colors duration-300 shrink-0 border-2 border-transparent focus:outline-none ${showOdds ? 'bg-pink-600' : 'bg-gray-800'}`}
+            >
+                {/* We use an inline style transform here so it physically CANNOT fail to compile! */}
+                <div 
+                    className="w-4 h-4 bg-white rounded-full shadow-md transition-transform duration-300 ease-in-out"
+                    style={{ transform: showOdds ? 'translateX(24px)' : 'translateX(0px)' }}
+                />
             </button>
         </div>
 
         {/* HISTORY */}
-        <h2 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-4 px-1">Fight History</h2>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div className="flex items-center gap-3 mb-5 px-1">
+            <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+            <h2 className="text-sm font-black text-white italic uppercase tracking-tighter">Fight History</h2>
+        </div>
+
+        <div className="bg-gray-950 border border-gray-900 rounded-xl overflow-hidden shadow-xl">
             {history.length === 0 ? (
                 <div className="p-12 text-center">
-                    <p className="text-gray-600 text-xs font-bold uppercase tracking-widest">No fights recorded yet.</p>
+                    <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest">No fights recorded yet.</p>
                 </div>
             ) : (
-                <div className="divide-y divide-gray-800">
+                <div className="divide-y divide-gray-900">
                     {history.map((item) => (
-                        <div key={item.id} className="p-4 flex items-center justify-between hover:bg-gray-800/50 transition-colors">
+                        <div key={item.id} className="p-4 md:p-5 flex items-center justify-between bg-black/20 hover:bg-gray-900 transition-colors border-l-2 border-transparent hover:border-pink-600 group">
                             <div>
-                                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1">{item.leagueName}</div>
-                                <div className="font-bold text-white text-sm">{item.selection}</div>
-                                <div className="text-[10px] text-gray-400">{item.fightName}</div>
+                                <div className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1.5">{item.leagueName}</div>
+                                <div className="font-black text-white text-sm md:text-base uppercase tracking-tighter group-hover:text-pink-100 transition-colors">{item.selection}</div>
+                                <div className="text-[10px] text-gray-500 font-bold uppercase mt-1">{item.fightName}</div>
                             </div>
-                            <div className="text-right">
-                                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded border mb-1 inline-block ${
-                                    item.result === 'Win' ? 'bg-green-900/20 text-green-400 border-green-900' : 
-                                    item.result === 'Loss' ? 'bg-red-900/20 text-red-400 border-red-900' : 
-                                    'bg-yellow-900/20 text-yellow-400 border-yellow-900'
+                            <div className="text-right flex flex-col items-end">
+                                <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded border mb-2 ${
+                                    item.result === 'Win' ? 'bg-green-950/30 text-green-400 border-green-900/50' : 
+                                    item.result === 'Loss' ? 'bg-red-950/30 text-red-400 border-red-900/50' : 
+                                    'bg-pink-950/30 text-pink-400 border-pink-900/50'
                                 }`}>
                                     {item.result}
                                 </span>
-                                <div className={`text-sm font-mono font-bold ${item.profitChange > 0 ? 'text-green-500' : item.profitChange < 0 ? 'text-red-500' : 'text-gray-500'}`}>
-                                    {item.result === 'Pending' ? '--' : `${item.profitChange > 0 ? '+' : ''}${item.profitChange.toFixed(1)}`}
+                                <div className={`text-sm md:text-base font-black italic tracking-tighter ${item.profitChange > 0 ? 'text-green-500' : item.profitChange < 0 ? 'text-red-500' : 'text-gray-600'}`}>
+                                    {item.result === 'Pending' ? '---' : `${item.profitChange > 0 ? '+' : ''}${item.profitChange.toFixed(1)} PTS`}
                                 </div>
                             </div>
                         </div>
@@ -308,14 +335,13 @@ export default function Profile() {
   );
 }
 
-// Sub-component for cleaner code
+// Clean Sub-component
 function StatCard({ label, value, sub, color }) {
     return (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center shadow-lg relative overflow-hidden group">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-gray-700 to-transparent opacity-0 group-hover:opacity-50 transition-opacity" />
-            <div className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">{label}</div>
+        <div className="bg-gray-950 border border-gray-900 rounded-xl p-5 text-center shadow-lg relative overflow-hidden group hover:border-gray-700 transition-colors">
+            <div className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">{label}</div>
             <div className={`text-2xl md:text-3xl font-black italic tracking-tighter ${color}`}>{value}</div>
-            {sub && <div className="text-[9px] text-gray-600 font-bold mt-1">{sub}</div>}
+            {sub && <div className="text-[9px] text-gray-600 font-bold mt-1 uppercase tracking-widest">{sub}</div>}
         </div>
     );
 }
