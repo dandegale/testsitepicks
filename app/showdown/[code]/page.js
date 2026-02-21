@@ -6,7 +6,6 @@ import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 
 import FightDashboard from '../../components/FightDashboard';
-import BettingSlip from '../../components/BettingSlip';
 import LeagueRail from '../../components/LeagueRail';
 import MobileNav from '../../components/MobileNav';
 import LogOutButton from '../../components/LogOutButton';
@@ -21,9 +20,9 @@ export default function ShowdownPage() {
   const [loading, setLoading] = useState(true);
   const [fights, setFights] = useState([]);
   const [h2hPicks, setH2hPicks] = useState([]);
+  const [fighterStats, setFighterStats] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // States matching DashboardClient exactly
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [showMobileLeagues, setShowMobileLeagues] = useState(false); 
@@ -36,7 +35,6 @@ export default function ShowdownPage() {
   const [currentUsername, setCurrentUsername] = useState('');
   const [showComparisons, setShowComparisons] = useState(false);
   
-  // Career Stats for Header
   const [careerStats, setCareerStats] = useState({ wins: 0, losses: 0 });
   const liveWinPercentage = (careerStats.wins + careerStats.losses) > 0 
       ? (careerStats.wins / (careerStats.wins + careerStats.losses)) * 100 
@@ -80,35 +78,8 @@ export default function ShowdownPage() {
             const myProfile = profiles.find(p => p.email === currentUser.email);
             setCurrentUsername(myProfile?.username || currentUser.user_metadata?.username || currentUser.email.split('@')[0]);
             
-            // Fetch User Leagues
-            const { data: memberships } = await supabase
-                .from('league_members')
-                .select('leagues ( id, name, image_url, invite_code )')
-                .eq('user_id', currentUser.email);
-            
-            if (memberships) {
-                const validLeagues = memberships.map(m => m.leagues).filter(Boolean);
-                setClientLeagues(validLeagues);
-            }
-
-            // Fetch Career Stats
-            const { data: picksData } = await supabase.from('picks').select('*').eq('user_id', currentUser.email);
-            if (picksData) {
-                const { data: results } = await supabase.from('fights').select('id, winner').not('winner', 'is', null);
-                if (results) {
-                    let w = 0; let l = 0;
-                    const processedFightIds = new Set();
-                    picksData.forEach(p => {
-                        if (processedFightIds.has(p.fight_id)) return;
-                        const fight = results.find(f => f.id === p.fight_id);
-                        if (fight && fight.winner) {
-                            if (fight.winner === p.selected_fighter) w++; else l++;
-                            processedFightIds.add(p.fight_id);
-                        }
-                    });
-                    setCareerStats({ wins: w, losses: l });
-                }
-            }
+            const { data: memberships } = await supabase.from('league_members').select('leagues ( id, name, image_url, invite_code )').eq('user_id', currentUser.email);
+            if (memberships) setClientLeagues(memberships.map(m => m.leagues).filter(Boolean));
         }
     } else {
         setCreatorName(currentMatchData.creator_email.split('@')[0]);
@@ -119,28 +90,47 @@ export default function ShowdownPage() {
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
     const { data: fightData } = await supabase.from('fights').select('*').gte('start_time', fourteenDaysAgo).order('start_time', { ascending: true });
     const { data: picksData } = await supabase.from('h2h_picks').select('*').eq('match_id', currentMatchData.id);
-    
+    const { data: statsData } = await supabase.from('fighter_stats').select('*');
+
     setFights(fightData || []);
     setH2hPicks(picksData || []);
+    setFighterStats(statsData || []);
     setLoading(false);
   };
+
+  // 🎯 CHECK IF USER IS LOCKED IN
+  const myLockedPicks = h2hPicks.filter(p => p.user_email === user?.email);
+  const hasLockedRoster = myLockedPicks.length >= 5;
 
   const handleInteraction = () => setIsFocusMode(true);
 
   const handlePickSelect = (newPick) => {
-    const safePick = {
-        ...newPick,
-        odds: newPick.odds || -110,
-        username: currentUsername 
-    };
+    // 🛑 Prevent picking if roster is already locked
+    if (hasLockedRoster) {
+        alert("Your 5-man roster is already locked in!");
+        return;
+    }
+
+    const safePick = { ...newPick, username: currentUsername };
 
     setPendingPicks(currentPicks => {
         const existingIndex = currentPicks.findIndex(p => p.fightId === safePick.fightId);
-        if (existingIndex >= 0) {
-            const existingPick = currentPicks[existingIndex];
-            if (existingPick.fighterName === safePick.fighterName) return currentPicks.filter((_, i) => i !== existingIndex);
-            else { const updated = [...currentPicks]; updated[existingIndex] = safePick; return updated; }
+        
+        if (existingIndex >= 0 && currentPicks[existingIndex].fighterName === safePick.fighterName) {
+            return currentPicks.filter((_, i) => i !== existingIndex);
         }
+
+        if (currentPicks.length >= 5 && existingIndex === -1) {
+            alert("Roster is full! You must unselect someone before adding another fighter.");
+            return currentPicks;
+        }
+
+        if (existingIndex >= 0) {
+            const updated = [...currentPicks];
+            updated[existingIndex] = safePick;
+            return updated;
+        }
+
         return [...currentPicks, safePick];
     });
     setIsFocusMode(true);
@@ -158,7 +148,7 @@ export default function ShowdownPage() {
   };
 
   const handleConfirmAllPicks = async () => {
-    if (pendingPicks.length === 0) return;
+    if (pendingPicks.length !== 5) return alert("You must fill all 5 roster slots!");
     if (!user) return alert("Log in to lock picks!");
     
     setIsSubmitting(true);
@@ -167,18 +157,14 @@ export default function ShowdownPage() {
         match_id: match.id,
         user_email: user.email,
         fight_id: p.fightId,
-        selected_fighter: p.fighterName,
-        odds_at_pick: p.odds || -110 
+        selected_fighter: p.fighterName
     }));
 
-    const { error } = await supabase.from('h2h_picks').upsert(
-        picksToInsert, 
-        { onConflict: 'match_id, user_email, fight_id' } 
-    );
+    const { error } = await supabase.from('h2h_picks').upsert(picksToInsert, { onConflict: 'match_id, user_email, fight_id' });
 
     if (error) {
         console.error("Submission Error:", error);
-        alert("Failed to lock in picks. Please try again.");
+        alert("Failed to lock in picks.");
     } else {
         const { data: updated } = await supabase.from('h2h_picks').select('*').eq('match_id', match.id);
         setH2hPicks(updated);
@@ -195,61 +181,38 @@ export default function ShowdownPage() {
     return h2hPicks.find(p => p.fight_id === fightId && p.user_email === opponentEmail);
   };
 
-  // 🎯 SCORING ENGINE
-  const calculatePoints = (pick, actualWinner) => {
-      if (!pick) return 0; 
-      
-      if (pick.selected_fighter === actualWinner) {
-          const odds = parseInt(pick.odds_at_pick || -110, 10);
-          const profit = odds > 0 ? (odds / 100) * 10 : (100 / Math.abs(odds)) * 10;
-          return profit; 
-      } else {
-          return -10; 
-      }
-  };
-
+  // 🎯 FANTASY SCORING ENGINE
   let creatorScore = 0;
   let opponentScore = 0;
 
-  fights.forEach(fight => {
-      if (fight.winner) {
-          const cPick = h2hPicks.find(p => p.fight_id === fight.id && p.user_email === match?.creator_email);
-          const oPick = h2hPicks.find(p => p.fight_id === fight.id && p.user_email === match?.opponent_email);
-          
-          creatorScore += calculatePoints(cPick, fight.winner);
-          opponentScore += calculatePoints(oPick, fight.winner);
+  h2hPicks.forEach(pick => {
+      const stats = fighterStats.find(s => s.fight_id === pick.fight_id && s.fighter_name === pick.selected_fighter);
+      if (stats) {
+          const points = parseFloat(stats.fantasy_points || 0);
+          if (pick.user_email === match?.creator_email) creatorScore += points;
+          else if (pick.user_email === match?.opponent_email) opponentScore += points;
       }
   });
 
   const displayCreatorScore = creatorScore.toFixed(1);
   const displayOpponentScore = opponentScore.toFixed(1);
 
-  // STRICTLY ISOLATE THIS WEEKEND'S EVENT
   const { thisWeekendAllFights, upcomingFights, groupedFights } = useMemo(() => {
       if (!fights || fights.length === 0) return { thisWeekendAllFights: [], upcomingFights: [], groupedFights: {} };
       
       const now = new Date().getTime();
       const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
-      
       let validFights = fights.filter(f => f?.start_time && new Date(f.start_time).getTime() > (now - TWO_DAYS));
       validFights.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
-      
       if (validFights.length === 0) return { thisWeekendAllFights: [], upcomingFights: [], groupedFights: {} };
 
       const tempGroups = [];
       let currentBucket = [];
       let groupReferenceTime = new Date(validFights[0].start_time).getTime();
-      const THREE_DAYS_MS = 72 * 60 * 60 * 1000;
-
       validFights.forEach((fight) => {
           const fightTime = new Date(fight.start_time).getTime();
-          if (fightTime - groupReferenceTime < THREE_DAYS_MS) {
-              currentBucket.push(fight);
-          } else {
-              tempGroups.push(currentBucket);
-              currentBucket = [fight];
-              groupReferenceTime = fightTime;
-          }
+          if (fightTime - groupReferenceTime < 72 * 60 * 60 * 1000) currentBucket.push(fight);
+          else { tempGroups.push(currentBucket); currentBucket = [fight]; groupReferenceTime = fightTime; }
       });
       if (currentBucket.length > 0) tempGroups.push(currentBucket);
 
@@ -259,24 +222,14 @@ export default function ShowdownPage() {
       let finalGroups = {};
       if (thisWeekendBucket.length > 0) {
           const mainEventFight = thisWeekendBucket[thisWeekendBucket.length - 1];
-          const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
-              month: 'short', day: 'numeric', timeZone: 'America/New_York' 
-          });
+          const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
           const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
-          
-          if (incompleteFights.length > 0) {
-              finalGroups[title] = [...incompleteFights].reverse();
-          }
+          if (incompleteFights.length > 0) finalGroups[title] = [...incompleteFights].reverse();
       }
 
-      return { 
-          thisWeekendAllFights: thisWeekendBucket, 
-          upcomingFights: incompleteFights, 
-          groupedFights: finalGroups 
-      };
+      return { thisWeekendAllFights: thisWeekendBucket, upcomingFights: incompleteFights, groupedFights: finalGroups };
   }, [fights]);
 
-  // 🎯 NEW: AUTO-SETTLEMENT & WINNER LOGIC
   const isCardComplete = thisWeekendAllFights.length > 0 && thisWeekendAllFights.every(f => f.winner);
 
   let showdownWinner = null;
@@ -286,7 +239,6 @@ export default function ShowdownPage() {
       else showdownWinner = 'tie';
   }
 
-  // Effect: Mark match as completed in DB if it's over
   useEffect(() => {
       const settleMatch = async () => {
           if (isCardComplete && match && match.status !== 'completed') {
@@ -296,17 +248,84 @@ export default function ShowdownPage() {
       settleMatch();
   }, [isCardComplete, match]);
 
+  // 🎯 UI LOGIC FOR SIDEBAR (PENDING vs LOCKED)
+  const renderRosterSlots = () => {
+    // IF USER ALREADY SUBMITTED 5 PICKS, SHOW THE LOCKED VIEW
+    if (hasLockedRoster) {
+        return (
+            <div className="space-y-3">
+                {myLockedPicks.map((pick, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-green-950/20 border border-green-500/30">
+                        <div>
+                            <div className="text-[9px] font-black text-green-500 uppercase tracking-widest mb-0.5">LOCKED SLOT {index + 1}</div>
+                            <div className="text-sm font-black text-white uppercase truncate">{pick.selected_fighter}</div>
+                        </div>
+                        <span className="text-xl">🔒</span>
+                    </div>
+                ))}
+                <div className="pt-4 mt-4 text-center">
+                    <p className="text-[10px] font-black uppercase text-green-500 tracking-widest border border-green-500/50 bg-green-950/30 py-2 rounded-lg">Roster Confirmed</p>
+                </div>
+            </div>
+        );
+    }
+
+    // OTHERWISE, SHOW THE DRAFTING VIEW
+    const slots = [0, 1, 2, 3, 4];
+    return (
+        <div className="space-y-3">
+            {slots.map(index => {
+                const pick = pendingPicks[index];
+                return (
+                    <div key={index} className={`flex items-center justify-between p-3 rounded-lg border transition-all ${pick ? 'bg-gray-900 border-pink-500/50' : 'bg-gray-950 border-gray-800 border-dashed'}`}>
+                        {pick ? (
+                            <>
+                                <div>
+                                    <div className="text-[9px] font-black text-pink-500 uppercase tracking-widest mb-0.5">SLOT {index + 1}</div>
+                                    <div className="text-sm font-black text-white uppercase truncate">{pick.fighterName}</div>
+                                </div>
+                                <button onClick={() => handleRemovePick(pick.fightId)} className="text-gray-500 hover:text-red-500 text-xs font-black p-2">✕</button>
+                            </>
+                        ) : (
+                            <div className="flex items-center gap-3 w-full opacity-50">
+                                <div className="w-6 h-6 rounded-full bg-gray-900 flex items-center justify-center text-[10px] font-black text-gray-500">{index + 1}</div>
+                                <div className="text-xs font-bold text-gray-600 uppercase tracking-widest">Empty Slot</div>
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+            
+            <div className="pt-4 border-t border-gray-900 mt-4">
+                <div className="flex justify-between items-center mb-2">
+                    <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">Roster Status</span>
+                    <span className={`text-[10px] font-black uppercase ${pendingPicks.length === 5 ? 'text-green-500' : 'text-pink-500'}`}>{pendingPicks.length} / 5</span>
+                </div>
+                <div className="w-full h-1.5 bg-gray-900 rounded-full overflow-hidden mb-6">
+                    <div className="h-full bg-pink-600 transition-all duration-300" style={{ width: `${(pendingPicks.length / 5) * 100}%` }}></div>
+                </div>
+                
+                <button 
+                    disabled={pendingPicks.length !== 5 || isSubmitting}
+                    onClick={handleConfirmAllPicks}
+                    className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-all ${pendingPicks.length === 5 ? 'bg-pink-600 text-white shadow-[0_0_20px_rgba(236,72,153,0.4)] hover:scale-[1.02] active:scale-95' : 'bg-gray-900 text-gray-600 cursor-not-allowed'}`}
+                >
+                    {isSubmitting ? 'Locking...' : pendingPicks.length === 5 ? 'Lock In Roster' : `Select ${5 - pendingPicks.length} More`}
+                </button>
+            </div>
+        </div>
+    );
+  };
+
   if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-pink-500 font-black italic">ENTERING THE OCTAGON...</div>;
 
   return (
     <div className="flex min-h-screen bg-black text-white overflow-hidden font-sans selection:bg-pink-500 selection:text-white">
       
-      {/* DESKTOP RAIL */}
       <div className={`hidden md:block transition-all duration-500 shrink-0 border-r border-gray-800 relative z-50 ${isFocusMode ? '-ml-20' : 'ml-0'}`}>
         <LeagueRail initialLeagues={clientLeagues} />
       </div>
 
-      {/* MOBILE DRAWER */}
       <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
          <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
             <div className="p-6 border-b border-gray-800 flex justify-between items-center">
@@ -321,9 +340,7 @@ export default function ShowdownPage() {
                                 <div className="w-10 h-10 rounded-full bg-gray-900 border border-gray-600 flex items-center justify-center text-[10px] font-black text-gray-400 group-hover:text-pink-500 group-hover:border-pink-500 transition-all shrink-0">
                                      {league.name ? league.name.substring(0,2).toUpperCase() : 'LG'}
                                 </div>
-                                <span className="font-bold text-sm text-gray-300 group-hover:text-white truncate">
-                                    {league.name}
-                                </span>
+                                <span className="font-bold text-sm text-gray-300 group-hover:text-white truncate">{league.name}</span>
                             </Link>
                         ))
                     ) : (
@@ -338,7 +355,6 @@ export default function ShowdownPage() {
 
       <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24 md:pb-0"> 
         
-        {/* HEADER */}
         <header className={`sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800 transition-all duration-500 ${isFocusMode ? '-translate-y-full' : 'translate-y-0'}`}>
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -353,10 +369,7 @@ export default function ShowdownPage() {
                     </nav>
                 </div>
                 <div className="flex items-center gap-3 md:gap-6">
-                    <button 
-                        onClick={() => setShowShowdown(true)}
-                        className="flex bg-gradient-to-r from-pink-600 to-teal-600 hover:from-pink-500 hover:to-teal-500 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-white shadow-[0_0_15px_rgba(219,39,119,0.2)] hover:shadow-[0_0_20px_rgba(20,184,166,0.4)] transition-all items-center gap-2 active:scale-95"
-                    >
+                    <button onClick={() => setShowShowdown(true)} className="flex bg-gradient-to-r from-pink-600 to-teal-600 hover:from-pink-500 hover:to-teal-500 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-white shadow-[0_0_15px_rgba(219,39,119,0.2)] hover:shadow-[0_0_20px_rgba(20,184,166,0.4)] transition-all items-center gap-2 active:scale-95">
                         <span>⚔️</span>
                         <span className="hidden sm:inline">1v1 Showdown</span>
                         <span className="sm:hidden">1v1</span>
@@ -364,9 +377,7 @@ export default function ShowdownPage() {
                     <div className="hidden md:flex items-center gap-3 px-4 border-x border-gray-800">
                         <div className="text-right">
                             <p className="text-[9px] font-black text-gray-600 uppercase tracking-tighter leading-none mb-1">Career Record</p>
-                            <p className="text-sm font-black italic text-white leading-none">
-                                {careerStats.wins}W - {careerStats.losses}L
-                            </p>
+                            <p className="text-sm font-black italic text-white leading-none">{careerStats.wins}W - {careerStats.losses}L</p>
                         </div>
                         <div className="w-8 h-8 rounded-full border border-gray-800 flex items-center justify-center relative text-[8px] font-black">
                             {Math.round(liveWinPercentage)}%
@@ -379,25 +390,20 @@ export default function ShowdownPage() {
                     <Link href="/profile" className="hidden lg:flex bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all items-center gap-2">
                         <span>My Profile</span>
                     </Link>
-                    <div className="hidden md:block">
-                        <LogOutButton />
-                    </div>
+                    <div className="hidden md:block"><LogOutButton /></div>
                 </div>
             </div>
         </header>
 
-        {/* CLOSE PICKS BUTTON */}
-        {isFocusMode && (
+        {isFocusMode && !hasLockedRoster && (
              <button onClick={() => { setIsFocusMode(false); setPendingPicks([]); }} className="fixed top-6 right-6 z-[70] bg-gray-950 text-white px-6 py-3 rounded-full font-bold uppercase text-xs border border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.3)] hover:bg-pink-600 transition-all hidden md:block">
-                ✕ Close Picks
+                ✕ Reset Roster
              </button>
         )}
 
-        {/* HERO BANNER */}
-        <div className={`relative w-full bg-gray-900 overflow-hidden border-b border-gray-800 transition-all duration-700 ${isFocusMode ? 'h-0 opacity-0 min-h-0 border-transparent' : 'h-[250px] min-h-[250px]'}`}>
+        <div className={`relative w-full bg-gray-900 overflow-hidden border-b border-gray-800 transition-all duration-700 ${isFocusMode && !hasLockedRoster ? 'h-0 opacity-0 min-h-0 border-transparent' : 'h-[250px] min-h-[250px]'}`}>
             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent z-10" />
             
-            {/* 🎯 FINAL STATUS BADGE */}
             {isCardComplete && (
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-pink-600 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-[0_0_15px_rgba(236,72,153,0.5)]">
                     Showdown Final
@@ -407,38 +413,24 @@ export default function ShowdownPage() {
             <div className="absolute inset-0 flex flex-col justify-center p-4 md:p-6 z-20">
                 <div className="max-w-7xl mx-auto w-full flex flex-row items-center justify-center gap-4 md:gap-16">
                     
-                    {/* CREATOR SIDE */}
                     <div className="text-center group flex flex-col items-center w-28 md:w-48 relative">
                       {showdownWinner === 'creator' && <div className="absolute -top-8 text-3xl animate-bounce">👑</div>}
-                      <img 
-                          src="/pink-gloves.png" 
-                          className={`w-16 md:w-32 transition-transform duration-500 ${showdownWinner === 'creator' ? 'scale-110 drop-shadow-[0_0_40px_rgba(219,39,119,0.8)]' : 'drop-shadow-[0_0_30px_rgba(219,39,119,0.4)]'}`} 
-                      />
+                      <img src="/pink-gloves.png" className={`w-16 md:w-32 transition-transform duration-500 ${showdownWinner === 'creator' ? 'scale-110 drop-shadow-[0_0_40px_rgba(219,39,119,0.8)]' : 'drop-shadow-[0_0_30px_rgba(219,39,119,0.4)]'}`} />
                       <p className={`font-black uppercase text-[10px] md:text-xs mt-3 tracking-widest w-full truncate ${showdownWinner === 'creator' ? 'text-white' : 'text-pink-500'}`}>{creatorName}</p>
                     </div>
 
                     <div className="flex flex-col items-center shrink-0">
                         <div className="flex items-center gap-2 md:gap-6 text-3xl md:text-5xl font-black italic tracking-tighter mb-1">
-                            <span className={showdownWinner === 'creator' ? 'text-white drop-shadow-[0_0_15px_rgba(219,39,119,0.5)]' : 'text-pink-500'}>
-                                {displayCreatorScore}
-                            </span>
+                            <span className={showdownWinner === 'creator' ? 'text-white drop-shadow-[0_0_15px_rgba(219,39,119,0.5)]' : 'text-pink-500'}>{displayCreatorScore}</span>
                             <span className="text-gray-700">-</span>
-                            <span className={showdownWinner === 'opponent' ? 'text-white drop-shadow-[0_0_15px_rgba(20,184,166,0.5)]' : 'text-teal-400'}>
-                                {displayOpponentScore}
-                            </span>
+                            <span className={showdownWinner === 'opponent' ? 'text-white drop-shadow-[0_0_15px_rgba(20,184,166,0.5)]' : 'text-teal-400'}>{displayOpponentScore}</span>
                         </div>
-                        <div className="text-lg md:text-2xl font-black italic text-gray-700 uppercase tracking-tighter">
-                            {showdownWinner === 'tie' ? 'TIE' : 'VS'}
-                        </div>
+                        <div className="text-[10px] font-black text-gray-600 uppercase tracking-widest italic mt-1">Fantasy Points</div>
                     </div>
 
-                    {/* OPPONENT SIDE */}
                     <div className="text-center group flex flex-col items-center w-28 md:w-48 relative">
                       {showdownWinner === 'opponent' && <div className="absolute -top-8 text-3xl animate-bounce">👑</div>}
-                      <img 
-                          src="/teal-gloves.png" 
-                          className={`w-16 md:w-32 transition-transform duration-500 ${showdownWinner === 'opponent' ? 'scale-110 drop-shadow-[0_0_40px_rgba(20,184,166,0.8)]' : 'drop-shadow-[0_0_30px_rgba(20,184,166,0.4)]'}`} 
-                      />
+                      <img src="/teal-gloves.png" className={`w-16 md:w-32 transition-transform duration-500 ${showdownWinner === 'opponent' ? 'scale-110 drop-shadow-[0_0_40px_rgba(20,184,166,0.8)]' : 'drop-shadow-[0_0_30px_rgba(20,184,166,0.4)]'}`} />
                       <p className={`font-black uppercase text-[10px] md:text-xs mt-3 tracking-widest w-full truncate ${showdownWinner === 'opponent' ? 'text-white' : 'text-teal-400'}`}>{opponentName || 'WAITING...'}</p>
                     </div>
 
@@ -446,22 +438,16 @@ export default function ShowdownPage() {
             </div>
         </div>
 
-        {/* 🥊 MAIN CONTENT AREA */}
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen w-full">
             
-            <div className={`transition-all duration-500 origin-top ${isFocusMode ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100 mb-8'}`}>
+            <div className={`transition-all duration-500 origin-top ${isFocusMode && !hasLockedRoster ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100 mb-8'}`}>
                 <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg">
-                    <button 
-                       onClick={() => setShowComparisons(!showComparisons)} 
-                       className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none"
-                    >
+                    <button onClick={() => setShowComparisons(!showComparisons)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none">
                         <div className="flex items-center gap-2">
                             <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse"></span>
-                            <h3 className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] text-gray-400">Pick Comparisons</h3>
+                            <h3 className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] text-gray-400">Roster Comparisons</h3>
                         </div>
-                        <span className="text-pink-500 font-black text-[10px] uppercase tracking-widest bg-pink-950/30 px-3 py-1 rounded">
-                            {showComparisons ? 'Hide ▲' : 'View ▼'}
-                        </span>
+                        <span className="text-pink-500 font-black text-[10px] uppercase tracking-widest bg-pink-950/30 px-3 py-1 rounded">{showComparisons ? 'Hide ▲' : 'View ▼'}</span>
                     </button>
                     
                     {showComparisons && (
@@ -469,25 +455,22 @@ export default function ShowdownPage() {
                             {thisWeekendAllFights.slice().reverse().map(fight => {
                                 const myPick = h2hPicks.find(p => p.fight_id === fight.id && p.user_email === user?.email);
                                 const oppPick = getOpponentPick(fight.id);
-                                let oppPickDisplay = oppPick ? (myPick || fight.winner ? oppPick.selected_fighter : '🔒 LOCKED') : '???';
+                                if (!myPick && !oppPick) return null; 
+                                
+                                let oppPickDisplay = oppPick ? (myPick || isCardComplete ? oppPick.selected_fighter : '🔒 LOCKED') : '---';
                                 let isContested = oppPick && myPick && myPick.selected_fighter !== oppPick.selected_fighter;
-                                const fightFinished = !!fight.winner;
 
                                 return (
-                                    <div key={fight.id} className={`p-3 rounded-lg border transition-all ${isContested && !fightFinished ? 'bg-pink-950/20 border-pink-500/50' : 'bg-gray-900/50 border-gray-800'}`}>
+                                    <div key={fight.id} className={`p-3 rounded-lg border transition-all ${isContested && !isCardComplete ? 'bg-pink-950/20 border-pink-500/50' : 'bg-gray-900/50 border-gray-800'}`}>
                                         <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-tighter mb-2">
                                             <span className={myPick ? 'text-pink-500' : 'text-gray-600'}>YOU</span>
                                             <span className="text-gray-500">VS</span>
                                             <span className={oppPick ? 'text-teal-400' : 'text-gray-600'}>OPPONENT</span>
                                         </div>
                                         <div className="flex justify-between items-center gap-2">
-                                            <span className={`text-[10px] md:text-[11px] font-bold truncate w-[40%] ${fightFinished && myPick?.selected_fighter === fight.winner ? 'text-green-400' : (fightFinished && myPick ? 'text-red-500 line-through' : (myPick ? 'text-white' : 'text-gray-700'))}`}>
-                                                {myPick?.selected_fighter || '???'}
-                                            </span>
-                                            {isContested && !fightFinished && <span className="text-[9px] bg-white text-black px-2 py-0.5 rounded italic font-black">FIRE</span>}
-                                            <span className={`text-[10px] md:text-[11px] font-bold truncate w-[40%] text-right ${fightFinished && oppPick?.selected_fighter === fight.winner ? 'text-green-400' : (fightFinished && oppPick ? 'text-red-500 line-through' : (oppPick ? 'text-white' : 'text-gray-700'))}`}>
-                                                {oppPickDisplay}
-                                            </span>
+                                            <span className={`text-[10px] md:text-[11px] font-bold truncate w-[40%] ${myPick ? 'text-white' : 'text-gray-700'}`}>{myPick?.selected_fighter || '---'}</span>
+                                            {isContested && !isCardComplete && <span className="text-[9px] bg-white text-black px-2 py-0.5 rounded italic font-black">FIRE</span>}
+                                            <span className={`text-[10px] md:text-[11px] font-bold truncate w-[40%] text-right ${oppPick ? 'text-white' : 'text-gray-700'}`}>{oppPickDisplay}</span>
                                         </div>
                                     </div>
                                 );
@@ -501,13 +484,13 @@ export default function ShowdownPage() {
                 
                 <div className={`transition-all duration-700 ease-in-out w-full lg:w-[66%] ${isFocusMode ? 'lg:mx-auto' : ''}`}>
                     <div className="flex items-center gap-2 mb-6">
-                        <span className={`w-2 h-2 rounded-full bg-teal-500 animate-pulse ${isFocusMode ? 'opacity-0' : ''}`}></span>
-                        <h2 className={`text-xl font-black uppercase italic tracking-tighter ${isFocusMode ? 'text-pink-600' : ''}`}>
-                            {isFocusMode ? 'Lock Your Picks' : (isCardComplete ? 'Completed Fights' : 'Showdown Fights')}
+                        <span className={`w-2 h-2 rounded-full bg-teal-500 animate-pulse ${isFocusMode && !hasLockedRoster ? 'opacity-0' : ''}`}></span>
+                        <h2 className={`text-xl font-black uppercase italic tracking-tighter ${isFocusMode && !hasLockedRoster ? 'text-pink-600' : ''}`}>
+                            {hasLockedRoster ? 'Showdown Card' : isFocusMode ? 'Draft Your 5-Man Roster' : (isCardComplete ? 'Completed Fights' : 'Showdown Fights')}
                         </h2>
                     </div>
                     
-                    <div className={`transition-all ${isFocusMode ? '[&_button]:animate-pulse' : ''}`}>
+                    <div className={`transition-all ${isFocusMode && !hasLockedRoster ? '[&_button]:animate-pulse' : ''} ${hasLockedRoster ? 'opacity-80' : ''}`}>
                          <FightDashboard 
                             fights={upcomingFights} 
                             groupedFights={groupedFights} 
@@ -523,80 +506,64 @@ export default function ShowdownPage() {
                 </div>
 
                 <div className={`hidden lg:block ml-10 space-y-8 transition-all duration-700 w-[33%] relative`}>
-                    {pendingPicks.length > 0 ? (
-                         <div className="sticky top-24 max-h-[calc(100vh-120px)] min-w-[320px] bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto custom-scrollbar">
-                             <BettingSlip 
-                                picks={pendingPicks} 
-                                onCancelAll={() => { setPendingPicks([]); setIsFocusMode(false); }}
-                                onRemovePick={handleRemovePick}
-                                onConfirm={handleConfirmAllPicks}
-                                isSubmitting={isSubmitting}
-                             />
-                         </div>
-                    ) : (
-                         <div className={`transition-opacity duration-300 sticky top-24 ${isFocusMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-                            <div className="min-w-[320px] bg-gray-950/50 border border-gray-900 border-dashed rounded-xl p-8 shadow-lg flex flex-col items-center justify-center text-center">
-                                <span className="text-4xl mb-3 opacity-50">{isCardComplete ? '🏆' : '⚔️'}</span>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
-                                    {isCardComplete ? 'Showdown Completed' : 'Awaiting Picks'}
-                                </p>
-                                <p className="text-xs text-gray-600 mt-2 font-bold">
-                                    {isCardComplete ? 'All fights have finished. Check out the final scores!' : 'Select a fighter to start building your showdown slip.'}
+                    <div className="sticky top-24 min-w-[320px] bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl">
+                        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-900">
+                            <span className="text-xl">{hasLockedRoster ? '🔒' : '📋'}</span>
+                            <div>
+                                <h3 className="text-sm font-black text-white uppercase italic tracking-tighter">
+                                    {hasLockedRoster ? 'Locked Roster' : 'Fantasy Roster'}
+                                </h3>
+                                <p className={`text-[10px] font-bold uppercase tracking-widest ${hasLockedRoster ? 'text-green-500' : 'text-gray-500'}`}>
+                                    {hasLockedRoster ? 'Your picks are secured' : 'Select exactly 5 fighters'}
                                 </p>
                             </div>
-                         </div>
-                    )}
+                        </div>
+                        {renderRosterSlots()}
+                    </div>
                 </div>
             </div>
         </div>
       </main>
 
       {/* MOBILE UI */}
-      {pendingPicks.length > 0 && (
+      {!hasLockedRoster && pendingPicks.length > 0 && (
           <div className="lg:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
             <button 
               onClick={() => setShowMobileSlip(true)}
-              className="w-full bg-pink-600 text-white p-4 rounded-xl shadow-2xl shadow-pink-900/50 flex justify-between items-center border border-pink-400 active:scale-95 transition-transform"
+              className={`w-full text-white p-4 rounded-xl shadow-2xl flex justify-between items-center border active:scale-95 transition-all ${pendingPicks.length === 5 ? 'bg-pink-600 border-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.4)]' : 'bg-gray-900 border-gray-700'}`}
             >
               <div className="flex items-center gap-3">
-                <span className="bg-black/20 px-3 py-1 rounded-lg text-xs font-black">
-                  {pendingPicks.length}
+                <span className={`px-3 py-1 rounded-lg text-xs font-black ${pendingPicks.length === 5 ? 'bg-black/20 text-white' : 'bg-gray-800 text-pink-500'}`}>
+                  {pendingPicks.length} / 5
                 </span>
-                <span className="text-sm font-black uppercase italic tracking-tighter">
-                  Picks in Slip
-                </span>
+                <span className="text-sm font-black uppercase italic tracking-tighter">Your Roster</span>
               </div>
-              <span className="text-xs font-bold uppercase tracking-widest">Review & Submit →</span>
+              <span className="text-xs font-bold uppercase tracking-widest">
+                  {pendingPicks.length === 5 ? 'Lock In →' : 'Expand ↑'}
+              </span>
             </button>
           </div>
       )}
 
       {/* MOBILE UI Modal */}
-      {showMobileSlip && (
+      {showMobileSlip && !hasLockedRoster && (
           <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm lg:hidden flex items-end">
-            <div className="w-full h-[85vh] bg-gray-950 rounded-t-2xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300">
-               <div className="p-4 border-b border-gray-800 flex justify-between items-center">
-                  <h3 className="font-black italic text-xl text-white uppercase tracking-tighter">Your Slip</h3>
+            <div className="w-full bg-gray-950 rounded-t-3xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300">
+               <div className="p-6 border-b border-gray-800 flex justify-between items-center">
+                  <div>
+                    <h3 className="font-black italic text-xl text-white uppercase tracking-tighter">Fantasy Roster</h3>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Select exactly 5 fighters</p>
+                  </div>
                   <button onClick={() => setShowMobileSlip(false)} className="text-gray-500 hover:text-white p-2 text-xs font-bold uppercase tracking-widest">✕ Close</button>
                </div>
-               <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                  <BettingSlip 
-                     picks={pendingPicks} 
-                     onCancelAll={() => { setPendingPicks([]); setShowMobileSlip(false); setIsFocusMode(false); }}
-                     onRemovePick={handleRemovePick}
-                     onConfirm={handleConfirmAllPicks}
-                     isSubmitting={isSubmitting}
-                  />
+               <div className="p-6">
+                  {renderRosterSlots()}
                </div>
             </div>
           </div>
       )}
 
-      <ShowdownModal 
-        isOpen={showShowdown} 
-        onClose={() => setShowShowdown(false)} 
-      />
-
+      <ShowdownModal isOpen={showShowdown} onClose={() => setShowShowdown(false)} />
       <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
 
     </div>
