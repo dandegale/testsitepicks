@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import Link from 'next/link'; // ADDED: For routing to the matches
 
 // Initialize Supabase safely
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -9,10 +10,15 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 export default function ShowdownModal({ isOpen, onClose }) {
-  const [phase, setPhase] = useState('hidden'); // hidden, animating, content
+  const [phase, setPhase] = useState('hidden'); 
   const [inviteLink, setInviteLink] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  
+  // NEW STATES FOR LOBBY
+  const [activeMatches, setActiveMatches] = useState([]);
+  const [viewingActives, setViewingActives] = useState(false);
+  const [currentUserEmail, setCurrentUserEmail] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -20,6 +26,7 @@ export default function ShowdownModal({ isOpen, onClose }) {
       // Reset states when opened
       setInviteLink('');
       setCopied(false);
+      setViewingActives(false); // Reset to main menu
       
       const timer = setTimeout(() => {
         setPhase('content');
@@ -69,6 +76,28 @@ export default function ShowdownModal({ isOpen, onClose }) {
       navigator.clipboard.writeText(`I'm challenging you to a 1v1 UFC pick 'em showdown on FightIQ! 👊\n\nEnter the octagon here: ${inviteLink}`);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+  };
+
+  // NEW: FETCH ACTIVE MATCHES
+  const fetchActiveMatches = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+          alert("Please log in to view your showdowns.");
+          return;
+      }
+      setCurrentUserEmail(user.email);
+
+      // Fetch matches where you are either the creator OR the opponent
+      const { data, error } = await supabase
+          .from('h2h_matches')
+          .select('*')
+          .or(`creator_email.eq.${user.email},opponent_email.eq.${user.email}`)
+          .order('created_at', { ascending: false });
+
+      if (!error) {
+          setActiveMatches(data || []);
+      }
+      setViewingActives(true);
   };
 
   if (!isOpen) return null;
@@ -126,12 +155,11 @@ export default function ShowdownModal({ isOpen, onClose }) {
                     <div className="w-64 h-64 md:w-96 md:h-96 bg-white rounded-full blur-[80px]"></div>
                 </div>
 
-                {/* Teal Corner (Right) - FIXED ORIENTATION */}
+                {/* Teal Corner (Right) */}
                 <div className="animate-teal-glove z-20 text-left pl-2 md:pl-10">
                     <img 
                         src="/teal-gloves.png" 
                         alt="Teal Corner Gloves" 
-                        // Removed scale-x-[-1] so it faces left naturally
                         className="w-48 h-48 md:w-80 md:h-80 object-contain drop-shadow-[0_0_40px_rgba(20,184,166,0.8)] transform rotate-12"
                     />
                 </div>
@@ -156,36 +184,69 @@ export default function ShowdownModal({ isOpen, onClose }) {
                 </p>
             </div>
 
-            <div className="space-y-4">
-                {!inviteLink ? (
-                    <button 
-                        onClick={generateInvite}
-                        disabled={isGenerating}
-                        className="w-full bg-white text-black font-black uppercase tracking-widest py-4 rounded hover:bg-pink-600 hover:text-white transition-all active:scale-95 disabled:opacity-50"
-                    >
-                        {isGenerating ? 'Generating...' : 'Create Invite Link'}
+            {/* DYNAMIC RENDER: Active Matches List OR Creation Menu */}
+            {viewingActives ? (
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 animate-in fade-in slide-in-from-right-4">
+                    <button onClick={() => setViewingActives(false)} className="text-[10px] text-gray-500 hover:text-white mb-2 uppercase font-black transition-colors">
+                        ← Back to Menu
                     </button>
-                ) : (
-                    <div className="animate-in fade-in slide-in-from-top-2">
-                        <p className="text-[10px] font-black uppercase text-teal-400 tracking-widest mb-2 text-center">
-                            Showdown Created! Send this to your opponent:
-                        </p>
-                        <button 
-                            onClick={copyToClipboard}
-                            className="w-full flex items-center justify-between bg-black border border-teal-500/50 hover:border-teal-400 text-teal-100 p-4 rounded transition-all group"
+                    {activeMatches.map(m => (
+                        <Link 
+                            key={m.id} 
+                            href={`/showdown/${m.invite_code}`}
+                            onClick={onClose} // Close modal when navigating
+                            className="flex items-center justify-between bg-black border border-gray-800 p-4 rounded-xl hover:border-pink-500 transition-all group"
                         >
-                            <span className="font-mono text-xs truncate max-w-[80%]">{inviteLink}</span>
-                            <span className="text-[10px] font-black uppercase tracking-widest bg-teal-900 text-teal-300 px-2 py-1 rounded group-hover:bg-teal-700 transition-colors">
-                                {copied ? 'Copied!' : 'Copy'}
-                            </span>
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Code: {m.invite_code}</span>
+                                <span className="text-sm font-bold text-white uppercase italic">
+                                    Vs {currentUserEmail === m.creator_email ? (m.opponent_email?.split('@')[0] || 'WAITING...') : m.creator_email.split('@')[0]}
+                                </span>
+                            </div>
+                            <span className="text-pink-500 font-black group-hover:translate-x-1 transition-transform">→</span>
+                        </Link>
+                    ))}
+                    {activeMatches.length === 0 && (
+                        <p className="text-center py-6 text-gray-600 text-xs font-bold uppercase tracking-widest border border-dashed border-gray-800 rounded-xl">
+                            No Active Showdowns
+                        </p>
+                    )}
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {!inviteLink ? (
+                        <button 
+                            onClick={generateInvite}
+                            disabled={isGenerating}
+                            className="w-full bg-white text-black font-black uppercase tracking-widest py-4 rounded hover:bg-pink-600 hover:text-white transition-all active:scale-95 disabled:opacity-50"
+                        >
+                            {isGenerating ? 'Generating...' : 'Create Invite Link'}
                         </button>
-                    </div>
-                )}
-                
-                <button className="w-full bg-transparent text-gray-400 border border-gray-800 font-black uppercase tracking-widest py-4 rounded hover:bg-gray-900 hover:text-white transition-all active:scale-95">
-                    View Active Showdowns
-                </button>
-            </div>
+                    ) : (
+                        <div className="animate-in fade-in slide-in-from-top-2">
+                            <p className="text-[10px] font-black uppercase text-teal-400 tracking-widest mb-2 text-center">
+                                Showdown Created! Send this to your opponent:
+                            </p>
+                            <button 
+                                onClick={copyToClipboard}
+                                className="w-full flex items-center justify-between bg-black border border-teal-500/50 hover:border-teal-400 text-teal-100 p-4 rounded transition-all group"
+                            >
+                                <span className="font-mono text-xs truncate max-w-[80%]">{inviteLink}</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest bg-teal-900 text-teal-300 px-2 py-1 rounded group-hover:bg-teal-700 transition-colors">
+                                    {copied ? 'Copied!' : 'Copy'}
+                                </span>
+                            </button>
+                        </div>
+                    )}
+                    
+                    <button 
+                        onClick={fetchActiveMatches}
+                        className="w-full bg-transparent text-gray-400 border border-gray-800 font-black uppercase tracking-widest py-4 rounded hover:bg-gray-900 hover:text-white transition-all active:scale-95"
+                    >
+                        View Active Showdowns
+                    </button>
+                </div>
+            )}
         </div>
       )}
     </div>
