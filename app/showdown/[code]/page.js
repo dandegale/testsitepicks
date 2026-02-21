@@ -167,7 +167,8 @@ export default function ShowdownPage() {
         match_id: match.id,
         user_email: user.email,
         fight_id: p.fightId,
-        selected_fighter: p.fighterName
+        selected_fighter: p.fighterName,
+        odds_at_pick: p.odds || -110 
     }));
 
     const { error } = await supabase.from('h2h_picks').upsert(
@@ -194,6 +195,19 @@ export default function ShowdownPage() {
     return h2hPicks.find(p => p.fight_id === fightId && p.user_email === opponentEmail);
   };
 
+  // 🎯 SCORING ENGINE
+  const calculatePoints = (pick, actualWinner) => {
+      if (!pick) return 0; 
+      
+      if (pick.selected_fighter === actualWinner) {
+          const odds = parseInt(pick.odds_at_pick || -110, 10);
+          const profit = odds > 0 ? (odds / 100) * 10 : (100 / Math.abs(odds)) * 10;
+          return profit; 
+      } else {
+          return -10; 
+      }
+  };
+
   let creatorScore = 0;
   let opponentScore = 0;
 
@@ -202,25 +216,26 @@ export default function ShowdownPage() {
           const cPick = h2hPicks.find(p => p.fight_id === fight.id && p.user_email === match?.creator_email);
           const oPick = h2hPicks.find(p => p.fight_id === fight.id && p.user_email === match?.opponent_email);
           
-          if (cPick && cPick.selected_fighter === fight.winner) creatorScore++;
-          if (oPick && oPick.selected_fighter === fight.winner) opponentScore++;
+          creatorScore += calculatePoints(cPick, fight.winner);
+          opponentScore += calculatePoints(oPick, fight.winner);
       }
   });
 
-  // 🎯 NEW LOGIC: strictly isolates only THIS WEEKEND'S EVENT
+  const displayCreatorScore = creatorScore.toFixed(1);
+  const displayOpponentScore = opponentScore.toFixed(1);
+
+  // STRICTLY ISOLATE THIS WEEKEND'S EVENT
   const { thisWeekendAllFights, upcomingFights, groupedFights } = useMemo(() => {
       if (!fights || fights.length === 0) return { thisWeekendAllFights: [], upcomingFights: [], groupedFights: {} };
       
       const now = new Date().getTime();
       const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
       
-      // 1. Filter out old events, keep anything from 2 days ago onward
       let validFights = fights.filter(f => f?.start_time && new Date(f.start_time).getTime() > (now - TWO_DAYS));
       validFights.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
       
       if (validFights.length === 0) return { thisWeekendAllFights: [], upcomingFights: [], groupedFights: {} };
 
-      // 2. Group into 72-hour event buckets
       const tempGroups = [];
       let currentBucket = [];
       let groupReferenceTime = new Date(validFights[0].start_time).getTime();
@@ -238,7 +253,6 @@ export default function ShowdownPage() {
       });
       if (currentBucket.length > 0) tempGroups.push(currentBucket);
 
-      // 3. STRICTLY ISOLATE "THIS WEEKEND" (The very first bucket)
       const thisWeekendBucket = tempGroups[0] || [];
       const incompleteFights = thisWeekendBucket.filter(f => !f.winner);
 
@@ -261,6 +275,26 @@ export default function ShowdownPage() {
           groupedFights: finalGroups 
       };
   }, [fights]);
+
+  // 🎯 NEW: AUTO-SETTLEMENT & WINNER LOGIC
+  const isCardComplete = thisWeekendAllFights.length > 0 && thisWeekendAllFights.every(f => f.winner);
+
+  let showdownWinner = null;
+  if (isCardComplete) {
+      if (creatorScore > opponentScore) showdownWinner = 'creator';
+      else if (opponentScore > creatorScore) showdownWinner = 'opponent';
+      else showdownWinner = 'tie';
+  }
+
+  // Effect: Mark match as completed in DB if it's over
+  useEffect(() => {
+      const settleMatch = async () => {
+          if (isCardComplete && match && match.status !== 'completed') {
+              await supabase.from('h2h_matches').update({ status: 'completed' }).eq('id', match.id);
+          }
+      };
+      settleMatch();
+  }, [isCardComplete, match]);
 
   if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-pink-500 font-black italic">ENTERING THE OCTAGON...</div>;
 
@@ -362,24 +396,52 @@ export default function ShowdownPage() {
         {/* HERO BANNER */}
         <div className={`relative w-full bg-gray-900 overflow-hidden border-b border-gray-800 transition-all duration-700 ${isFocusMode ? 'h-0 opacity-0 min-h-0 border-transparent' : 'h-[250px] min-h-[250px]'}`}>
             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent z-10" />
+            
+            {/* 🎯 FINAL STATUS BADGE */}
+            {isCardComplete && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-pink-600 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-[0_0_15px_rgba(236,72,153,0.5)]">
+                    Showdown Final
+                </div>
+            )}
+
             <div className="absolute inset-0 flex flex-col justify-center p-4 md:p-6 z-20">
                 <div className="max-w-7xl mx-auto w-full flex flex-row items-center justify-center gap-4 md:gap-16">
-                    <div className="text-center group flex flex-col items-center w-28 md:w-48">
-                      <img src="/pink-gloves.png" className="w-16 md:w-32 drop-shadow-[0_0_30px_rgba(219,39,119,0.4)] transition-transform group-hover:scale-110 duration-500" />
-                      <p className="text-pink-500 font-black uppercase text-[10px] md:text-xs mt-3 tracking-widest w-full truncate">{creatorName}</p>
+                    
+                    {/* CREATOR SIDE */}
+                    <div className="text-center group flex flex-col items-center w-28 md:w-48 relative">
+                      {showdownWinner === 'creator' && <div className="absolute -top-8 text-3xl animate-bounce">👑</div>}
+                      <img 
+                          src="/pink-gloves.png" 
+                          className={`w-16 md:w-32 transition-transform duration-500 ${showdownWinner === 'creator' ? 'scale-110 drop-shadow-[0_0_40px_rgba(219,39,119,0.8)]' : 'drop-shadow-[0_0_30px_rgba(219,39,119,0.4)]'}`} 
+                      />
+                      <p className={`font-black uppercase text-[10px] md:text-xs mt-3 tracking-widest w-full truncate ${showdownWinner === 'creator' ? 'text-white' : 'text-pink-500'}`}>{creatorName}</p>
                     </div>
+
                     <div className="flex flex-col items-center shrink-0">
                         <div className="flex items-center gap-2 md:gap-6 text-3xl md:text-5xl font-black italic tracking-tighter mb-1">
-                            <span className="text-pink-500">{creatorScore}</span>
+                            <span className={showdownWinner === 'creator' ? 'text-white drop-shadow-[0_0_15px_rgba(219,39,119,0.5)]' : 'text-pink-500'}>
+                                {displayCreatorScore}
+                            </span>
                             <span className="text-gray-700">-</span>
-                            <span className="text-teal-400">{opponentScore}</span>
+                            <span className={showdownWinner === 'opponent' ? 'text-white drop-shadow-[0_0_15px_rgba(20,184,166,0.5)]' : 'text-teal-400'}>
+                                {displayOpponentScore}
+                            </span>
                         </div>
-                        <div className="text-lg md:text-2xl font-black italic text-gray-700 uppercase tracking-tighter">VS</div>
+                        <div className="text-lg md:text-2xl font-black italic text-gray-700 uppercase tracking-tighter">
+                            {showdownWinner === 'tie' ? 'TIE' : 'VS'}
+                        </div>
                     </div>
-                    <div className="text-center group flex flex-col items-center w-28 md:w-48">
-                      <img src="/teal-gloves.png" className="w-16 md:w-32 drop-shadow-[0_0_30px_rgba(20,184,166,0.4)] transition-transform group-hover:scale-110 duration-500" />
-                      <p className="text-teal-400 font-black uppercase text-[10px] md:text-xs mt-3 tracking-widest w-full truncate">{opponentName || 'WAITING...'}</p>
+
+                    {/* OPPONENT SIDE */}
+                    <div className="text-center group flex flex-col items-center w-28 md:w-48 relative">
+                      {showdownWinner === 'opponent' && <div className="absolute -top-8 text-3xl animate-bounce">👑</div>}
+                      <img 
+                          src="/teal-gloves.png" 
+                          className={`w-16 md:w-32 transition-transform duration-500 ${showdownWinner === 'opponent' ? 'scale-110 drop-shadow-[0_0_40px_rgba(20,184,166,0.8)]' : 'drop-shadow-[0_0_30px_rgba(20,184,166,0.4)]'}`} 
+                      />
+                      <p className={`font-black uppercase text-[10px] md:text-xs mt-3 tracking-widest w-full truncate ${showdownWinner === 'opponent' ? 'text-white' : 'text-teal-400'}`}>{opponentName || 'WAITING...'}</p>
                     </div>
+
                 </div>
             </div>
         </div>
@@ -441,7 +503,7 @@ export default function ShowdownPage() {
                     <div className="flex items-center gap-2 mb-6">
                         <span className={`w-2 h-2 rounded-full bg-teal-500 animate-pulse ${isFocusMode ? 'opacity-0' : ''}`}></span>
                         <h2 className={`text-xl font-black uppercase italic tracking-tighter ${isFocusMode ? 'text-pink-600' : ''}`}>
-                            {isFocusMode ? 'Lock Your Picks' : 'Showdown Fights'}
+                            {isFocusMode ? 'Lock Your Picks' : (isCardComplete ? 'Completed Fights' : 'Showdown Fights')}
                         </h2>
                     </div>
                     
@@ -474,9 +536,13 @@ export default function ShowdownPage() {
                     ) : (
                          <div className={`transition-opacity duration-300 sticky top-24 ${isFocusMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
                             <div className="min-w-[320px] bg-gray-950/50 border border-gray-900 border-dashed rounded-xl p-8 shadow-lg flex flex-col items-center justify-center text-center">
-                                <span className="text-4xl mb-3 opacity-50">⚔️</span>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Awaiting Picks</p>
-                                <p className="text-xs text-gray-600 mt-2 font-bold">Select a fighter to start building your showdown slip.</p>
+                                <span className="text-4xl mb-3 opacity-50">{isCardComplete ? '🏆' : '⚔️'}</span>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                                    {isCardComplete ? 'Showdown Completed' : 'Awaiting Picks'}
+                                </p>
+                                <p className="text-xs text-gray-600 mt-2 font-bold">
+                                    {isCardComplete ? 'All fights have finished. Check out the final scores!' : 'Select a fighter to start building your showdown slip.'}
+                                </p>
                             </div>
                          </div>
                     )}
@@ -485,7 +551,7 @@ export default function ShowdownPage() {
         </div>
       </main>
 
-      {/* MOBILE UI - Strictly hidden when desktop sidebar (lg) is active */}
+      {/* MOBILE UI */}
       {pendingPicks.length > 0 && (
           <div className="lg:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
             <button 
