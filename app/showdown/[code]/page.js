@@ -207,34 +207,26 @@ export default function ShowdownPage() {
       }
   });
 
-  const validFights = useMemo(() => {
-      if (!fights || fights.length === 0) return [];
+  // 🎯 NEW LOGIC: strictly isolates only THIS WEEKEND'S EVENT
+  const { thisWeekendAllFights, upcomingFights, groupedFights } = useMemo(() => {
+      if (!fights || fights.length === 0) return { thisWeekendAllFights: [], upcomingFights: [], groupedFights: {} };
+      
       const now = new Date().getTime();
-      const FOUR_DAYS = 4 * 24 * 60 * 60 * 1000;
+      const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
       
-      const filtered = fights.filter(f => {
-          if (!f || !f.start_time) return false; 
-          const fTime = new Date(f.start_time).getTime();
-          return fTime > (now - FOUR_DAYS); 
-      });
+      // 1. Filter out old events, keep anything from 2 days ago onward
+      let validFights = fights.filter(f => f?.start_time && new Date(f.start_time).getTime() > (now - TWO_DAYS));
+      validFights.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
       
-      return filtered.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
-  }, [fights]);
-  
-  const upcomingFights = useMemo(() => {
-      return validFights.filter(f => !f.winner);
-  }, [validFights]);
+      if (validFights.length === 0) return { thisWeekendAllFights: [], upcomingFights: [], groupedFights: {} };
 
-  const groupedFights = useMemo(() => {
-      if (upcomingFights.length === 0) return {};
-      
-      let finalGroups = {};
+      // 2. Group into 72-hour event buckets
       const tempGroups = [];
       let currentBucket = [];
-      let groupReferenceTime = new Date(upcomingFights[0].start_time).getTime();
+      let groupReferenceTime = new Date(validFights[0].start_time).getTime();
       const THREE_DAYS_MS = 72 * 60 * 60 * 1000;
 
-      upcomingFights.forEach((fight) => {
+      validFights.forEach((fight) => {
           const fightTime = new Date(fight.start_time).getTime();
           if (fightTime - groupReferenceTime < THREE_DAYS_MS) {
               currentBucket.push(fight);
@@ -246,26 +238,37 @@ export default function ShowdownPage() {
       });
       if (currentBucket.length > 0) tempGroups.push(currentBucket);
 
-      tempGroups.forEach(bucket => {
-          if (bucket.length === 0) return;
-          const mainEventFight = bucket[bucket.length - 1];
+      // 3. STRICTLY ISOLATE "THIS WEEKEND" (The very first bucket)
+      const thisWeekendBucket = tempGroups[0] || [];
+      const incompleteFights = thisWeekendBucket.filter(f => !f.winner);
+
+      let finalGroups = {};
+      if (thisWeekendBucket.length > 0) {
+          const mainEventFight = thisWeekendBucket[thisWeekendBucket.length - 1];
           const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
               month: 'short', day: 'numeric', timeZone: 'America/New_York' 
           });
           const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
-          finalGroups[title] = [...bucket].reverse();
-      });
+          
+          if (incompleteFights.length > 0) {
+              finalGroups[title] = [...incompleteFights].reverse();
+          }
+      }
 
-      return finalGroups;
-  }, [upcomingFights]);
+      return { 
+          thisWeekendAllFights: thisWeekendBucket, 
+          upcomingFights: incompleteFights, 
+          groupedFights: finalGroups 
+      };
+  }, [fights]);
 
   if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-pink-500 font-black italic">ENTERING THE OCTAGON...</div>;
 
   return (
     <div className="flex min-h-screen bg-black text-white overflow-hidden font-sans selection:bg-pink-500 selection:text-white">
       
-      {/* DESKTOP RAIL (Identical to DashboardClient) */}
-      <div className={`hidden md:block transition-all duration-500 ${isFocusMode ? '-ml-20' : 'ml-0'}`}>
+      {/* DESKTOP RAIL */}
+      <div className={`hidden md:block transition-all duration-500 shrink-0 border-r border-gray-800 relative z-50 ${isFocusMode ? '-ml-20' : 'ml-0'}`}>
         <LeagueRail initialLeagues={clientLeagues} />
       </div>
 
@@ -301,7 +304,7 @@ export default function ShowdownPage() {
 
       <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24 md:pb-0"> 
         
-        {/* HEADER (Identical to DashboardClient) */}
+        {/* HEADER */}
         <header className={`sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800 transition-all duration-500 ${isFocusMode ? '-translate-y-full' : 'translate-y-0'}`}>
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -349,14 +352,14 @@ export default function ShowdownPage() {
             </div>
         </header>
 
-        {/* CLOSE PICKS BUTTON (Identical to DashboardClient) */}
+        {/* CLOSE PICKS BUTTON */}
         {isFocusMode && (
              <button onClick={() => { setIsFocusMode(false); setPendingPicks([]); }} className="fixed top-6 right-6 z-[70] bg-gray-950 text-white px-6 py-3 rounded-full font-bold uppercase text-xs border border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.3)] hover:bg-pink-600 transition-all hidden md:block">
                 ✕ Close Picks
              </button>
         )}
 
-        {/* HERO BANNER (Slides away smoothly on Focus Mode) */}
+        {/* HERO BANNER */}
         <div className={`relative w-full bg-gray-900 overflow-hidden border-b border-gray-800 transition-all duration-700 ${isFocusMode ? 'h-0 opacity-0 min-h-0 border-transparent' : 'h-[250px] min-h-[250px]'}`}>
             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent z-10" />
             <div className="absolute inset-0 flex flex-col justify-center p-4 md:p-6 z-20">
@@ -381,10 +384,9 @@ export default function ShowdownPage() {
             </div>
         </div>
 
-        {/* 🥊 MAIN CONTENT AREA (Identical to DashboardClient) */}
+        {/* 🥊 MAIN CONTENT AREA */}
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen w-full">
             
-            {/* The Accordion is pushed up here so it tucks away on focus mode */}
             <div className={`transition-all duration-500 origin-top ${isFocusMode ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100 mb-8'}`}>
                 <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg">
                     <button 
@@ -402,7 +404,7 @@ export default function ShowdownPage() {
                     
                     {showComparisons && (
                         <div className="p-4 border-t border-gray-900 grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-4 duration-300">
-                            {validFights.slice(0, 15).map(fight => {
+                            {thisWeekendAllFights.slice().reverse().map(fight => {
                                 const myPick = h2hPicks.find(p => p.fight_id === fight.id && p.user_email === user?.email);
                                 const oppPick = getOpponentPick(fight.id);
                                 let oppPickDisplay = oppPick ? (myPick || fight.winner ? oppPick.selected_fighter : '🔒 LOCKED') : '???';
@@ -435,8 +437,7 @@ export default function ShowdownPage() {
 
             <div className="relative flex w-full">
                 
-                {/* LEFT COLUMN: Exactly matching DashboardClient xl:w-[66%] */}
-                <div className={`transition-all duration-700 ease-in-out w-full xl:w-[66%] ${isFocusMode ? 'xl:mx-auto' : ''}`}>
+                <div className={`transition-all duration-700 ease-in-out w-full lg:w-[66%] ${isFocusMode ? 'lg:mx-auto' : ''}`}>
                     <div className="flex items-center gap-2 mb-6">
                         <span className={`w-2 h-2 rounded-full bg-teal-500 animate-pulse ${isFocusMode ? 'opacity-0' : ''}`}></span>
                         <h2 className={`text-xl font-black uppercase italic tracking-tighter ${isFocusMode ? 'text-pink-600' : ''}`}>
@@ -459,10 +460,9 @@ export default function ShowdownPage() {
                     </div>
                 </div>
 
-                {/* RIGHT COLUMN: Exactly matching DashboardClient (hidden xl:block ml-10 w-[33%]) */}
-                <div className={`hidden xl:block ml-10 space-y-8 transition-all duration-700 w-[33%] relative`}>
+                <div className={`hidden lg:block ml-10 space-y-8 transition-all duration-700 w-[33%] relative`}>
                     {pendingPicks.length > 0 ? (
-                         <div className="sticky top-24 max-h-[calc(100vh-120px)] min-w-[350px] bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto custom-scrollbar">
+                         <div className="sticky top-24 max-h-[calc(100vh-120px)] min-w-[320px] bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto custom-scrollbar">
                              <BettingSlip 
                                 picks={pendingPicks} 
                                 onCancelAll={() => { setPendingPicks([]); setIsFocusMode(false); }}
@@ -473,7 +473,7 @@ export default function ShowdownPage() {
                          </div>
                     ) : (
                          <div className={`transition-opacity duration-300 sticky top-24 ${isFocusMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-                            <div className="min-w-[350px] bg-gray-950/50 border border-gray-900 border-dashed rounded-xl p-8 shadow-lg flex flex-col items-center justify-center text-center">
+                            <div className="min-w-[320px] bg-gray-950/50 border border-gray-900 border-dashed rounded-xl p-8 shadow-lg flex flex-col items-center justify-center text-center">
                                 <span className="text-4xl mb-3 opacity-50">⚔️</span>
                                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Awaiting Picks</p>
                                 <p className="text-xs text-gray-600 mt-2 font-bold">Select a fighter to start building your showdown slip.</p>
@@ -485,10 +485,9 @@ export default function ShowdownPage() {
         </div>
       </main>
 
-      {/* MOBILE UI (Floating bottom bar specifically for < 1280px screens) */}
-      {/* Used xl:hidden so it never clashes with the desktop Betting Slip on standard laptops! */}
+      {/* MOBILE UI - Strictly hidden when desktop sidebar (lg) is active */}
       {pendingPicks.length > 0 && (
-          <div className="xl:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <div className="lg:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
             <button 
               onClick={() => setShowMobileSlip(true)}
               className="w-full bg-pink-600 text-white p-4 rounded-xl shadow-2xl shadow-pink-900/50 flex justify-between items-center border border-pink-400 active:scale-95 transition-transform"
@@ -508,7 +507,7 @@ export default function ShowdownPage() {
 
       {/* MOBILE UI Modal */}
       {showMobileSlip && (
-          <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm xl:hidden flex items-end">
+          <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm lg:hidden flex items-end">
             <div className="w-full h-[85vh] bg-gray-950 rounded-t-2xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300">
                <div className="p-4 border-b border-gray-800 flex justify-between items-center">
                   <h3 className="font-black italic text-xl text-white uppercase tracking-tighter">Your Slip</h3>
