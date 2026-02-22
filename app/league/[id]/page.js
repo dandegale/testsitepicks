@@ -494,7 +494,10 @@ export default function LeaguePage() {
                               if (!canSee) {
                                   return (
                                       <tr key={pick.id} className="bg-gray-950/50">
-                                          <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-gray-600 truncate max-w-[60px] sm:max-w-[100px] md:max-w-none">🔒 HIDDEN</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-gray-600 truncate max-w-[60px] sm:max-w-[100px] md:max-w-none flex items-center gap-2">
+                                              <img src="/lock.png" alt="Locked" className="w-3 h-3 object-contain opacity-50" />
+                                              HIDDEN
+                                          </td>
                                           <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
                                           <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td> 
                                           <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
@@ -552,7 +555,7 @@ export default function LeaguePage() {
                             <div className="text-[9px] font-black text-teal-400 uppercase tracking-widest mb-0.5">LOCKED SLOT {index + 1}</div>
                             <div className="text-sm font-black text-white uppercase truncate">{pick.selected_fighter}</div>
                         </div>
-                        <span className="text-xl">🔒</span>
+                        <img src="/lock.png" alt="Locked" className="w-5 h-5 object-contain animate-pulse" />
                     </div>
                 ))}
                 <div className="pt-4 mt-4 text-center">
@@ -943,7 +946,7 @@ export default function LeaguePage() {
                             </div>
 
                              <div className="flex items-center gap-2 mb-6">
-                                <span className="text-2xl">🏆</span>
+                                <img src="/trophy.png" alt="Leaderboard" className="w-8 h-8 object-contain drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
                                 <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
                                     DFS Standings
                                 </h2>
@@ -955,7 +958,7 @@ export default function LeaguePage() {
                                         <div className="grid grid-cols-12 gap-4 p-4 border-b border-gray-800 bg-black/40 text-[9px] font-black uppercase tracking-widest text-gray-500">
                                             <div className="col-span-2 text-center">Rank</div>
                                             <div className="col-span-4">Manager</div>
-                                            <div className="col-span-2 text-center" title="Number of past events won">Trophies</div>
+                                            <div className="col-span-2 text-center" title="Number of past events won">Record</div>
                                             <div className="col-span-2 text-center">Roster</div>
                                             <div className="col-span-2 text-right">Fantasy PTS</div>
                                         </div>
@@ -982,15 +985,16 @@ export default function LeaguePage() {
                                                                     {player.displayName}
                                                                 </div>
                                                                 {isEventConcluded && index === 0 && (
-                                                                    <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest block mt-1">
-                                                                        👑 Champion
+                                                                    <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest flex items-center gap-1 mt-1">
+                                                                        <img src="/trophy.png" className="w-2.5 h-2.5 object-contain" alt="winner" />
+                                                                        Champion
                                                                     </span>
                                                                 )}
                                                             </div>
                                                         </div>
                                                         
-                                                        <div className="col-span-2 flex items-center justify-center gap-1">
-                                                            <span className="text-yellow-500 text-sm drop-shadow-[0_0_10px_rgba(234,179,8,0.3)]">🏆</span>
+                                                        <div className="col-span-2 flex items-center justify-center gap-1.5">
+                                                            <img src="/trophy.png" alt="Trophies" className="w-4 h-4 object-contain brightness-110 drop-shadow-[0_0_5px_rgba(234,179,8,0.2)]" />
                                                             <span className="text-white font-black text-xs">{player.cardsWon}</span>
                                                         </div>
 
@@ -1260,7 +1264,7 @@ export default function LeaguePage() {
                             className="w-full flex items-center justify-between p-6 bg-gray-950 hover:bg-gray-900 transition-colors focus:outline-none border-b border-gray-900"
                         >
                             <div className="flex items-center gap-3 text-left">
-                                <span className="text-xl">{hasLockedRoster ? '🔒' : '📋'}</span>
+                                <img src={hasLockedRoster ? '/lock.png' : '/trophy.png'} alt="Icon" className="w-5 h-5 object-contain" />
                                 <div>
                                     <h3 className="text-sm font-black text-white uppercase italic tracking-tighter">
                                         {hasLockedRoster ? 'Locked Roster' : 'Fantasy Roster'}
@@ -1353,7 +1357,7 @@ export default function LeaguePage() {
                 <div className="border-t border-gray-800 pt-6">
                     <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Menu</p>
                     <Link href="/leaderboard" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all mb-2">
-                        <span className="text-xl">🏆</span>
+                        <img src="/trophy.png" className="w-5 h-5 object-contain" alt="Lead" />
                         <span className="text-sm font-bold text-gray-300">Global Leaderboard</span>
                     </Link>
                      <Link href="/profile" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all">
