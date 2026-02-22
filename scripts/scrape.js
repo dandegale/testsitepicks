@@ -104,7 +104,7 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         let isSub = false;
         let finishRound = 1;
         let finishTimeSeconds = 999;
-        let winMethodStr = ""; // 🎯 NEW: Hold the exact method text
+        let winMethodStr = ""; 
 
         $('.b-fight-details__text-item, .b-fight-details__text-item_first').each((i, el) => {
             const text = $(el).text().replace(/\s+/g, ' ').toUpperCase().trim();
@@ -112,7 +112,7 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             if (text.includes('METHOD:')) {
                 const parts = text.split('METHOD:');
                 if (parts.length > 1) {
-                    winMethodStr = parts[1].trim(); // e.g., "KO/TKO", "U-DEC", "SUB"
+                    winMethodStr = parts[1].trim(); 
                 }
                 if (text.includes('KO/TKO') || text.includes('TKO') || text.includes('KO')) isKO = true;
                 if (text.includes('SUB') || text.includes('SUBMISSION')) isSub = true;
@@ -147,7 +147,7 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             if (isUnder30s) baseFinishBonus = 60;
             else if (finishRound === 1) baseFinishBonus = 35;
             else if (finishRound === 2) baseFinishBonus = 25;
-            else if (finishRound === 3) baseFinishBonus = 20;
+            else if (finishRound === 3) baseFinishBonus = 20; // 🎯 Reverted to original 20
             else if (finishRound === 4) baseFinishBonus = 25;
             else if (finishRound === 5) baseFinishBonus = 40; 
         } 
@@ -155,7 +155,7 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             if (isUnder30s) baseFinishBonus = 65;
             else if (finishRound === 1) baseFinishBonus = 35;
             else if (finishRound === 2) baseFinishBonus = 25;
-            else if (finishRound === 3) baseFinishBonus = 20;
+            else if (finishRound === 3) baseFinishBonus = 20; // 🎯 Reverted to original 20
             else if (finishRound === 4) baseFinishBonus = 25;
             else if (finishRound === 5) baseFinishBonus = 40; 
         }
@@ -194,6 +194,7 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         // 🎯 THE FAIR PLAY ODDS ENGINE
         const winnerIndex = results.findIndex(r => r.is_winner);
         let finalFinishBonus = 0;
+        let wasEqualized = false; 
 
         if (winnerIndex !== -1) {
             const loserIndex = winnerIndex === 0 ? 1 : 0;
@@ -223,6 +224,7 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             // Equalizer
             if (results[winnerIndex].fantasy_points < results[loserIndex].fantasy_points) {
                 results[winnerIndex].fantasy_points = results[loserIndex].fantasy_points;
+                wasEqualized = true; 
             }
         }
 
@@ -233,17 +235,24 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         const { error } = await supabase.from('fighter_stats').upsert(results, { onConflict: 'fight_id, fighter_name' });
         if (error) throw new Error(`Supabase Stats Error: ${error.message}`);
         
-        // 🎯 NEW: Save the actual method to the Fights table
+        let finalMethodString = winMethodStr;
+        if (isKO || isSub) {
+            finalMethodString = `${winMethodStr} R${finishRound}`;
+        }
+
         if (statuses.includes('W')) {
             const winnerName = fighters[winnerIndex];
             await supabase.from('fights').update({ 
                 winner: winnerName,
-                method: winMethodStr 
+                method: finalMethodString 
             }).eq('id', dbFight.id);
         }
 
+        // 🎯 TERMINAL LOGGING
         let finishLabel = finalFinishBonus > 0 ? ` (+${finalFinishBonus} Bonus)` : "";
-        console.log(`✅ Synced: ${fighters[0]} vs ${fighters[1]} (${statuses.includes('W') ? fighters[winnerIndex] + ' won by ' + winMethodStr + finishLabel : 'Draw/NC'})`);
+        let eqLabel = wasEqualized ? ` ⚠️ [EQUALIZER APPLIED]` : "";
+        
+        console.log(`✅ Synced: ${fighters[0]} vs ${fighters[1]} (${statuses.includes('W') ? fighters[winnerIndex] + ' won by ' + finalMethodString + finishLabel + eqLabel : 'Draw/NC'})`);
         
         if (isKO || isSub) {
             console.log(`   ➔ Detected: ${isKO ? 'KO' : 'SUB'} in Round ${finishRound} at ${finishTimeSeconds}s`);

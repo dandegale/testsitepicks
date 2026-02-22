@@ -31,7 +31,7 @@ export default function ShowdownPage() {
   const [clientLeagues, setClientLeagues] = useState([]);
   
   const [showComparisons, setShowComparisons] = useState(false);
-  const [showAllFighters, setShowAllFighters] = useState(false); // 🎯 NEW: State for full card dropdown
+  const [showAllFighters, setShowAllFighters] = useState(false); 
   
   const [creatorName, setCreatorName] = useState('');
   const [opponentName, setOpponentName] = useState('');
@@ -262,7 +262,6 @@ export default function ShowdownPage() {
       settleMatch();
   }, [isCardComplete, match]);
 
-  // 🎯 NEW: Calculates the Full Card Leaderboard Rankings
   const allCardFightersRanked = useMemo(() => {
       if (!fighterStats || fighterStats.length === 0 || thisWeekendAllFights.length === 0) return [];
       
@@ -310,6 +309,7 @@ export default function ShowdownPage() {
                           <tr>
                               <th className="p-3">Fighter</th>
                               <th className="p-3 text-center">Result</th>
+                              <th className="p-3 text-center">KD</th> {/* 🎯 Added KD */}
                               <th className="p-3 text-center">SS</th>
                               <th className="p-3 text-center">TD</th>
                               <th className="p-3 text-center">SUB</th>
@@ -327,6 +327,7 @@ export default function ShowdownPage() {
                                       <tr key={pick.id} className="bg-gray-950/50">
                                           <td className="p-3 font-bold text-gray-600 truncate max-w-[100px] md:max-w-none">🔒 HIDDEN PICK</td>
                                           <td className="p-3 text-center text-gray-700">-</td>
+                                          <td className="p-3 text-center text-gray-700">-</td> {/* 🎯 Hidden KD */}
                                           <td className="p-3 text-center text-gray-700">-</td>
                                           <td className="p-3 text-center text-gray-700">-</td>
                                           <td className="p-3 text-center text-gray-700">-</td>
@@ -356,6 +357,7 @@ export default function ShowdownPage() {
                                               <span className="text-gray-600">-</span>
                                           )}
                                       </td>
+                                      <td className="p-3 text-center text-gray-300">{stats.knockdowns || 0}</td> {/* 🎯 Added KD Value */}
                                       <td className="p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
                                       <td className="p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
                                       <td className="p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>
@@ -579,7 +581,7 @@ export default function ShowdownPage() {
                     )}
                 </div>
 
-                {/* 🎯 NEW: FULL CARD LEADERBOARD BOX */}
+                {/* 🎯 FULL CARD LEADERBOARD BOX */}
                 <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg mt-6">
                     <button onClick={() => setShowAllFighters(!showAllFighters)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none">
                         <div className="flex items-center gap-2">
@@ -599,6 +601,7 @@ export default function ShowdownPage() {
                                                 <th className="p-3">Rank</th>
                                                 <th className="p-3">Fighter</th>
                                                 <th className="p-3 text-center">Result</th>
+                                                <th className="p-3 text-center">KD</th> {/* 🎯 Added KD */}
                                                 <th className="p-3 text-center">SS</th>
                                                 <th className="p-3 text-center">TD</th>
                                                 <th className="p-3 text-center">SUB</th>
@@ -626,6 +629,7 @@ export default function ShowdownPage() {
                                                                 <span className="text-gray-600">-</span>
                                                             )}
                                                         </td>
+                                                        <td className="p-3 text-center text-gray-300">{stats.knockdowns || 0}</td> {/* 🎯 Added KD Value */}
                                                         <td className="p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
                                                         <td className="p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
                                                         <td className="p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>
@@ -636,7 +640,7 @@ export default function ShowdownPage() {
                                             })}
                                             {allCardFightersRanked.length === 0 && (
                                                 <tr>
-                                                    <td colSpan="8" className="p-6 text-center text-gray-600 font-bold uppercase tracking-widest text-[10px]">No stats available for this event yet</td>
+                                                    <td colSpan="9" className="p-6 text-center text-gray-600 font-bold uppercase tracking-widest text-[10px]">No stats available for this event yet</td> {/* 🎯 Updated colSpan to 9 */}
                                                 </tr>
                                             )}
                                         </tbody>
