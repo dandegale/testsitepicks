@@ -519,7 +519,7 @@ export default function LeaguePage() {
                                       <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-white truncate max-w-[60px] sm:max-w-[100px] md:max-w-none" title={pick.selected_fighter}>{pick.selected_fighter}</td>
                                       <td className="px-1 py-2 sm:p-2 md:p-3 text-center font-black text-[8px] sm:text-[9px] md:text-[10px] leading-tight">
                                           {stats.is_winner === true ? (
-                                              <span className="text-green-500 whitespace-pre-wrap">W{winMethod}</span>
+                                              <span className="text-teal-400 whitespace-pre-wrap">W{winMethod}</span>
                                           ) : stats.is_winner === false ? (
                                               <span className="text-red-500 whitespace-pre-wrap">L{winMethod}</span>
                                           ) : (
@@ -547,16 +547,16 @@ export default function LeaguePage() {
         return (
             <div className="space-y-3">
                 {existingPicks.map((pick, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-green-950/20 border border-green-500/30">
+                    <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-teal-950/20 border border-teal-500/30">
                         <div>
-                            <div className="text-[9px] font-black text-green-500 uppercase tracking-widest mb-0.5">LOCKED SLOT {index + 1}</div>
+                            <div className="text-[9px] font-black text-teal-400 uppercase tracking-widest mb-0.5">LOCKED SLOT {index + 1}</div>
                             <div className="text-sm font-black text-white uppercase truncate">{pick.selected_fighter}</div>
                         </div>
                         <span className="text-xl">🔒</span>
                     </div>
                 ))}
                 <div className="pt-4 mt-4 text-center">
-                    <p className="text-[10px] font-black uppercase text-green-500 tracking-widest border border-green-500/50 bg-green-950/30 py-2 rounded-lg">Roster Confirmed</p>
+                    <p className="text-[10px] font-black uppercase text-teal-400 tracking-widest border border-teal-500/50 bg-teal-950/30 py-2 rounded-lg">Roster Confirmed</p>
                 </div>
             </div>
         );
@@ -590,7 +590,7 @@ export default function LeaguePage() {
             <div className="pt-4 border-t border-gray-900 mt-4">
                 <div className="flex justify-between items-center mb-2">
                     <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">Roster Status</span>
-                    <span className={`text-[10px] font-black uppercase ${pendingPicks.length === 5 ? 'text-green-500' : 'text-pink-500'}`}>{pendingPicks.length} / 5</span>
+                    <span className={`text-[10px] font-black uppercase ${pendingPicks.length === 5 ? 'text-teal-400' : 'text-pink-500'}`}>{pendingPicks.length} / 5</span>
                 </div>
                 <div className="w-full h-1.5 bg-gray-900 rounded-full overflow-hidden mb-6">
                     <div className="h-full bg-pink-600 transition-all duration-300" style={{ width: `${(pendingPicks.length / 5) * 100}%` }}></div>
@@ -717,10 +717,8 @@ export default function LeaguePage() {
 
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen w-full">
             
-            {/* 🎯 THE REAL FIX: THIS IS NOW A CSS GRID */}
             <div className="relative grid grid-cols-1 lg:grid-cols-3 w-full gap-6 lg:gap-10 items-start">
                 
-                {/* 🎯 LEFT COLUMN (Takes up 2 slots in the grid) */}
                 <div className="lg:col-span-2 transition-all w-full min-w-0">
                     
                     {activeTab === 'card' && (
@@ -743,7 +741,6 @@ export default function LeaguePage() {
                                 </div>
                             </div>
                             
-                            {/* LIVE BOX SCORES ON DRAFT CARD TAB */}
                             <div className="mb-6 space-y-6">
                                 <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg">
                                     <button onClick={() => setShowGlobalBoxScore(!showGlobalBoxScore)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none">
@@ -803,7 +800,7 @@ export default function LeaguePage() {
                                                                         <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-white truncate max-w-[60px] sm:max-w-[100px] md:max-w-none" title={stats.fighter_name}>{stats.fighter_name}</td>
                                                                         <td className="px-1 py-2 sm:p-2 md:p-3 text-center font-black text-[8px] sm:text-[9px] md:text-[10px] leading-tight">
                                                                             {stats.is_winner === true ? (
-                                                                                <span className="text-green-500 whitespace-pre-wrap">W{winMethod}</span>
+                                                                                <span className="text-teal-400 whitespace-pre-wrap">W{winMethod}</span>
                                                                             ) : stats.is_winner === false ? (
                                                                                 <span className="text-red-500 whitespace-pre-wrap">L{winMethod}</span>
                                                                             ) : (
@@ -916,7 +913,7 @@ export default function LeaguePage() {
                                                                     <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-white truncate max-w-[60px] sm:max-w-[100px] md:max-w-none" title={stats.fighter_name}>{stats.fighter_name}</td>
                                                                     <td className="px-1 py-2 sm:p-2 md:p-3 text-center font-black text-[8px] sm:text-[9px] md:text-[10px] leading-tight">
                                                                         {stats.is_winner === true ? (
-                                                                            <span className="text-green-500 whitespace-pre-wrap">W{winMethod}</span>
+                                                                            <span className="text-teal-400 whitespace-pre-wrap">W{winMethod}</span>
                                                                         ) : stats.is_winner === false ? (
                                                                             <span className="text-red-500 whitespace-pre-wrap">L{winMethod}</span>
                                                                         ) : (
@@ -998,7 +995,7 @@ export default function LeaguePage() {
                                                         </div>
 
                                                         <div className="col-span-2 text-center">
-                                                            <span className={`text-[10px] font-black ${player.pickCount === 5 ? 'text-green-500' : 'text-gray-500'}`}>
+                                                            <span className={`text-[10px] font-black ${player.pickCount === 5 ? 'text-teal-400' : 'text-gray-500'}`}>
                                                                 {player.pickCount} / 5
                                                             </span>
                                                         </div>
@@ -1255,7 +1252,6 @@ export default function LeaguePage() {
                     )}
                 </div>
 
-                {/* 🎯 THE FIX: Sticky Column using Grid Rules (`lg:col-span-1 sticky top-24 self-start`) */}
                 <div className="hidden lg:block lg:col-span-1 sticky top-24 self-start w-full min-w-0 space-y-6">
                     
                     <div className="bg-gray-950 border border-gray-800 rounded-xl shadow-2xl overflow-hidden transition-all">
@@ -1269,7 +1265,7 @@ export default function LeaguePage() {
                                     <h3 className="text-sm font-black text-white uppercase italic tracking-tighter">
                                         {hasLockedRoster ? 'Locked Roster' : 'Fantasy Roster'}
                                     </h3>
-                                    <p className={`text-[10px] font-bold uppercase tracking-widest ${hasLockedRoster ? 'text-green-500' : 'text-gray-500'}`}>
+                                    <p className={`text-[10px] font-bold uppercase tracking-widest ${hasLockedRoster ? 'text-teal-400' : 'text-gray-500'}`}>
                                         {hasLockedRoster ? 'Your picks are secured' : 'Select exactly 5 fighters'}
                                     </p>
                                 </div>
@@ -1289,7 +1285,7 @@ export default function LeaguePage() {
                     <div className="h-[400px] flex flex-col">
                         <div className="flex justify-between items-center mb-4 px-2">
                             <h3 className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">League Chat</h3>
-                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                            <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse"></span>
                         </div>
                         <div className="flex-1 shadow-2xl shadow-black overflow-hidden rounded-xl border border-gray-900 bg-black">
                             <ChatBox league_id={leagueId} />
