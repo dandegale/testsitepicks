@@ -78,7 +78,7 @@ export default function ShowdownModal({ isOpen, onClose }) {
       setTimeout(() => setCopied(false), 2000);
   };
 
-  // UPDATED: FETCH ACTIVE MATCHES AND RESOLVE USERNAMES
+  // FETCH ACTIVE MATCHES AND RESOLVE USERNAMES
   const fetchActiveMatches = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -126,6 +126,23 @@ export default function ShowdownModal({ isOpen, onClose }) {
       }
       
       setViewingActives(true);
+  };
+
+  // 🎯 NEW: LEAVE/DELETE MATCH LOGIC
+  const handleLeaveShowdown = async (matchId) => {
+      if (!confirm("Are you sure you want to delete/leave this showdown? This action cannot be undone.")) return;
+
+      const { error } = await supabase
+          .from('h2h_matches')
+          .delete()
+          .eq('id', matchId);
+
+      if (error) {
+          alert("Error leaving showdown: " + error.message);
+      } else {
+          // Remove the match from the local UI instantly
+          setActiveMatches(current => current.filter(m => m.id !== matchId));
+      }
   };
 
   if (!isOpen) return null;
@@ -214,26 +231,36 @@ export default function ShowdownModal({ isOpen, onClose }) {
 
             {/* DYNAMIC RENDER: Active Matches List OR Creation Menu */}
             {viewingActives ? (
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 animate-in fade-in slide-in-from-right-4 custom-scrollbar">
+                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 animate-in fade-in slide-in-from-right-4 custom-scrollbar">
                     <button onClick={() => setViewingActives(false)} className="text-[10px] text-gray-500 hover:text-white mb-2 uppercase font-black transition-colors">
                         ← Back to Menu
                     </button>
                     {activeMatches.map(m => (
-                        <Link 
-                            key={m.id} 
-                            href={`/showdown/${m.invite_code}`}
-                            onClick={onClose} // Close modal when navigating
-                            className="flex items-center justify-between bg-black border border-gray-800 p-4 rounded-xl hover:border-pink-500 transition-all group"
-                        >
-                            <div className="flex flex-col">
-                                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Code: {m.invite_code}</span>
-                                <span className="text-sm font-bold text-white uppercase italic">
-                                    {/* USE ENRICHED USERNAMES HERE */}
-                                    Vs {currentUserEmail === m.creator_email ? (m.opponent_username || 'WAITING...') : m.creator_username}
-                                </span>
-                            </div>
-                            <span className="text-pink-500 font-black group-hover:translate-x-1 transition-transform">→</span>
-                        </Link>
+                        <div key={m.id} className="flex items-stretch gap-2">
+                            {/* The Link to the Match */}
+                            <Link 
+                                href={`/showdown/${m.invite_code}`}
+                                onClick={onClose}
+                                className="flex-1 flex items-center justify-between bg-black border border-gray-800 p-4 rounded-xl hover:border-pink-500 transition-all group"
+                            >
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Code: {m.invite_code}</span>
+                                    <span className="text-sm font-bold text-white uppercase italic">
+                                        Vs {currentUserEmail === m.creator_email ? (m.opponent_username || 'WAITING...') : m.creator_username}
+                                    </span>
+                                </div>
+                                <span className="text-pink-500 font-black group-hover:translate-x-1 transition-transform">→</span>
+                            </Link>
+
+                            {/* 🎯 NEW: The Leave / Delete Button */}
+                            <button 
+                                onClick={() => handleLeaveShowdown(m.id)}
+                                className="px-4 flex items-center justify-center bg-red-950/20 border border-red-900/50 hover:bg-red-600 hover:border-red-500 text-red-500 hover:text-white rounded-xl transition-all"
+                                title="Leave Showdown"
+                            >
+                                ✕
+                            </button>
+                        </div>
                     ))}
                     {activeMatches.length === 0 && (
                         <p className="text-center py-6 text-gray-600 text-xs font-bold uppercase tracking-widest border border-dashed border-gray-800 rounded-xl">

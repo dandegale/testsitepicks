@@ -717,11 +717,11 @@ export default function LeaguePage() {
 
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen w-full">
             
-            {/* 🎯 THE FIX: Bulletproof CSS Grid Layout replaces Flex */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-10 relative items-start">
+            {/* 🎯 THE REAL FIX: THIS IS NOW A CSS GRID */}
+            <div className="relative grid grid-cols-1 lg:grid-cols-3 w-full gap-6 lg:gap-10 items-start">
                 
-                {/* LEFT COLUMN (Takes up 2/3 of Grid) */}
-                <div className="lg:col-span-2 transition-all">
+                {/* 🎯 LEFT COLUMN (Takes up 2 slots in the grid) */}
+                <div className="lg:col-span-2 transition-all w-full min-w-0">
                     
                     {activeTab === 'card' && (
                         <>
@@ -743,7 +743,7 @@ export default function LeaguePage() {
                                 </div>
                             </div>
                             
-                            {/* 🎯 NEW: LIVE RECORDINGS COPIED OVER TO DRAFT PAGE */}
+                            {/* LIVE BOX SCORES ON DRAFT CARD TAB */}
                             <div className="mb-6 space-y-6">
                                 <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg">
                                     <button onClick={() => setShowGlobalBoxScore(!showGlobalBoxScore)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none">
@@ -1255,8 +1255,8 @@ export default function LeaguePage() {
                     )}
                 </div>
 
-                {/* 🎯 THE FIX: self-start keeps the column sticky and prevents stretching to bottom */}
-                <div className="hidden lg:block lg:col-span-1 sticky top-24 self-start space-y-6">
+                {/* 🎯 THE FIX: Sticky Column using Grid Rules (`lg:col-span-1 sticky top-24 self-start`) */}
+                <div className="hidden lg:block lg:col-span-1 sticky top-24 self-start w-full min-w-0 space-y-6">
                     
                     <div className="bg-gray-950 border border-gray-800 rounded-xl shadow-2xl overflow-hidden transition-all">
                         <button 
@@ -1295,6 +1295,7 @@ export default function LeaguePage() {
                             <ChatBox league_id={leagueId} />
                         </div>
                     </div>
+
                 </div>
 
             </div>
