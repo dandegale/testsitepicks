@@ -15,10 +15,14 @@ export default function ShowdownModal({ isOpen, onClose }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   
-  // NEW STATES FOR LOBBY
+  // LOBBY STATES
   const [activeMatches, setActiveMatches] = useState([]);
   const [viewingActives, setViewingActives] = useState(false);
   const [currentUserEmail, setCurrentUserEmail] = useState('');
+  
+  // 🎯 NEW: State to track which match is currently being confirmed for deletion
+  const [matchToDelete, setMatchToDelete] = useState(null); 
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -26,7 +30,8 @@ export default function ShowdownModal({ isOpen, onClose }) {
       // Reset states when opened
       setInviteLink('');
       setCopied(false);
-      setViewingActives(false); // Reset to main menu
+      setViewingActives(false); 
+      setMatchToDelete(null); // Reset confirmation state
       
       const timer = setTimeout(() => {
         setPhase('content');
@@ -86,6 +91,7 @@ export default function ShowdownModal({ isOpen, onClose }) {
           return;
       }
       setCurrentUserEmail(user.email);
+      setMatchToDelete(null); // Clear any pending deletions if we refresh
 
       // Fetch matches where you are either the creator OR the opponent
       const { data: matches, error } = await supabase
@@ -128,10 +134,9 @@ export default function ShowdownModal({ isOpen, onClose }) {
       setViewingActives(true);
   };
 
-  // 🎯 NEW: LEAVE/DELETE MATCH LOGIC
-  const handleLeaveShowdown = async (matchId) => {
-      if (!confirm("Are you sure you want to delete/leave this showdown? This action cannot be undone.")) return;
-
+  // 🎯 NEW: Custom Inline Deletion Engine
+  const executeLeaveShowdown = async (matchId) => {
+      setIsDeleting(true);
       const { error } = await supabase
           .from('h2h_matches')
           .delete()
@@ -142,7 +147,9 @@ export default function ShowdownModal({ isOpen, onClose }) {
       } else {
           // Remove the match from the local UI instantly
           setActiveMatches(current => current.filter(m => m.id !== matchId));
+          setMatchToDelete(null);
       }
+      setIsDeleting(false);
   };
 
   if (!isOpen) return null;
@@ -186,7 +193,6 @@ export default function ShowdownModal({ isOpen, onClose }) {
 
             <div className="relative flex w-full max-w-5xl justify-center items-center animate-shake">
                 
-                {/* Pink Corner (Left) */}
                 <div className="animate-pink-glove z-20 text-right pr-2 md:pr-10">
                     <img 
                         src="/pink-gloves.png" 
@@ -195,12 +201,10 @@ export default function ShowdownModal({ isOpen, onClose }) {
                     />
                 </div>
 
-                {/* Impact Flash */}
                 <div className="absolute z-10 w-full h-full flex items-center justify-center mix-blend-screen opacity-0 animate-[ping_0.3s_ease-out_0.6s_1_forwards]">
                     <div className="w-64 h-64 md:w-96 md:h-96 bg-white rounded-full blur-[80px]"></div>
                 </div>
 
-                {/* Teal Corner (Right) */}
                 <div className="animate-teal-glove z-20 text-left pl-2 md:pl-10">
                     <img 
                         src="/teal-gloves.png" 
@@ -215,7 +219,7 @@ export default function ShowdownModal({ isOpen, onClose }) {
       {/* --- THE ACTUAL 1v1 UI PHASE --- */}
       {phase === 'content' && (
         <div className="relative z-30 w-full max-w-lg bg-gray-950 border border-gray-800 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] p-6 md:p-10 animate-in zoom-in-95 fade-in duration-300">
-            <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-white">✕</button>
+            <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors">✕</button>
             
             <div className="text-center mb-8">
                 <span className="bg-pink-900/30 text-pink-500 border border-pink-900 px-3 py-1 rounded text-[10px] font-black uppercase tracking-widest mb-4 inline-block shadow-[0_0_15px_rgba(219,39,119,0.3)]">
@@ -235,33 +239,65 @@ export default function ShowdownModal({ isOpen, onClose }) {
                     <button onClick={() => setViewingActives(false)} className="text-[10px] text-gray-500 hover:text-white mb-2 uppercase font-black transition-colors">
                         ← Back to Menu
                     </button>
-                    {activeMatches.map(m => (
-                        <div key={m.id} className="flex items-stretch gap-2">
-                            {/* The Link to the Match */}
-                            <Link 
-                                href={`/showdown/${m.invite_code}`}
-                                onClick={onClose}
-                                className="flex-1 flex items-center justify-between bg-black border border-gray-800 p-4 rounded-xl hover:border-pink-500 transition-all group"
-                            >
-                                <div className="flex flex-col">
-                                    <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Code: {m.invite_code}</span>
-                                    <span className="text-sm font-bold text-white uppercase italic">
-                                        Vs {currentUserEmail === m.creator_email ? (m.opponent_username || 'WAITING...') : m.creator_username}
-                                    </span>
-                                </div>
-                                <span className="text-pink-500 font-black group-hover:translate-x-1 transition-transform">→</span>
-                            </Link>
+                    {activeMatches.map(m => {
+                        const isConfirming = matchToDelete === m.id;
 
-                            {/* 🎯 NEW: The Leave / Delete Button */}
-                            <button 
-                                onClick={() => handleLeaveShowdown(m.id)}
-                                className="px-4 flex items-center justify-center bg-red-950/20 border border-red-900/50 hover:bg-red-600 hover:border-red-500 text-red-500 hover:text-white rounded-xl transition-all"
-                                title="Leave Showdown"
-                            >
-                                ✕
-                            </button>
-                        </div>
-                    ))}
+                        // 🎯 NEW: The Inline Deletion UX
+                        if (isConfirming) {
+                            return (
+                                <div key={m.id} className="flex items-center justify-between bg-red-950/20 border border-red-900 p-4 rounded-xl animate-in fade-in duration-200">
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-black text-red-500 uppercase tracking-widest">Leave Showdown?</span>
+                                        <span className="text-[10px] text-red-400 font-bold mt-1">This cannot be undone.</span>
+                                    </div>
+                                    <div className="flex gap-2 shrink-0">
+                                        <button 
+                                            onClick={() => setMatchToDelete(null)} 
+                                            disabled={isDeleting}
+                                            className="px-4 py-2 bg-black border border-gray-800 text-gray-400 rounded-lg hover:text-white hover:bg-gray-900 text-[10px] font-black uppercase tracking-widest transition-all"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button 
+                                            onClick={() => executeLeaveShowdown(m.id)} 
+                                            disabled={isDeleting}
+                                            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 text-[10px] font-black uppercase tracking-widest shadow-[0_0_15px_rgba(220,38,38,0.5)] transition-all flex items-center gap-2"
+                                        >
+                                            {isDeleting ? <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span> : null}
+                                            {isDeleting ? 'Leaving...' : 'Confirm'}
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        }
+
+                        // Normal Row
+                        return (
+                            <div key={m.id} className="flex items-stretch gap-2 animate-in fade-in duration-200">
+                                <Link 
+                                    href={`/showdown/${m.invite_code}`}
+                                    onClick={onClose}
+                                    className="flex-1 flex items-center justify-between bg-black border border-gray-800 p-4 rounded-xl hover:border-pink-500 transition-all group"
+                                >
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Code: {m.invite_code}</span>
+                                        <span className="text-sm font-bold text-white uppercase italic">
+                                            Vs {currentUserEmail === m.creator_email ? (m.opponent_username || 'WAITING...') : m.creator_username}
+                                        </span>
+                                    </div>
+                                    <span className="text-pink-500 font-black group-hover:translate-x-1 transition-transform">→</span>
+                                </Link>
+
+                                <button 
+                                    onClick={() => setMatchToDelete(m.id)}
+                                    className="px-4 flex items-center justify-center bg-gray-900 border border-gray-800 hover:bg-red-950/50 hover:border-red-900 text-gray-600 hover:text-red-500 rounded-xl transition-all"
+                                    title="Leave Showdown"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        );
+                    })}
                     {activeMatches.length === 0 && (
                         <p className="text-center py-6 text-gray-600 text-xs font-bold uppercase tracking-widest border border-dashed border-gray-800 rounded-xl">
                             No Active Showdowns
