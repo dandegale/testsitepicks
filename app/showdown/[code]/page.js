@@ -181,23 +181,16 @@ export default function ShowdownPage() {
     setIsSubmitting(false);
   };
 
-  // 🧠 THE ULTIMATE SMART MATCHER
   const isFighterMatch = (pickName, statName) => {
       if (!pickName || !statName) return false;
-      
-      // Remove common suffixes that break the last-name rule
       const cleanName = (str) => str.toLowerCase().replace(/\b(jr\.?|sr\.?|iii|ii)\b/gi, '').trim();
-      
       const getCore = (str) => {
           const parts = cleanName(str).split(' ');
-          // Grab only letters from the last word, take the first 4
           return parts[parts.length - 1].replace(/[^a-z]/g, '').substring(0, 4);
       };
-
       return getCore(pickName) === getCore(statName);
   };
 
-  // 🎯 UPGRADED FANTASY SCORING ENGINE
   let creatorScore = 0;
   let opponentScore = 0;
 
@@ -268,7 +261,6 @@ export default function ShowdownPage() {
       settleMatch();
   }, [isCardComplete, match]);
 
-  // 🎯 UPGRADED HELPER: GRABS STATS FOR THE BOX SCORE
   const getStatsForPick = (pick) => {
       const stats = fighterStats.find(s => 
           String(s.fight_id) === String(pick.fight_id) && 
@@ -301,7 +293,7 @@ export default function ShowdownPage() {
                       <thead className="bg-gray-950 text-gray-500 uppercase tracking-widest font-black text-[9px]">
                           <tr>
                               <th className="p-3">Fighter</th>
-                              <th className="p-3 text-center">W/L</th>
+                              <th className="p-3 text-center">Result</th>
                               <th className="p-3 text-center">SS</th>
                               <th className="p-3 text-center">TD</th>
                               <th className="p-3 text-center">SUB</th>
@@ -333,11 +325,21 @@ export default function ShowdownPage() {
                               const s = (stats.control_time_seconds || 0) % 60;
                               const ctrlStr = `${m}:${s.toString().padStart(2, '0')}`;
                               
+                              // 🎯 EXTRACT METHOD FROM MAIN FIGHT TABLE
+                              const fightInfo = fights.find(f => String(f.id) === String(pick.fight_id));
+                              const winMethod = fightInfo?.method ? ` (${fightInfo.method})` : '';
+                              
                               return (
                                   <tr key={pick.id} className="hover:bg-gray-900/50 transition-colors">
                                       <td className="p-3 font-bold text-white truncate max-w-[100px] md:max-w-none">{pick.selected_fighter}</td>
-                                      <td className="p-3 text-center font-black">
-                                          {stats.is_winner === true ? <span className="text-green-500">W</span> : stats.is_winner === false ? <span className="text-red-500">L</span> : <span className="text-gray-600">-</span>}
+                                      <td className="p-3 text-center font-black text-[9px] md:text-[10px] whitespace-nowrap">
+                                          {stats.is_winner === true ? (
+                                              <span className="text-green-500">W{winMethod}</span>
+                                          ) : stats.is_winner === false ? (
+                                              <span className="text-red-500">L</span>
+                                          ) : (
+                                              <span className="text-gray-600">-</span>
+                                          )}
                                       </td>
                                       <td className="p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
                                       <td className="p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
@@ -553,7 +555,6 @@ export default function ShowdownPage() {
                         <span className="text-pink-500 font-black text-[10px] uppercase tracking-widest bg-pink-950/30 px-3 py-1 rounded">{showComparisons ? 'Hide ▲' : 'View ▼'}</span>
                     </button>
                     
-                    {/* 🎯 THE NEW DFS LEADERBOARD UI */}
                     {showComparisons && (
                         <div className="p-4 border-t border-gray-900 grid grid-cols-1 xl:grid-cols-2 gap-6 max-h-[800px] overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-4 duration-300">
                             {renderTeamBoxScore(creatorName, match?.creator_email, displayCreatorScore)}

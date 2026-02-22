@@ -73,7 +73,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         $('.b-fight-details__person-name').each((i, el) => fighters.push($(el).text().trim()));
         if (fighters.length < 2) return;
 
-        // 🛑 WINNER DETECTION
         const statuses = [];
         $('.b-fight-details__person-status').each((i, el) => statuses.push($(el).text().trim().toUpperCase()));
         
@@ -105,11 +104,16 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         let isSub = false;
         let finishRound = 1;
         let finishTimeSeconds = 999;
+        let winMethodStr = ""; // 🎯 NEW: Hold the exact method text
 
         $('.b-fight-details__text-item, .b-fight-details__text-item_first').each((i, el) => {
             const text = $(el).text().replace(/\s+/g, ' ').toUpperCase().trim();
             
             if (text.includes('METHOD:')) {
+                const parts = text.split('METHOD:');
+                if (parts.length > 1) {
+                    winMethodStr = parts[1].trim(); // e.g., "KO/TKO", "U-DEC", "SUB"
+                }
                 if (text.includes('KO/TKO') || text.includes('TKO') || text.includes('KO')) isKO = true;
                 if (text.includes('SUB') || text.includes('SUBMISSION')) isSub = true;
             }
@@ -131,12 +135,11 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         });
 
         const isUnder30s = finishRound === 1 && finishTimeSeconds <= 30;
-        const isLast10sR5 = finishRound === 5 && finishTimeSeconds >= 290; // 4:50 or later
+        const isLast10sR5 = finishRound === 5 && finishTimeSeconds >= 290; 
 
-        // 🎯 ADVANCED CHAMPIONSHIP BONUS MATH
+        // 🎯 BASE GRANULAR BONUS MATH
         let baseFinishBonus = 0;
         
-        // The "Buzzer Beater" Jackpot Override
         if (isLast10sR5 && (isKO || isSub)) {
             baseFinishBonus = 100;
         } 
@@ -228,18 +231,19 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         });
 
         const { error } = await supabase.from('fighter_stats').upsert(results, { onConflict: 'fight_id, fighter_name' });
+        if (error) throw new Error(`Supabase Stats Error: ${error.message}`);
         
-        if (error) {
-            throw new Error(`Supabase Upsert Failed: ${error.message}`);
-        }
-        
+        // 🎯 NEW: Save the actual method to the Fights table
         if (statuses.includes('W')) {
             const winnerName = fighters[winnerIndex];
-            await supabase.from('fights').update({ winner: winnerName }).eq('id', dbFight.id);
+            await supabase.from('fights').update({ 
+                winner: winnerName,
+                method: winMethodStr 
+            }).eq('id', dbFight.id);
         }
 
-        let finishLabel = finalFinishBonus > 0 ? ` (+${finalFinishBonus} Odds-Adjusted Finish Bonus 💥)` : "";
-        console.log(`✅ Synced: ${fighters[0]} vs ${fighters[1]} (${statuses.includes('W') ? fighters[winnerIndex] + ' won' + finishLabel : 'Draw/NC'})`);
+        let finishLabel = finalFinishBonus > 0 ? ` (+${finalFinishBonus} Bonus)` : "";
+        console.log(`✅ Synced: ${fighters[0]} vs ${fighters[1]} (${statuses.includes('W') ? fighters[winnerIndex] + ' won by ' + winMethodStr + finishLabel : 'Draw/NC'})`);
         
         if (isKO || isSub) {
             console.log(`   ➔ Detected: ${isKO ? 'KO' : 'SUB'} in Round ${finishRound} at ${finishTimeSeconds}s`);
