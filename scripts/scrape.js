@@ -100,7 +100,7 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
 
         if (!dbFight) return;
 
-        // 🛑 FINISH DETECTION & ROUND TIMING (Aggressive parsing)
+        // 🛑 FINISH DETECTION & ROUND TIMING
         let isKO = false;
         let isSub = false;
         let finishRound = 1;
@@ -113,7 +113,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
                 if (text.includes('KO/TKO') || text.includes('TKO') || text.includes('KO')) isKO = true;
                 if (text.includes('SUB') || text.includes('SUBMISSION')) isSub = true;
             }
-            // Ensure we don't grab "TIME FORMAT" by accident
             if (text.includes('ROUND:') && !text.includes('FORMAT')) {
                 const parts = text.split('ROUND:');
                 if (parts.length > 1) {
@@ -132,19 +131,30 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         });
 
         const isUnder30s = finishRound === 1 && finishTimeSeconds <= 30;
+        const isLast10sR5 = finishRound === 5 && finishTimeSeconds >= 290; // 4:50 or later
 
-        // 🎯 BASE GRANULAR BONUS MATH
+        // 🎯 ADVANCED CHAMPIONSHIP BONUS MATH
         let baseFinishBonus = 0;
-        if (isKO) {
+        
+        // The "Buzzer Beater" Jackpot Override
+        if (isLast10sR5 && (isKO || isSub)) {
+            baseFinishBonus = 100;
+        } 
+        else if (isKO) {
             if (isUnder30s) baseFinishBonus = 60;
             else if (finishRound === 1) baseFinishBonus = 35;
             else if (finishRound === 2) baseFinishBonus = 25;
-            else baseFinishBonus = 20; 
-        } else if (isSub) {
+            else if (finishRound === 3) baseFinishBonus = 20;
+            else if (finishRound === 4) baseFinishBonus = 25;
+            else if (finishRound === 5) baseFinishBonus = 40; 
+        } 
+        else if (isSub) {
             if (isUnder30s) baseFinishBonus = 65;
             else if (finishRound === 1) baseFinishBonus = 35;
             else if (finishRound === 2) baseFinishBonus = 25;
-            else baseFinishBonus = 20; 
+            else if (finishRound === 3) baseFinishBonus = 20;
+            else if (finishRound === 4) baseFinishBonus = 25;
+            else if (finishRound === 5) baseFinishBonus = 40; 
         }
 
         const rows = $('.b-fight-details__table-body').first().find('.b-fight-details__table-text');
@@ -163,7 +173,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             const [m, s] = ctrlRaw.split(':').map(Number);
             const ctrlMinutes = (m || 0) + ((s || 0) / 60);
 
-            // 🎯 GRIND STATS MATH
             let points = (sig_str * 0.25) + (td * 2.5) + (kd * 5) + (sub_att * 3) + (ctrlMinutes * 1.8);
             
             return {
@@ -190,7 +199,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
                 const winnerCore = getCoreName(fighters[winnerIndex]);
                 let winnerOdds = 0;
 
-                // Match the winner to their DB odds (Defaults to 0 if you haven't added odds to your DB yet)
                 if (dbFight.fighter_1_name && dbFight.fighter_1_name.toLowerCase().includes(winnerCore)) {
                     winnerOdds = parseInt(dbFight.fighter_1_odds) || 0;
                 } else if (dbFight.fighter_2_name && dbFight.fighter_2_name.toLowerCase().includes(winnerCore)) {
@@ -200,10 +208,8 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
                 let oddsMultiplier = 1;
 
                 if (winnerOdds > 0) {
-                    // Underdog Boost
                     oddsMultiplier = 1 + (winnerOdds / 1000);
                 } else if (winnerOdds < 0) {
-                    // Favorite Tax (Capped at 0.5x)
                     oddsMultiplier = Math.max(0.5, 1 - (Math.abs(winnerOdds) / 1000));
                 }
 
@@ -211,13 +217,12 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
                 results[winnerIndex].fantasy_points += finalFinishBonus;
             }
 
-            // Equalizer: If the loser outscored the winner, bump the winner up
+            // Equalizer
             if (results[winnerIndex].fantasy_points < results[loserIndex].fantasy_points) {
                 results[winnerIndex].fantasy_points = results[loserIndex].fantasy_points;
             }
         }
 
-        // Final cleanup to cap at 999 and format to 2 decimal places
         results.forEach(r => {
             r.fantasy_points = parseFloat(Math.min(r.fantasy_points, 999.99).toFixed(2));
         });
@@ -233,12 +238,12 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             await supabase.from('fights').update({ winner: winnerName }).eq('id', dbFight.id);
         }
 
-        // 🎯 VISUAL LOGGING FOR EASY DEBUGGING
-        let finishLabel = finalFinishBonus > 0 ? ` (+${finalFinishBonus} PTS)` : "";
+        let finishLabel = finalFinishBonus > 0 ? ` (+${finalFinishBonus} Odds-Adjusted Finish Bonus 💥)` : "";
         console.log(`✅ Synced: ${fighters[0]} vs ${fighters[1]} (${statuses.includes('W') ? fighters[winnerIndex] + ' won' + finishLabel : 'Draw/NC'})`);
         
         if (isKO || isSub) {
             console.log(`   ➔ Detected: ${isKO ? 'KO' : 'SUB'} in Round ${finishRound} at ${finishTimeSeconds}s`);
+            if (isLast10sR5) console.log(`   🚨 BUZZER BEATER JACKPOT TRIGGERED! 🚨`);
         }
 
     } catch (err) {
