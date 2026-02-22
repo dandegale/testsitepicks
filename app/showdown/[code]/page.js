@@ -303,18 +303,18 @@ export default function ShowdownPage() {
                   <span className="text-xs font-black uppercase tracking-widest text-white">{playerName}'s Roster</span>
                   <span className="text-pink-500 font-black text-xs">{totalScore} PTS</span>
               </div>
-              <div className="overflow-x-auto">
-                  <table className="w-full text-left text-[10px] md:text-xs">
-                      <thead className="bg-gray-950 text-gray-500 uppercase tracking-widest font-black text-[9px]">
+              <div className="w-full">
+                  <table className="w-full text-left text-[9px] sm:text-[10px] md:text-xs">
+                      <thead className="bg-gray-950 text-gray-500 uppercase tracking-widest font-black text-[8px] sm:text-[9px]">
                           <tr>
-                              <th className="p-3">Fighter</th>
-                              <th className="p-3 text-center">Result</th>
-                              <th className="p-3 text-center">KD</th> {/* 🎯 Added KD */}
-                              <th className="p-3 text-center">SS</th>
-                              <th className="p-3 text-center">TD</th>
-                              <th className="p-3 text-center">SUB</th>
-                              <th className="p-3 text-center">CTRL</th>
-                              <th className="p-3 text-right text-pink-500">PTS</th>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 truncate max-w-[60px] sm:max-w-none">Fighter</th>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Result</th>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">KD</th> 
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SS</th>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">TD</th>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SUB</th>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">CTRL</th>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-right text-pink-500">PTS</th>
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-900">
@@ -325,14 +325,14 @@ export default function ShowdownPage() {
                               if (!canSee) {
                                   return (
                                       <tr key={pick.id} className="bg-gray-950/50">
-                                          <td className="p-3 font-bold text-gray-600 truncate max-w-[100px] md:max-w-none">🔒 HIDDEN PICK</td>
-                                          <td className="p-3 text-center text-gray-700">-</td>
-                                          <td className="p-3 text-center text-gray-700">-</td> {/* 🎯 Hidden KD */}
-                                          <td className="p-3 text-center text-gray-700">-</td>
-                                          <td className="p-3 text-center text-gray-700">-</td>
-                                          <td className="p-3 text-center text-gray-700">-</td>
-                                          <td className="p-3 text-center text-gray-700">-</td>
-                                          <td className="p-3 text-right text-gray-700">-</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-gray-600 truncate max-w-[60px] sm:max-w-[100px] md:max-w-none">🔒 HIDDEN</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td> 
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-right text-gray-700">-</td>
                                       </tr>
                                   );
                               }
@@ -343,26 +343,26 @@ export default function ShowdownPage() {
                               const ctrlStr = `${m}:${s.toString().padStart(2, '0')}`;
                               
                               const fightInfo = fights.find(f => String(f.id) === String(pick.fight_id));
-                              const winMethod = fightInfo?.method ? ` (${fightInfo.method})` : '';
+                              const winMethod = fightInfo?.method ? `\n(${fightInfo.method})` : '';
                               
                               return (
                                   <tr key={pick.id} className="hover:bg-gray-900/50 transition-colors">
-                                      <td className="p-3 font-bold text-white truncate max-w-[100px] md:max-w-none">{pick.selected_fighter}</td>
-                                      <td className="p-3 text-center font-black text-[9px] md:text-[10px] whitespace-nowrap">
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-white truncate max-w-[60px] sm:max-w-[100px] md:max-w-none" title={pick.selected_fighter}>{pick.selected_fighter}</td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center font-black text-[8px] sm:text-[9px] md:text-[10px] leading-tight">
                                           {stats.is_winner === true ? (
-                                              <span className="text-green-500">W{winMethod}</span>
+                                              <span className="text-green-500 whitespace-pre-wrap">W{winMethod}</span>
                                           ) : stats.is_winner === false ? (
-                                              <span className="text-red-500">L{winMethod}</span>
+                                              <span className="text-red-500 whitespace-pre-wrap">L{winMethod}</span>
                                           ) : (
                                               <span className="text-gray-600">-</span>
                                           )}
                                       </td>
-                                      <td className="p-3 text-center text-gray-300">{stats.knockdowns || 0}</td> {/* 🎯 Added KD Value */}
-                                      <td className="p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
-                                      <td className="p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
-                                      <td className="p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>
-                                      <td className="p-3 text-center text-gray-300">{ctrlStr}</td>
-                                      <td className="p-3 text-right font-black text-pink-500">{(stats.fantasy_points || 0).toFixed(1)}</td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.knockdowns || 0}</td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{ctrlStr}</td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-right font-black text-pink-500">{(stats.fantasy_points || 0).toFixed(1)}</td>
                                   </tr>
                               );
                           })}
@@ -594,19 +594,19 @@ export default function ShowdownPage() {
                     {showAllFighters && (
                         <div className="p-4 border-t border-gray-900 max-h-[600px] overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-4 duration-300">
                             <div className="bg-black border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-[10px] md:text-xs">
-                                        <thead className="bg-gray-950 text-gray-500 uppercase tracking-widest font-black text-[9px]">
+                                <div className="w-full">
+                                    <table className="w-full text-left text-[9px] sm:text-[10px] md:text-xs">
+                                        <thead className="bg-gray-950 text-gray-500 uppercase tracking-widest font-black text-[8px] sm:text-[9px]">
                                             <tr>
-                                                <th className="p-3">Rank</th>
-                                                <th className="p-3">Fighter</th>
-                                                <th className="p-3 text-center">Result</th>
-                                                <th className="p-3 text-center">KD</th> {/* 🎯 Added KD */}
-                                                <th className="p-3 text-center">SS</th>
-                                                <th className="p-3 text-center">TD</th>
-                                                <th className="p-3 text-center">SUB</th>
-                                                <th className="p-3 text-center">CTRL</th>
-                                                <th className="p-3 text-right text-teal-400">PTS</th>
+                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Rnk</th>
+                                                <th className="px-1 py-2 sm:p-2 md:p-3 truncate max-w-[60px] sm:max-w-none">Fighter</th>
+                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Result</th>
+                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">KD</th>
+                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SS</th>
+                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">TD</th>
+                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SUB</th>
+                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">CTRL</th>
+                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-right text-teal-400">PTS</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-900">
@@ -614,33 +614,33 @@ export default function ShowdownPage() {
                                                 const m = Math.floor((stats.control_time_seconds || 0) / 60);
                                                 const s = (stats.control_time_seconds || 0) % 60;
                                                 const ctrlStr = `${m}:${s.toString().padStart(2, '0')}`;
-                                                const winMethod = stats.method ? ` (${stats.method})` : '';
+                                                const winMethod = stats.method ? `\n(${stats.method})` : '';
 
                                                 return (
                                                     <tr key={stats.id || idx} className="hover:bg-gray-900/50 transition-colors">
-                                                        <td className="p-3 font-black text-gray-500">#{idx + 1}</td>
-                                                        <td className="p-3 font-bold text-white whitespace-nowrap">{stats.fighter_name}</td>
-                                                        <td className="p-3 text-center font-black text-[9px] md:text-[10px] whitespace-nowrap">
+                                                        <td className="px-1 py-2 sm:p-2 md:p-3 font-black text-gray-500 text-center">{idx + 1}</td>
+                                                        <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-white truncate max-w-[60px] sm:max-w-[100px] md:max-w-none" title={stats.fighter_name}>{stats.fighter_name}</td>
+                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center font-black text-[8px] sm:text-[9px] md:text-[10px] leading-tight">
                                                             {stats.is_winner === true ? (
-                                                                <span className="text-green-500">W{winMethod}</span>
+                                                                <span className="text-green-500 whitespace-pre-wrap">W{winMethod}</span>
                                                             ) : stats.is_winner === false ? (
-                                                                <span className="text-red-500">L{winMethod}</span>
+                                                                <span className="text-red-500 whitespace-pre-wrap">L{winMethod}</span>
                                                             ) : (
                                                                 <span className="text-gray-600">-</span>
                                                             )}
                                                         </td>
-                                                        <td className="p-3 text-center text-gray-300">{stats.knockdowns || 0}</td> {/* 🎯 Added KD Value */}
-                                                        <td className="p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
-                                                        <td className="p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
-                                                        <td className="p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>
-                                                        <td className="p-3 text-center text-gray-300">{ctrlStr}</td>
-                                                        <td className="p-3 text-right font-black text-teal-400">{(stats.fantasy_points || 0).toFixed(1)}</td>
+                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.knockdowns || 0}</td>
+                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
+                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
+                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>
+                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{ctrlStr}</td>
+                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-right font-black text-teal-400">{(stats.fantasy_points || 0).toFixed(1)}</td>
                                                     </tr>
                                                 );
                                             })}
                                             {allCardFightersRanked.length === 0 && (
                                                 <tr>
-                                                    <td colSpan="9" className="p-6 text-center text-gray-600 font-bold uppercase tracking-widest text-[10px]">No stats available for this event yet</td> {/* 🎯 Updated colSpan to 9 */}
+                                                    <td colSpan="9" className="p-6 text-center text-gray-600 font-bold uppercase tracking-widest text-[10px]">No stats available for this event yet</td>
                                                 </tr>
                                             )}
                                         </tbody>
