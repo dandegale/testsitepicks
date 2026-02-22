@@ -325,7 +325,6 @@ export default function ShowdownPage() {
                               const s = (stats.control_time_seconds || 0) % 60;
                               const ctrlStr = `${m}:${s.toString().padStart(2, '0')}`;
                               
-                              // 🎯 EXTRACT METHOD FROM MAIN FIGHT TABLE
                               const fightInfo = fights.find(f => String(f.id) === String(pick.fight_id));
                               const winMethod = fightInfo?.method ? ` (${fightInfo.method})` : '';
                               
@@ -336,7 +335,7 @@ export default function ShowdownPage() {
                                           {stats.is_winner === true ? (
                                               <span className="text-green-500">W{winMethod}</span>
                                           ) : stats.is_winner === false ? (
-                                              <span className="text-red-500">L</span>
+                                              <span className="text-red-500">L{winMethod}</span> /* 🎯 Added here! */
                                           ) : (
                                               <span className="text-gray-600">-</span>
                                           )}
