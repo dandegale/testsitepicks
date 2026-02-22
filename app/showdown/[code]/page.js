@@ -31,6 +31,7 @@ export default function ShowdownPage() {
   const [clientLeagues, setClientLeagues] = useState([]);
   
   const [showComparisons, setShowComparisons] = useState(false);
+  const [showAllFighters, setShowAllFighters] = useState(false); // 🎯 NEW: State for full card dropdown
   
   const [creatorName, setCreatorName] = useState('');
   const [opponentName, setOpponentName] = useState('');
@@ -261,6 +262,21 @@ export default function ShowdownPage() {
       settleMatch();
   }, [isCardComplete, match]);
 
+  // 🎯 NEW: Calculates the Full Card Leaderboard Rankings
+  const allCardFightersRanked = useMemo(() => {
+      if (!fighterStats || fighterStats.length === 0 || thisWeekendAllFights.length === 0) return [];
+      
+      const weekendFightIds = thisWeekendAllFights.map(f => String(f.id));
+      const filteredStats = fighterStats.filter(s => weekendFightIds.includes(String(s.fight_id)));
+
+      const mappedStats = filteredStats.map(s => {
+          const fight = thisWeekendAllFights.find(f => String(f.id) === String(s.fight_id));
+          return { ...s, method: fight?.method || '' };
+      });
+
+      return mappedStats.sort((a, b) => (b.fantasy_points || 0) - (a.fantasy_points || 0));
+  }, [fighterStats, thisWeekendAllFights]);
+
   const getStatsForPick = (pick) => {
       const stats = fighterStats.find(s => 
           String(s.fight_id) === String(pick.fight_id) && 
@@ -335,7 +351,7 @@ export default function ShowdownPage() {
                                           {stats.is_winner === true ? (
                                               <span className="text-green-500">W{winMethod}</span>
                                           ) : stats.is_winner === false ? (
-                                              <span className="text-red-500">L{winMethod}</span> /* 🎯 Added here! */
+                                              <span className="text-red-500">L{winMethod}</span>
                                           ) : (
                                               <span className="text-gray-600">-</span>
                                           )}
@@ -545,6 +561,7 @@ export default function ShowdownPage() {
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen w-full">
             
             <div className={`transition-all duration-500 origin-top ${isFocusMode && !hasLockedRoster ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100 mb-8'}`}>
+                {/* 🎯 YOUR MATCHUP BOX SCORE */}
                 <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg">
                     <button onClick={() => setShowComparisons(!showComparisons)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none">
                         <div className="flex items-center gap-2">
@@ -558,6 +575,74 @@ export default function ShowdownPage() {
                         <div className="p-4 border-t border-gray-900 grid grid-cols-1 xl:grid-cols-2 gap-6 max-h-[800px] overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-4 duration-300">
                             {renderTeamBoxScore(creatorName, match?.creator_email, displayCreatorScore)}
                             {renderTeamBoxScore(opponentName || 'Opponent', match?.opponent_email, displayOpponentScore)}
+                        </div>
+                    )}
+                </div>
+
+                {/* 🎯 NEW: FULL CARD LEADERBOARD BOX */}
+                <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg mt-6">
+                    <button onClick={() => setShowAllFighters(!showAllFighters)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none">
+                        <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+                            <h3 className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] text-gray-400">Full Card Leaderboard (Optimal Lineup)</h3>
+                        </div>
+                        <span className="text-teal-500 font-black text-[10px] uppercase tracking-widest bg-teal-950/30 px-3 py-1 rounded">{showAllFighters ? 'Hide ▲' : 'View ▼'}</span>
+                    </button>
+                    
+                    {showAllFighters && (
+                        <div className="p-4 border-t border-gray-900 max-h-[600px] overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-4 duration-300">
+                            <div className="bg-black border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-[10px] md:text-xs">
+                                        <thead className="bg-gray-950 text-gray-500 uppercase tracking-widest font-black text-[9px]">
+                                            <tr>
+                                                <th className="p-3">Rank</th>
+                                                <th className="p-3">Fighter</th>
+                                                <th className="p-3 text-center">Result</th>
+                                                <th className="p-3 text-center">SS</th>
+                                                <th className="p-3 text-center">TD</th>
+                                                <th className="p-3 text-center">SUB</th>
+                                                <th className="p-3 text-center">CTRL</th>
+                                                <th className="p-3 text-right text-teal-400">PTS</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-900">
+                                            {allCardFightersRanked.map((stats, idx) => {
+                                                const m = Math.floor((stats.control_time_seconds || 0) / 60);
+                                                const s = (stats.control_time_seconds || 0) % 60;
+                                                const ctrlStr = `${m}:${s.toString().padStart(2, '0')}`;
+                                                const winMethod = stats.method ? ` (${stats.method})` : '';
+
+                                                return (
+                                                    <tr key={stats.id || idx} className="hover:bg-gray-900/50 transition-colors">
+                                                        <td className="p-3 font-black text-gray-500">#{idx + 1}</td>
+                                                        <td className="p-3 font-bold text-white whitespace-nowrap">{stats.fighter_name}</td>
+                                                        <td className="p-3 text-center font-black text-[9px] md:text-[10px] whitespace-nowrap">
+                                                            {stats.is_winner === true ? (
+                                                                <span className="text-green-500">W{winMethod}</span>
+                                                            ) : stats.is_winner === false ? (
+                                                                <span className="text-red-500">L{winMethod}</span>
+                                                            ) : (
+                                                                <span className="text-gray-600">-</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
+                                                        <td className="p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
+                                                        <td className="p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>
+                                                        <td className="p-3 text-center text-gray-300">{ctrlStr}</td>
+                                                        <td className="p-3 text-right font-black text-teal-400">{(stats.fantasy_points || 0).toFixed(1)}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            {allCardFightersRanked.length === 0 && (
+                                                <tr>
+                                                    <td colSpan="8" className="p-6 text-center text-gray-600 font-bold uppercase tracking-widest text-[10px]">No stats available for this event yet</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
