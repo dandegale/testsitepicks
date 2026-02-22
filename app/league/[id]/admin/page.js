@@ -1,10 +1,9 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
-// 1. IMPORT TOAST
 import Toast from '../../../components/Toast'; 
 
 const supabase = createClient(
@@ -31,9 +30,12 @@ export default function LeagueAdminPage() {
   const [eventType, setEventType] = useState('full_card');
   const [syncing, setSyncing] = useState(false);
 
-  // --- NEW STATES FOR TOAST & DELETE ---
   const [toast, setToast] = useState(null); 
   const [deleteConfirm, setDeleteConfirm] = useState(false); 
+
+  // 🎯 NEW: File Upload States & Refs
+  const fileInputRef = useRef(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   useEffect(() => {
     if (id) fetchAdminData();
@@ -55,7 +57,6 @@ export default function LeagueAdminPage() {
             return;
         }
 
-        // Strict Admin Check
         const isCreator = (league.created_by === user.email) || (league.created_by === user.id);
         if (!isCreator) {
             router.push(`/league/${id}`);
@@ -101,6 +102,56 @@ export default function LeagueAdminPage() {
     setToast({ message: "Card Settings Saved", type: "success" });
   };
 
+  // 🎯 NEW: Supabase Storage Image Uploader
+  const handleImageUpload = async (e) => {
+    try {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Validate file type and size
+        if (!file.type.startsWith('image/')) {
+            setToast({ message: "Must be an image file", type: "error" });
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) { // 5MB limit
+            setToast({ message: "Image must be under 5MB", type: "error" });
+            return;
+        }
+
+        setUploadingImage(true);
+        setToast({ message: "Uploading image...", type: "info" });
+
+        // Create a unique file name to avoid overwriting
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${id}-${Date.now()}.${fileExt}`;
+        const filePath = `avatars/${fileName}`; // Folders keep it organized
+
+        // Upload to the 'league-images' bucket
+        const { error: uploadError } = await supabase.storage
+            .from('league-images')
+            .upload(filePath, file, { cacheControl: '3600', upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        // Get the Public URL for the image
+        const { data: { publicUrl } } = supabase.storage
+            .from('league-images')
+            .getPublicUrl(filePath);
+
+        // Update local state to show the preview immediately
+        setLeagueImage(publicUrl);
+        setToast({ message: "Image uploaded! Click Save.", type: "success" });
+
+    } catch (error) {
+        console.error("Upload Error:", error);
+        setToast({ message: "Upload failed: " + error.message, type: "error" });
+    } finally {
+        setUploadingImage(false);
+        // Reset the input so they can select the same file again if they want
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const handleUpdateLeague = async (e) => {
     e.preventDefault();
     if (!leagueName.trim()) {
@@ -122,19 +173,14 @@ export default function LeagueAdminPage() {
     setSaving(false);
   };
 
-  // --- NEW DELETE LOGIC (NO BROWSER ALERT) ---
   const handleDeleteLeague = async () => {
-    // 1. If not yet confirmed, ask for confirmation via Toast
     if (!deleteConfirm) {
         setDeleteConfirm(true);
         setToast({ message: "⚠️ Press again to CONFIRM DELETE", type: "error" });
-        
-        // Reset the button after 3 seconds if they don't click
         setTimeout(() => setDeleteConfirm(false), 3000);
         return;
     }
 
-    // 2. Second click: Actually Delete
     setDeleting(true);
     const { error } = await supabase.from('leagues').delete().eq('id', id);
 
@@ -149,7 +195,7 @@ export default function LeagueAdminPage() {
   };
 
   const handleKick = async (memberId) => {
-    if (!confirm("Kick this member?")) return; // Kept browser alert for kicking (less critical)
+    if (!confirm("Kick this member?")) return; 
     setMembers(prev => prev.filter(m => m.id !== memberId));
     await supabase.from('league_members').delete().eq('id', memberId);
     setToast({ message: "Member Kicked", type: "info" });
@@ -190,21 +236,53 @@ export default function LeagueAdminPage() {
                         placeholder="e.g. Dana's Contenders"
                     />
                 </div>
+                
+                {/* 🎯 NEW: Image Upload UI */}
                 <div>
-                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">Logo Image URL</label>
-                    <input 
-                        type="text" 
-                        value={leagueImage} 
-                        onChange={(e) => setLeagueImage(e.target.value)} 
-                        className="w-full bg-black border border-gray-700 p-4 rounded-xl text-white font-mono text-xs focus:border-pink-500 outline-none transition-all"
-                        placeholder="https://..."
-                    />
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">League Logo</label>
+                    <div className="flex items-center gap-4">
+                        {/* Preview Bubble */}
+                        {leagueImage ? (
+                            <img src={leagueImage} alt="League Preview" className="w-16 h-16 rounded-xl object-cover border border-gray-700 shrink-0" />
+                        ) : (
+                            <div className="w-16 h-16 rounded-xl bg-black border border-gray-700 flex items-center justify-center text-[10px] text-gray-600 font-black shrink-0">
+                                NO IMG
+                            </div>
+                        )}
+                        
+                        {/* Upload Button */}
+                        <div className="flex-1">
+                            <input 
+                                type="file" 
+                                accept="image/*"
+                                onChange={handleImageUpload}
+                                ref={fileInputRef}
+                                className="hidden" 
+                            />
+                            <button 
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={uploadingImage}
+                                className="w-full bg-black border border-gray-700 hover:border-pink-500 p-4 rounded-xl text-xs font-bold text-white transition-all disabled:opacity-50 flex justify-center items-center gap-2"
+                            >
+                                {uploadingImage ? (
+                                    <>
+                                        <span className="w-3 h-3 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                                        Uploading...
+                                    </>
+                                ) : (
+                                    'Upload Custom Logo'
+                                )}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div className="flex justify-end">
+            
+            <div className="flex justify-end pt-4 border-t border-gray-800">
                 <button 
                     type="submit" 
-                    disabled={saving}
+                    disabled={saving || uploadingImage}
                     className="bg-white text-black font-black uppercase text-xs px-8 py-4 rounded-xl hover:bg-pink-600 hover:text-white transition-all disabled:opacity-50"
                 >
                     {saving ? 'Saving...' : 'Save Changes'}
@@ -258,7 +336,6 @@ export default function LeagueAdminPage() {
                 </p>
             </div>
             
-            {/* --- UPDATED DELETE BUTTON --- */}
             <button 
                 onClick={handleDeleteLeague}
                 disabled={deleting}

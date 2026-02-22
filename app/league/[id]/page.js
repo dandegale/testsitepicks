@@ -1,14 +1,12 @@
 'use client';
 
 import { createClient } from '@supabase/supabase-js';
-import { useEffect, useState } from 'react';
-// FIX: Added useSearchParams to read the URL
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import FightDashboard from '../../components/FightDashboard';
 import ChatBox from '../../components/ChatBox';
 import LeagueRail from '../../components/LeagueRail';
-import BettingSlip from '../../components/BettingSlip'; 
 import LogOutButton from '../../components/LogOutButton';
 import MobileNav from '../../components/MobileNav'; 
 import Toast from '../../components/Toast'; 
@@ -21,58 +19,63 @@ const supabase = createClient(
 export default function LeaguePage() {
   const params = useParams();
   const router = useRouter();
-  const searchParams = useSearchParams(); // <-- ADDED THIS
+  const searchParams = useSearchParams(); 
   const leagueId = params.id;
 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('card'); 
   const [copySuccess, setCopySuccess] = useState(false);
   
-  // Mobile States
   const [showMobileLeagues, setShowMobileLeagues] = useState(false);
   const [showMobileSlip, setShowMobileSlip] = useState(false);
+  
+  const [expandedUserRoster, setExpandedUserRoster] = useState(null); 
+  const [showAllFighters, setShowAllFighters] = useState(false); 
+  const [isRosterCollapsed, setIsRosterCollapsed] = useState(false);
 
-  // Data State
   const [league, setLeague] = useState(null);
   const [members, setMembers] = useState([]); 
-  const [leaderboard, setLeaderboard] = useState([]); 
-  const [feedItems, setFeedItems] = useState([]); 
   
-  // Fight Data
   const [allFights, setAllFights] = useState([]); 
-  const [visibleFights, setVisibleFights] = useState([]); 
   const [cardFilter, setCardFilter] = useState('full'); 
-  const [groupedFights, setGroupedFights] = useState({});
+  const [fighterStats, setFighterStats] = useState([]); 
 
-  // Odds State
   const [showOdds, setShowOdds] = useState(false);
-
-  // Champion Logic
-  const [isEventConcluded, setIsEventConcluded] = useState(false);
 
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false); 
   
   const [myLeagues, setMyLeagues] = useState([]);
-  const [existingPicks, setExistingPicks] = useState([]); 
+  const [allLeaguePicks, setAllLeaguePicks] = useState([]); 
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Toast & Delete States
   const [toast, setToast] = useState(null); 
   const [deleteConfirm, setDeleteConfirm] = useState(false); 
   const [deleting, setDeleting] = useState(false);
+
+  // Image Upload States
+  const fileInputRef = useRef(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [localLeagueImage, setLocalLeagueImage] = useState('');
 
   useEffect(() => {
     fetchLeagueData();
   }, [leagueId]);
 
-  useEffect(() => {
-      applyCardFilter();
-  }, [cardFilter, allFights]);
+  const isFighterMatch = (pickName, statName) => {
+      if (!pickName || !statName) return false;
+      const cleanName = (str) => str.toLowerCase().replace(/\b(jr\.?|sr\.?|iii|ii)\b/gi, '').trim();
+      const getCore = (str) => {
+          const parts = cleanName(str).split(' ');
+          return parts[parts.length - 1].replace(/[^a-z]/g, '').substring(0, 4);
+      };
+      return getCore(pickName) === getCore(statName);
+  };
 
-  const applyCardFilter = () => {
-      if (allFights.length === 0) return;
+  const { currentEventFights, visibleFights, groupedFights, isEventConcluded } = useMemo(() => {
+      if (!allFights || allFights.length === 0) return { currentEventFights: [], visibleFights: [], groupedFights: {}, isEventConcluded: false };
+
       const now = new Date().getTime();
       const TWELVE_HOURS = 12 * 60 * 60 * 1000;
       
@@ -96,11 +99,8 @@ export default function LeaguePage() {
 
       let filtered = [...nextEventFights];
       if (cardFilter === 'main') filtered = filtered.slice(-5);
-      
-      setVisibleFights(filtered);
 
-      const allFinished = filtered.length > 0 && filtered.every(f => f.winner !== null && f.winner !== undefined && f.winner !== '');
-      setIsEventConcluded(allFinished);
+      const allFinished = nextEventFights.length > 0 && nextEventFights.every(f => f.winner !== null && f.winner !== undefined && f.winner !== '');
 
       let finalGroupedFights = {};
       const tempGroups = [];
@@ -128,8 +128,62 @@ export default function LeaguePage() {
           finalGroupedFights[title] = [...bucket].reverse();
       });
 
-      setGroupedFights(finalGroupedFights);
-  };
+      return { currentEventFights: nextEventFights, visibleFights: filtered, groupedFights: finalGroupedFights, isEventConcluded: allFinished };
+  }, [allFights, cardFilter]);
+
+  const activeLeaguePicks = useMemo(() => {
+      const currentEventFightIds = currentEventFights.map(f => String(f.id));
+      return allLeaguePicks.filter(p => currentEventFightIds.includes(String(p.fight_id)));
+  }, [allLeaguePicks, currentEventFights]);
+
+  const existingPicks = useMemo(() => {
+      if (!user) return [];
+      return activeLeaguePicks.filter(p => p.user_id === user.email);
+  }, [activeLeaguePicks, user]);
+
+  const hasLockedRoster = existingPicks.length >= 5;
+
+  const feedItems = useMemo(() => {
+      if (!activeLeaguePicks || !allFights || !members) return [];
+      const feed = activeLeaguePicks.map(pick => {
+          const member = members.find(m => m.user_id === pick.user_id);
+          const fight = allFights.find(f => String(f.id) === String(pick.fight_id));
+          return {
+              id: `${pick.user_id}-${pick.fight_id}`,
+              user: member?.displayName || "Unknown",
+              avatar: member?.avatarUrl,
+              user_id: pick.user_id,
+              fighter: pick.selected_fighter,
+              odds: pick.odds_at_pick,
+              timestamp: pick.created_at,
+              fight_context: fight ? `${fight.fighter_1_name} vs ${fight.fighter_2_name}` : 'Unknown Fight',
+              result: fight?.winner ? (fight.winner === pick.selected_fighter ? 'WIN' : 'LOSS') : 'PENDING'
+          };
+      });
+      return feed.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  }, [activeLeaguePicks, allFights, members]);
+
+  const leaderboard = useMemo(() => {
+      if (!members || !activeLeaguePicks || !fighterStats) return [];
+      const scores = members.map(member => {
+          let totalScore = 0;
+          const memberPicks = activeLeaguePicks.filter(p => p.user_id === member.user_id);
+
+          memberPicks.forEach(pick => {
+              const stats = fighterStats.find(s => String(s.fight_id) === String(pick.fight_id) && isFighterMatch(pick.selected_fighter, s.fighter_name));
+              if (stats) totalScore += parseFloat(stats.fantasy_points || 0);
+          });
+
+          return {
+              user_id: member.user_id,
+              displayName: member.displayName,
+              avatarUrl: member.avatarUrl,
+              pickCount: memberPicks.length,
+              totalScore: parseFloat(totalScore.toFixed(1))
+          };
+      });
+      return scores.sort((a, b) => b.totalScore - a.totalScore);
+  }, [members, activeLeaguePicks, fighterStats]);
 
   const fetchLeagueData = async () => {
     try {
@@ -143,43 +197,23 @@ export default function LeaguePage() {
 
         const { data: leagueData } = await supabase.from('leagues').select('*').eq('id', leagueId).single();
         setLeague(leagueData);
+        setLocalLeagueImage(leagueData?.image_url || '');
 
-        // ---------------------------------------------------------
-        // THE FIX: AUTO-JOIN LOGIC FOR INVITE LINKS
-        // ---------------------------------------------------------
         const inviteCode = searchParams.get('invite');
-        
         if (currentUser && leagueData && inviteCode === leagueData.invite_code) {
-            // Check if they are already in the league
-            const { data: existingMember } = await supabase
-                .from('league_members')
-                .select('*')
-                .eq('league_id', leagueId)
-                .eq('user_id', currentUser.email)
-                .single();
-
-            // If not a member, insert them!
+            const { data: existingMember } = await supabase.from('league_members').select('*').eq('league_id', leagueId).eq('user_id', currentUser.email).single();
             if (!existingMember) {
-                await supabase.from('league_members').insert({
-                    league_id: leagueId,
-                    user_id: currentUser.email
-                });
-                
-                // Show a success message
+                await supabase.from('league_members').insert({ league_id: leagueId, user_id: currentUser.email });
                 setToast({ message: "Successfully joined the league! 👊", type: "success" });
-                
-                // Clean the URL so they don't rejoin on refresh
                 router.replace(`/league/${leagueId}`);
             }
         }
-        // ---------------------------------------------------------
 
         if (currentUser && leagueData) {
             const isCreator = (leagueData.created_by === currentUser.email) || (leagueData.created_by === currentUser.id);
             setIsAdmin(isCreator);
         }
 
-        // Fetch Members & Avatars
         const { data: membersData } = await supabase.from('league_members').select('user_id, joined_at').eq('league_id', leagueId);
         let processedMembers = membersData || [];
 
@@ -199,78 +233,56 @@ export default function LeaguePage() {
         const { data: globalFights } = await supabase.from('fights').select('*').order('start_time', { ascending: true });
         setAllFights(globalFights || []);
 
-        if (currentUser) {
-            const { data: picksData } = await supabase.from('picks').select('*').eq('user_id', currentUser.email).eq('league_id', leagueId); 
-            setExistingPicks(picksData || []);
-        }
+        const { data: statsData } = await supabase.from('fighter_stats').select('*');
+        setFighterStats(statsData || []);
 
-        const { data: completedFights } = await supabase.from('fights').select('id, winner').not('winner', 'is', null);
-
-        const { data: allLeaguePicks } = await supabase
-            .from('picks')
-            .select('user_id, fight_id, selected_fighter, odds_at_pick, created_at')
-            .eq('league_id', leagueId);
-
-        // Build Feed
-        if (allLeaguePicks && globalFights && processedMembers) {
-            const feed = allLeaguePicks.map(pick => {
-                const member = processedMembers.find(m => m.user_id === pick.user_id);
-                const fight = globalFights.find(f => f.id === pick.fight_id);
-                return {
-                    id: `${pick.user_id}-${pick.fight_id}`,
-                    user: member?.displayName || "Unknown",
-                    avatar: member?.avatarUrl,
-                    user_id: pick.user_id,
-                    fighter: pick.selected_fighter,
-                    odds: pick.odds_at_pick,
-                    timestamp: pick.created_at,
-                    fight_context: fight ? `${fight.fighter_1_name} vs ${fight.fighter_2_name}` : 'Unknown Fight',
-                    result: fight?.winner ? (fight.winner === pick.selected_fighter ? 'WIN' : 'LOSS') : 'PENDING'
-                };
-            });
-            feed.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            setFeedItems(feed);
-        }
-
-        // Leaderboard
-        if (processedMembers && allLeaguePicks) {
-            const scores = processedMembers.map(member => {
-                let wins = 0; let losses = 0; let totalScore = 0;
-                const memberPicks = allLeaguePicks.filter(p => p.user_id === member.user_id);
-
-                memberPicks.forEach(pick => {
-                    const fight = completedFights?.find(f => f.id === pick.fight_id);
-                    if (fight && fight.winner) {
-                        if (fight.winner === pick.selected_fighter) {
-                            wins++;
-                            const numericOdds = parseInt(pick.odds_at_pick, 10);
-                            let profit = 0;
-                            if (!isNaN(numericOdds) && numericOdds !== 0) {
-                                if (numericOdds > 0) profit = (numericOdds / 100) * 10;
-                                else profit = (100 / Math.abs(numericOdds)) * 10;
-                            } else { profit = 10; }
-                            totalScore += (profit + 10);
-                        } else {
-                            losses++;
-                            totalScore -= 10;
-                        }
-                    }
-                });
-
-                return {
-                    user_id: member.user_id,
-                    displayName: member.displayName,
-                    avatarUrl: member.avatarUrl,
-                    wins, losses,
-                    totalScore: parseFloat(totalScore.toFixed(1)),
-                    winRate: (wins + losses) > 0 ? Math.round((wins / (wins + losses)) * 100) : 0
-                };
-            });
-            scores.sort((a, b) => b.totalScore - a.totalScore || b.wins - a.wins);
-            setLeaderboard(scores);
-        }
+        const { data: leaguePicksData } = await supabase.from('picks').select('*').eq('league_id', leagueId);
+        setAllLeaguePicks(leaguePicksData || []);
 
     } catch (error) { console.error("League Load Error:", error); } finally { setLoading(false); }
+  };
+
+  const handleImageUpload = async (e) => {
+    try {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            setToast({ message: "Must be an image file", type: "error" });
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) { 
+            setToast({ message: "Image must be under 5MB", type: "error" });
+            return;
+        }
+
+        setUploadingImage(true);
+        setToast({ message: "Uploading image...", type: "info" });
+
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${leagueId}-${Date.now()}.${fileExt}`;
+        const filePath = `avatars/${fileName}`; 
+
+        const { error: uploadError } = await supabase.storage
+            .from('league-images')
+            .upload(filePath, file, { cacheControl: '3600', upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+            .from('league-images')
+            .getPublicUrl(filePath);
+
+        setLocalLeagueImage(publicUrl);
+        setToast({ message: "Image uploaded! Click Save Changes.", type: "success" });
+
+    } catch (error) {
+        console.error("Upload Error:", error);
+        setToast({ message: "Upload failed: " + error.message, type: "error" });
+    } finally {
+        setUploadingImage(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const handleCopyCode = () => {
@@ -315,49 +327,208 @@ export default function LeaguePage() {
   };
 
   const handlePickSelect = (newPick) => {
+    if (hasLockedRoster) {
+        alert("Your 5-man roster is already locked in!");
+        return;
+    }
+
+    const safePick = { ...newPick, username: user?.user_metadata?.username || user?.email };
+
     setPendingPicks(currentPicks => {
-        const existingIndex = currentPicks.findIndex(p => p.fightId === newPick.fightId);
-        if (existingIndex >= 0) {
-            const existingPick = currentPicks[existingIndex];
-            if (existingPick.fighterName === newPick.fighterName) return currentPicks.filter((_, i) => i !== existingIndex);
-            const updated = [...currentPicks]; updated[existingIndex] = newPick; return updated;
+        const existingIndex = currentPicks.findIndex(p => p.fightId === safePick.fightId);
+        if (existingIndex >= 0 && currentPicks[existingIndex].fighterName === safePick.fighterName) {
+            return currentPicks.filter((_, i) => i !== existingIndex);
         }
-        return [...currentPicks, newPick];
+        if (currentPicks.length >= 5 && existingIndex === -1) {
+            alert("Roster is full! You must unselect someone before adding another fighter.");
+            return currentPicks;
+        }
+        if (existingIndex >= 0) {
+            const updated = [...currentPicks];
+            updated[existingIndex] = safePick;
+            return updated;
+        }
+        return [...currentPicks, safePick];
     });
   };
 
   const handleRemovePick = (fightId) => setPendingPicks(c => c.filter(p => p.fightId !== fightId));
 
   const handleConfirmAllPicks = async () => {
-    if (pendingPicks.length === 0) return;
+    if (pendingPicks.length !== 5) return alert("You must fill all 5 roster slots!");
+    if (!user) return alert("Log in to lock picks!");
+    
     setIsSubmitting(true);
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user || !user.email) {
-        setToast({ message: "Please log in first", type: "error" });
-        setIsSubmitting(false);
-        return;
-    }
-
     const username = user.user_metadata?.username || user.email.split('@')[0];
+    
     const picksToInsert = pendingPicks.map(p => ({
         user_id: user.email,
         username: username, 
         fight_id: p.fightId,
         selected_fighter: p.fighterName,
-        odds_at_pick: parseInt(p.odds, 10),
+        odds_at_pick: parseInt(p.odds, 10) || 0,
         league_id: leagueId 
     }));
 
-    const { error } = await supabase.from('picks').insert(picksToInsert);
-    setIsSubmitting(false);
+    const { error } = await supabase.from('picks').upsert(picksToInsert, { onConflict: 'league_id, user_id, fight_id' });
 
-    if (error) setToast({ message: "Error saving picks", type: "error" });
-    else {
+    if (error) {
+        console.error("Submission Error:", error);
+        setToast({ message: "Error saving picks", type: "error" });
+    } else {
         setPendingPicks([]); 
         setToast({ message: "Picks Locked In!", type: "success" });
+        setIsRosterCollapsed(true);
         setTimeout(() => window.location.reload(), 1500); 
     }
+    setIsSubmitting(false);
+  };
+
+  const getStatsForPick = (pick) => {
+      const stats = fighterStats.find(s => String(s.fight_id) === String(pick.fight_id) && isFighterMatch(pick.selected_fighter, s.fighter_name));
+      return stats || { is_winner: null, sig_strikes: 0, takedowns: 0, knockdowns: 0, sub_attempts: 0, control_time_seconds: 0, fantasy_points: 0 };
+  };
+
+  const renderTeamBoxScore = (email) => {
+      if (!email) return null; 
+      const teamPicks = activeLeaguePicks.filter(p => p.user_id === email);
+      
+      return (
+          <div className="bg-black border-t border-gray-800 overflow-hidden w-full transition-all">
+              <div className="overflow-x-auto custom-scrollbar">
+                  <table className="w-full text-left text-[9px] sm:text-[10px] md:text-xs">
+                      <thead className="bg-gray-950 text-gray-500 uppercase tracking-widest font-black text-[8px] sm:text-[9px]">
+                          <tr>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 truncate max-w-[60px] sm:max-w-none">Fighter</th>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Result</th>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">KD</th> 
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SS</th>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">TD</th>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SUB</th>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">CTRL</th>
+                              <th className="px-1 py-2 sm:p-2 md:p-3 text-right text-pink-500">PTS</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-900">
+                          {teamPicks.map(pick => {
+                              const isMe = user?.email === email;
+                              const canSee = isMe || hasLockedRoster || isEventConcluded;
+                              
+                              if (!canSee) {
+                                  return (
+                                      <tr key={pick.id} className="bg-gray-950/50">
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-gray-600 truncate max-w-[60px] sm:max-w-[100px] md:max-w-none">🔒 HIDDEN</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td> 
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
+                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-right text-gray-700">-</td>
+                                      </tr>
+                                  );
+                              }
+
+                              const stats = getStatsForPick(pick);
+                              const m = Math.floor((stats.control_time_seconds || 0) / 60);
+                              const s = (stats.control_time_seconds || 0) % 60;
+                              const ctrlStr = `${m}:${s.toString().padStart(2, '0')}`;
+                              
+                              const fightInfo = allFights.find(f => String(f.id) === String(pick.fight_id));
+                              const winMethod = fightInfo?.method ? `\n(${fightInfo.method})` : '';
+                              
+                              return (
+                                  <tr key={pick.id} className="hover:bg-gray-900/50 transition-colors">
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-white truncate max-w-[60px] sm:max-w-[100px] md:max-w-none" title={pick.selected_fighter}>{pick.selected_fighter}</td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center font-black text-[8px] sm:text-[9px] md:text-[10px] leading-tight">
+                                          {stats.is_winner === true ? (
+                                              <span className="text-green-500 whitespace-pre-wrap">W{winMethod}</span>
+                                          ) : stats.is_winner === false ? (
+                                              <span className="text-red-500 whitespace-pre-wrap">L{winMethod}</span>
+                                          ) : (
+                                              <span className="text-gray-600">-</span>
+                                          )}
+                                      </td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.knockdowns || 0}</td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{ctrlStr}</td>
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-right font-black text-pink-500">{(stats.fantasy_points || 0).toFixed(1)}</td>
+                                  </tr>
+                              );
+                          })}
+                      </tbody>
+                  </table>
+              </div>
+          </div>
+      );
+  };
+
+  const renderRosterSlots = () => {
+    if (hasLockedRoster) {
+        return (
+            <div className="space-y-3">
+                {existingPicks.map((pick, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-green-950/20 border border-green-500/30">
+                        <div>
+                            <div className="text-[9px] font-black text-green-500 uppercase tracking-widest mb-0.5">LOCKED SLOT {index + 1}</div>
+                            <div className="text-sm font-black text-white uppercase truncate">{pick.selected_fighter}</div>
+                        </div>
+                        <span className="text-xl">🔒</span>
+                    </div>
+                ))}
+                <div className="pt-4 mt-4 text-center">
+                    <p className="text-[10px] font-black uppercase text-green-500 tracking-widest border border-green-500/50 bg-green-950/30 py-2 rounded-lg">Roster Confirmed</p>
+                </div>
+            </div>
+        );
+    }
+
+    const slots = [0, 1, 2, 3, 4];
+    return (
+        <div className="space-y-3">
+            {slots.map(index => {
+                const pick = pendingPicks[index];
+                return (
+                    <div key={index} className={`flex items-center justify-between p-3 rounded-lg border transition-all ${pick ? 'bg-gray-900 border-pink-500/50' : 'bg-gray-950 border-gray-800 border-dashed'}`}>
+                        {pick ? (
+                            <>
+                                <div>
+                                    <div className="text-[9px] font-black text-pink-500 uppercase tracking-widest mb-0.5">SLOT {index + 1}</div>
+                                    <div className="text-sm font-black text-white uppercase truncate">{pick.fighterName}</div>
+                                </div>
+                                <button onClick={() => handleRemovePick(pick.fightId)} className="text-gray-500 hover:text-red-500 text-xs font-black p-2">✕</button>
+                            </>
+                        ) : (
+                            <div className="flex items-center gap-3 w-full opacity-50">
+                                <div className="w-6 h-6 rounded-full bg-gray-900 flex items-center justify-center text-[10px] font-black text-gray-500">{index + 1}</div>
+                                <div className="text-xs font-bold text-gray-600 uppercase tracking-widest">Empty Slot</div>
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+            
+            <div className="pt-4 border-t border-gray-900 mt-4">
+                <div className="flex justify-between items-center mb-2">
+                    <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">Roster Status</span>
+                    <span className={`text-[10px] font-black uppercase ${pendingPicks.length === 5 ? 'text-green-500' : 'text-pink-500'}`}>{pendingPicks.length} / 5</span>
+                </div>
+                <div className="w-full h-1.5 bg-gray-900 rounded-full overflow-hidden mb-6">
+                    <div className="h-full bg-pink-600 transition-all duration-300" style={{ width: `${(pendingPicks.length / 5) * 100}%` }}></div>
+                </div>
+                
+                <button 
+                    disabled={pendingPicks.length !== 5 || isSubmitting}
+                    onClick={handleConfirmAllPicks}
+                    className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-all ${pendingPicks.length === 5 ? 'bg-pink-600 text-white shadow-[0_0_20px_rgba(236,72,153,0.4)] hover:scale-[1.02] active:scale-95' : 'bg-gray-900 text-gray-600 cursor-not-allowed'}`}
+                >
+                    {isSubmitting ? 'Locking...' : pendingPicks.length === 5 ? 'Lock In Roster' : `Select ${5 - pendingPicks.length} More`}
+                </button>
+            </div>
+        </div>
+    );
   };
 
   if (loading) {
@@ -378,14 +549,13 @@ export default function LeaguePage() {
         <LeagueRail initialLeagues={myLeagues} />
       </div>
 
-      {/* Main Content Area - overflow-x-hidden ensures no horizontal sliding */}
       <main className="flex-1 h-screen overflow-y-auto overflow-x-hidden scrollbar-hide relative flex flex-col pb-24 md:pb-0">
         
         {/* Header */}
         <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Link href="/" className="text-2xl font-black italic text-white tracking-tighter uppercase">
+                    <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">
                         FIGHT<span className="text-pink-600">IQ</span>
                     </Link>
                     <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
@@ -416,7 +586,7 @@ export default function LeaguePage() {
             <div className="absolute inset-0 flex flex-col justify-end p-4 md:p-10 z-20">
                 <div className="max-w-7xl mx-auto w-full">
                     <span className="bg-pink-600 text-white text-[9px] font-black uppercase px-2 py-1 rounded inline-block mb-2 md:mb-3">
-                        Private League
+                        DFS League
                     </span>
                     <h1 className="text-3xl md:text-6xl font-black italic uppercase tracking-tighter mb-2 leading-none">
                         {league?.name}
@@ -440,26 +610,26 @@ export default function LeaguePage() {
             </div>
         </div>
 
-        {/* Tabs - Scrollable on mobile */}
+        {/* Tabs */}
         <div className="border-b border-gray-800 bg-gray-950 sticky top-16 z-40">
             <div className="max-w-7xl mx-auto px-4 md:px-6 flex gap-2 md:gap-0 overflow-x-auto scrollbar-hide">
                 <button 
                     onClick={() => setActiveTab('card')}
                     className={`whitespace-nowrap px-4 md:px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'card' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}
                 >
-                    Fight Card
-                </button>
-                <button 
-                    onClick={() => setActiveTab('feed')}
-                    className={`whitespace-nowrap px-4 md:px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'feed' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}
-                >
-                    Activity Feed
+                    Draft Card
                 </button>
                 <button 
                     onClick={() => setActiveTab('leaderboard')}
                     className={`whitespace-nowrap px-4 md:px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'leaderboard' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}
                 >
                     Leaderboard
+                </button>
+                <button 
+                    onClick={() => setActiveTab('feed')}
+                    className={`whitespace-nowrap px-4 md:px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'feed' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}
+                >
+                    Activity Feed
                 </button>
                 {isAdmin && (
                     <button 
@@ -478,6 +648,7 @@ export default function LeaguePage() {
                 {/* LEFT COLUMN */}
                 <div className="w-full xl:w-[66%] transition-all">
                     
+                    {/* DRAFT CARD TAB */}
                     {activeTab === 'card' && (
                         <>
                             <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
@@ -485,7 +656,7 @@ export default function LeaguePage() {
                                     <div className="flex items-center gap-2">
                                         <span className="w-2 h-2 rounded-full bg-pink-600 animate-pulse"></span>
                                         <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
-                                            League Fight Card
+                                            {hasLockedRoster ? 'League Event Card' : 'Draft Your Roster'}
                                         </h2>
                                     </div>
                                     
@@ -498,33 +669,109 @@ export default function LeaguePage() {
                                             <span className="sm:hidden">Invite</span>
                                         </span>
                                         <span className="text-xs font-mono font-bold text-pink-500">{league?.invite_code}</span>
-                                        <span className="text-[10px] text-gray-500 group-hover:text-white">
-                                            {copySuccess ? '✓' : '❐'}
-                                        </span>
                                     </button>
-                                </div>
-                                <div className="text-[10px] font-black uppercase text-gray-500 tracking-widest">
-                                    Showing: <span className="text-pink-600">{cardFilter === 'full' ? 'Full Card' : 'Main Card (Last 5)'}</span>
                                 </div>
                             </div>
                             
-                            {visibleFights.length > 0 ? (
-                                <FightDashboard 
-                                    fights={visibleFights} 
-                                    groupedFights={groupedFights} 
-                                    initialPicks={existingPicks} 
-                                    userPicks={existingPicks} 
-                                    league_id={leagueId} 
-                                    onPickSelect={handlePickSelect} 
-                                    pendingPicks={pendingPicks} 
-                                    showOdds={showOdds} 
-                                />
-                            ) : (
-                                <div className="p-12 border border-gray-800 rounded-xl text-center text-gray-500 font-bold uppercase tracking-widest">
-                                    No fights scheduled.
-                                </div>
-                            )}
+                            <div className={hasLockedRoster ? 'opacity-80' : ''}>
+                                {visibleFights.length > 0 ? (
+                                    <FightDashboard 
+                                        fights={visibleFights} 
+                                        groupedFights={groupedFights} 
+                                        initialPicks={existingPicks} 
+                                        userPicks={existingPicks} 
+                                        league_id={leagueId} 
+                                        onPickSelect={handlePickSelect} 
+                                        pendingPicks={pendingPicks} 
+                                        showOdds={showOdds} 
+                                    />
+                                ) : (
+                                    <div className="p-12 border border-gray-800 rounded-xl text-center text-gray-500 font-bold uppercase tracking-widest">
+                                        No fights scheduled.
+                                    </div>
+                                )}
+                            </div>
                         </>
+                    )}
+
+                    {/* LEADERBOARD TAB */}
+                    {activeTab === 'leaderboard' && (
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+                             <div className="flex items-center gap-2 mb-6">
+                                <span className="text-2xl">🏆</span>
+                                <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
+                                    DFS Standings
+                                </h2>
+                            </div>
+
+                            <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-2xl mb-8">
+                                <div className="overflow-x-auto custom-scrollbar">
+                                    <div className="min-w-[500px]">
+                                        <div className="grid grid-cols-12 gap-4 p-4 border-b border-gray-800 bg-black/40 text-[9px] font-black uppercase tracking-widest text-gray-500">
+                                            <div className="col-span-2 text-center">Rank</div>
+                                            <div className="col-span-6">Manager</div>
+                                            <div className="col-span-2 text-center">Roster</div>
+                                            <div className="col-span-2 text-right">Fantasy PTS</div>
+                                        </div>
+                                        <div className="divide-y divide-gray-800">
+                                            {leaderboard.map((player, index) => (
+                                                <div key={player.user_id}>
+                                                    <div 
+                                                        onClick={() => setExpandedUserRoster(expandedUserRoster === player.user_id ? null : player.user_id)}
+                                                        className={`grid grid-cols-12 gap-4 p-4 items-center cursor-pointer hover:bg-gray-800/50 transition-colors ${user?.email === player.user_id ? 'bg-pink-900/10' : ''}`}
+                                                    >
+                                                        <div className="col-span-2 text-center font-black text-lg italic text-gray-600">
+                                                            #{index + 1}
+                                                        </div>
+                                                        <div className="col-span-6 flex items-center gap-3 overflow-hidden">
+                                                            {player.avatarUrl ? (
+                                                                <img src={player.avatarUrl} alt={player.displayName} className="w-8 h-8 rounded-full object-cover border border-gray-700 shrink-0" />
+                                                            ) : (
+                                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-300 shrink-0">
+                                                                    {player.displayName.charAt(0).toUpperCase()}
+                                                                </div>
+                                                            )}
+                                                            <div className="min-w-0">
+                                                                <div className={`font-bold text-sm truncate ${user?.email === player.user_id ? 'text-pink-500' : 'text-white'}`}>
+                                                                    {player.displayName}
+                                                                </div>
+                                                                {isEventConcluded && index === 0 && (
+                                                                    <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest block mt-1">
+                                                                        👑 Champion
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="col-span-2 text-center">
+                                                            <span className={`text-[10px] font-black ${player.pickCount === 5 ? 'text-green-500' : 'text-gray-500'}`}>
+                                                                {player.pickCount} / 5
+                                                            </span>
+                                                        </div>
+                                                        <div className="col-span-2 flex items-center justify-end gap-3">
+                                                            <span className="text-base font-black italic text-pink-500">
+                                                                {player.totalScore}
+                                                            </span>
+                                                            <span className="text-[10px] text-gray-500">{expandedUserRoster === player.user_id ? '▲' : '▼'}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    {expandedUserRoster === player.user_id && (
+                                                        <div className="bg-black border-y border-gray-800 animate-in slide-in-from-top-2 duration-200">
+                                                            {renderTeamBoxScore(player.user_id)}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            {leaderboard.length === 0 && (
+                                                <div className="p-8 text-center text-gray-500 text-xs font-bold uppercase tracking-widest">
+                                                    No ranked members yet.
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     )}
 
                     {/* ACTIVITY FEED TAB */}
@@ -533,7 +780,7 @@ export default function LeaguePage() {
                              <div className="flex items-center gap-2 mb-6">
                                 <span className="text-2xl">⚡</span>
                                 <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
-                                    Recent Activity
+                                    Recent Draft Activity
                                 </h2>
                             </div>
                             
@@ -552,7 +799,7 @@ export default function LeaguePage() {
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2">
                                                     <span className="font-bold text-white text-sm truncate">{item.user}</span>
-                                                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest hidden sm:inline">locked in</span>
+                                                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest hidden sm:inline">drafted</span>
                                                 </div>
                                                 <div className="text-base md:text-lg font-black italic text-pink-500 uppercase leading-none mt-1 truncate">
                                                     {item.fighter}
@@ -561,15 +808,9 @@ export default function LeaguePage() {
                                             </div>
                                         </div>
                                         <div className="text-right shrink-0 ml-2">
-                                            {showOdds && <div className="text-xs font-mono font-bold text-teal-400">{item.odds > 0 ? `+${item.odds}` : item.odds}</div>}
                                             <div className="text-[9px] text-gray-600 font-bold uppercase tracking-widest mt-1">
                                                 {new Date(item.timestamp).toLocaleDateString()}
                                             </div>
-                                            {item.result !== 'PENDING' && (
-                                                <span className={`inline-block mt-1 px-2 py-0.5 rounded text-[8px] font-black uppercase ${item.result === 'WIN' ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
-                                                    {item.result}
-                                                </span>
-                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -582,74 +823,7 @@ export default function LeaguePage() {
                         </div>
                     )}
 
-                    {/* LEADERBOARD TAB */}
-                    {activeTab === 'leaderboard' && (
-                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
-                             <div className="flex items-center gap-2 mb-6">
-                                <span className="text-2xl">🏆</span>
-                                <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
-                                    League Standings
-                                </h2>
-                            </div>
-
-                            <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
-                                <div className="overflow-x-auto">
-                                    <div className="min-w-[500px]">
-                                        <div className="grid grid-cols-12 gap-4 p-4 border-b border-gray-800 bg-black/40 text-[9px] font-black uppercase tracking-widest text-gray-500">
-                                            <div className="col-span-2 text-center">Rank</div>
-                                            <div className="col-span-6">Manager</div>
-                                            <div className="col-span-2 text-center">Record</div>
-                                            <div className="col-span-2 text-right">Points</div>
-                                        </div>
-                                        <div className="divide-y divide-gray-800">
-                                            {leaderboard.map((player, index) => (
-                                                <div key={player.user_id} className={`grid grid-cols-12 gap-4 p-4 items-center hover:bg-gray-800/30 transition-colors ${user?.email === player.user_id ? 'bg-pink-900/10' : ''}`}>
-                                                    <div className="col-span-2 text-center font-black text-lg italic text-gray-600">
-                                                        #{index + 1}
-                                                    </div>
-                                                    <div className="col-span-6 flex items-center gap-3 overflow-hidden">
-                                                        {player.avatarUrl ? (
-                                                            <img src={player.avatarUrl} alt={player.displayName} className="w-8 h-8 rounded-full object-cover border border-gray-700 shrink-0" />
-                                                        ) : (
-                                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-300 shrink-0">
-                                                                {player.displayName.charAt(0).toUpperCase()}
-                                                            </div>
-                                                        )}
-                                                        <div className="min-w-0">
-                                                            <div className={`font-bold text-sm truncate ${user?.email === player.user_id ? 'text-pink-500' : 'text-white'}`}>
-                                                                {player.displayName}
-                                                            </div>
-                                                            {isEventConcluded && index === 0 && (
-                                                                <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest block mt-1">
-                                                                    👑 Champion
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <div className="col-span-2 text-center font-bold text-gray-400 text-xs">
-                                                        <span className="text-white">{player.wins}</span> - {player.losses}
-                                                    </div>
-                                                    
-                                                    <div className="col-span-2 text-right">
-                                                        <span className={`px-2 py-1 rounded text-[10px] font-black ${player.totalScore >= 0 ? 'bg-teal-950 text-teal-400 border border-teal-900' : 'bg-red-950 text-red-400 border border-red-900'}`}>
-                                                            {player.totalScore}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                            {leaderboard.length === 0 && (
-                                                <div className="p-8 text-center text-gray-500 text-xs font-bold uppercase tracking-widest">
-                                                    No ranked members yet.
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* SETTINGS TAB (RESTORED) */}
+                    {/* 🎯 FIX: BULLETPROOF SETTINGS TAB UI */}
                     {activeTab === 'settings' && isAdmin && (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-12">
                             
@@ -664,11 +838,10 @@ export default function LeaguePage() {
                                         e.preventDefault();
                                         const form = e.target;
                                         const newName = form.leagueName.value;
-                                        const newImage = form.leagueImage.value;
-
+                                        
                                         const { error } = await supabase
                                             .from('leagues')
-                                            .update({ name: newName, image_url: newImage })
+                                            .update({ name: newName, image_url: localLeagueImage }) 
                                             .eq('id', leagueId);
 
                                         if (error) setToast({ message: error.message, type: "error" });
@@ -677,29 +850,68 @@ export default function LeaguePage() {
                                             setTimeout(() => window.location.reload(), 1000); 
                                         }
                                     }}
-                                    className="bg-gray-900 border border-gray-800 rounded-xl p-6"
+                                    className="bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-xl"
                                 >
-                                    <div className="grid md:grid-cols-2 gap-6 mb-6">
-                                        <div>
-                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">League Name</label>
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                                        <div className="min-w-0">
+                                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">League Name</label>
                                             <input 
                                                 name="leagueName"
                                                 defaultValue={league?.name}
-                                                className="w-full bg-black border border-gray-700 p-3 rounded text-white text-sm font-bold focus:border-pink-500 outline-none"
+                                                className="w-full bg-black border border-gray-700 p-4 rounded-xl text-white font-bold focus:border-pink-500 outline-none transition-all"
                                             />
                                         </div>
-                                        <div>
-                                            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">Logo Image URL</label>
-                                            <input 
-                                                name="leagueImage"
-                                                defaultValue={league?.image_url}
-                                                className="w-full bg-black border border-gray-700 p-3 rounded text-white text-xs font-mono focus:border-pink-500 outline-none"
-                                                placeholder="https://..."
-                                            />
+                                        
+                                        {/* 🎯 THE BULLETPROOF IMAGE UPLOAD UI */}
+                                        <div className="min-w-0">
+                                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">League Logo</label>
+                                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                                                {/* Strict Preview Box */}
+                                                {localLeagueImage ? (
+                                                    <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden border border-gray-700 bg-black">
+                                                        <img src={localLeagueImage} alt="League Preview" className="w-full h-full object-cover" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-20 h-20 shrink-0 rounded-xl bg-black border border-gray-700 flex items-center justify-center text-[10px] text-gray-600 font-black">
+                                                        NO IMG
+                                                    </div>
+                                                )}
+                                                
+                                                {/* Upload Button */}
+                                                <div className="w-full sm:flex-1 min-w-0">
+                                                    <input 
+                                                        type="file" 
+                                                        accept="image/*"
+                                                        onChange={handleImageUpload}
+                                                        ref={fileInputRef}
+                                                        className="hidden" 
+                                                    />
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => fileInputRef.current?.click()}
+                                                        disabled={uploadingImage}
+                                                        className="w-full bg-black border border-gray-700 hover:border-pink-500 p-4 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all disabled:opacity-50 flex justify-center items-center gap-2 truncate"
+                                                    >
+                                                        {uploadingImage ? (
+                                                            <>
+                                                                <span className="w-3 h-3 rounded-full border-2 border-white border-t-transparent animate-spin shrink-0"></span>
+                                                                Uploading...
+                                                            </>
+                                                        ) : (
+                                                            'Upload Custom Logo'
+                                                        )}
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="flex justify-end">
-                                        <button type="submit" className="bg-white text-black text-[10px] font-black uppercase px-6 py-3 rounded hover:bg-pink-600 hover:text-white transition-all">
+                                    
+                                    <div className="flex justify-end pt-4 border-t border-gray-800">
+                                        <button 
+                                            type="submit" 
+                                            disabled={uploadingImage}
+                                            className="bg-white text-black font-black uppercase text-xs px-8 py-4 rounded-xl hover:bg-pink-600 hover:text-white transition-all disabled:opacity-50"
+                                        >
                                             Save Changes
                                         </button>
                                     </div>
@@ -774,7 +986,7 @@ export default function LeaguePage() {
                                 </div>
                             </div>
 
-                            {/* 4. DANGER ZONE - UPDATED DELETE BUTTON */}
+                            {/* 4. DANGER ZONE */}
                             <div className="pt-8 border-t border-gray-800">
                                 <div className="flex items-center justify-between gap-2 mb-4">
                                     <h2 className="text-xl font-black uppercase italic tracking-tighter text-red-600">
@@ -799,18 +1011,39 @@ export default function LeaguePage() {
 
                 {/* RIGHT COLUMN */}
                 <div className="hidden xl:block w-[33%] relative">
-                    {pendingPicks.length > 0 ? (
-                        <div className="sticky top-24 max-h-[calc(100vh-120px)] bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto">
-                             <BettingSlip 
-                                picks={pendingPicks} 
-                                onCancelAll={() => setPendingPicks([])}
-                                onRemovePick={handleRemovePick}
-                                onConfirm={handleConfirmAllPicks}
-                                isSubmitting={isSubmitting}
-                             />
+                    <div className="sticky top-24 space-y-6">
+                        
+                        {/* 🎯 THE COLLAPSIBLE 5-MAN DFS SLIP */}
+                        <div className="bg-gray-950 border border-gray-800 rounded-xl shadow-2xl overflow-hidden transition-all">
+                            <button 
+                                onClick={() => setIsRosterCollapsed(!isRosterCollapsed)}
+                                className="w-full flex items-center justify-between p-6 bg-gray-950 hover:bg-gray-900 transition-colors focus:outline-none border-b border-gray-900"
+                            >
+                                <div className="flex items-center gap-3 text-left">
+                                    <span className="text-xl">{hasLockedRoster ? '🔒' : '📋'}</span>
+                                    <div>
+                                        <h3 className="text-sm font-black text-white uppercase italic tracking-tighter">
+                                            {hasLockedRoster ? 'Locked Roster' : 'Fantasy Roster'}
+                                        </h3>
+                                        <p className={`text-[10px] font-bold uppercase tracking-widest ${hasLockedRoster ? 'text-green-500' : 'text-gray-500'}`}>
+                                            {hasLockedRoster ? 'Your picks are secured' : 'Select exactly 5 fighters'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <span className="text-pink-500 font-black text-[10px] uppercase tracking-widest bg-pink-950/30 px-3 py-1 rounded">
+                                    {isRosterCollapsed ? 'Show ▼' : 'Hide ▲'}
+                                </span>
+                            </button>
+                            
+                            {!isRosterCollapsed && (
+                                <div className="p-6 bg-gray-950 animate-in fade-in slide-in-from-top-4 duration-300">
+                                    {renderRosterSlots()}
+                                </div>
+                            )}
                         </div>
-                    ) : (
-                        <div className="sticky top-24 h-[600px] flex flex-col">
+
+                        {/* LEAGUE CHAT */}
+                        <div className="h-[400px] flex flex-col">
                             <div className="flex justify-between items-center mb-4 px-2">
                                 <h3 className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">League Chat</h3>
                                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
@@ -819,7 +1052,8 @@ export default function LeaguePage() {
                                 <ChatBox league_id={leagueId} />
                             </div>
                         </div>
-                    )}
+
+                    </div>
                 </div>
 
             </div>
@@ -827,41 +1061,38 @@ export default function LeaguePage() {
       </main>
 
       {/* --- MOBILE: BOTTOM FLOATING BAR --- */}
-      {pendingPicks.length > 0 && (
-          <div className="md:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
+      {!hasLockedRoster && pendingPicks.length > 0 && (
+          <div className="xl:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
             <button 
               onClick={() => setShowMobileSlip(true)}
-              className="w-full bg-pink-600 text-white p-4 rounded-xl shadow-2xl shadow-pink-900/50 flex justify-between items-center border border-pink-400 active:scale-95 transition-transform"
+              className={`w-full text-white p-4 rounded-xl shadow-2xl flex justify-between items-center border active:scale-95 transition-all ${pendingPicks.length === 5 ? 'bg-pink-600 border-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.4)]' : 'bg-gray-900 border-gray-700'}`}
             >
               <div className="flex items-center gap-3">
-                <span className="bg-black/20 px-3 py-1 rounded-lg text-xs font-black">
-                  {pendingPicks.length}
+                <span className={`px-3 py-1 rounded-lg text-xs font-black ${pendingPicks.length === 5 ? 'bg-black/20 text-white' : 'bg-gray-800 text-pink-500'}`}>
+                  {pendingPicks.length} / 5
                 </span>
-                <span className="text-sm font-black uppercase italic tracking-tighter">
-                  Picks in Slip
-                </span>
+                <span className="text-sm font-black uppercase italic tracking-tighter">Your Roster</span>
               </div>
-              <span className="text-xs font-bold uppercase tracking-widest">Review & Submit →</span>
+              <span className="text-xs font-bold uppercase tracking-widest">
+                  {pendingPicks.length === 5 ? 'Lock In →' : 'Expand ↑'}
+              </span>
             </button>
           </div>
       )}
 
       {/* --- MOBILE: FULL SCREEN SLIP MODAL --- */}
-      {showMobileSlip && (
-          <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm md:hidden flex items-end">
-            <div className="w-full h-[85vh] bg-gray-950 rounded-t-2xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300">
-               <div className="p-4 border-b border-gray-800 flex justify-between items-center">
-                  <h3 className="font-black italic text-xl text-white uppercase tracking-tighter">Your Slip</h3>
+      {showMobileSlip && !hasLockedRoster && (
+          <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm xl:hidden flex items-end">
+            <div className="w-full bg-gray-950 rounded-t-3xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300">
+               <div className="p-6 border-b border-gray-800 flex justify-between items-center">
+                  <div>
+                    <h3 className="font-black italic text-xl text-white uppercase tracking-tighter">Fantasy Roster</h3>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Select exactly 5 fighters</p>
+                  </div>
                   <button onClick={() => setShowMobileSlip(false)} className="text-gray-500 hover:text-white p-2 text-xs font-bold uppercase tracking-widest">✕ Close</button>
                </div>
-               <div className="flex-1 overflow-y-auto p-4">
-                  <BettingSlip 
-                     picks={pendingPicks} 
-                     onCancelAll={() => { setPendingPicks([]); setShowMobileSlip(false); }}
-                     onRemovePick={handleRemovePick}
-                     onConfirm={handleConfirmAllPicks}
-                     isSubmitting={isSubmitting}
-                  />
+               <div className="p-6">
+                  {renderRosterSlots()}
                </div>
             </div>
           </div>
