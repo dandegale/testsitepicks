@@ -31,6 +31,7 @@ export default function LeaguePage() {
   
   const [expandedUserRoster, setExpandedUserRoster] = useState(null); 
   const [showAllFighters, setShowAllFighters] = useState(false); 
+  const [showGlobalBoxScore, setShowGlobalBoxScore] = useState(false);
   const [isRosterCollapsed, setIsRosterCollapsed] = useState(false);
 
   const [league, setLeague] = useState(null);
@@ -54,7 +55,6 @@ export default function LeaguePage() {
   const [deleteConfirm, setDeleteConfirm] = useState(false); 
   const [deleting, setDeleting] = useState(false);
 
-  // Image Upload States
   const fileInputRef = useRef(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [localLeagueImage, setLocalLeagueImage] = useState('');
@@ -163,8 +163,77 @@ export default function LeaguePage() {
       return feed.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   }, [activeLeaguePicks, allFights, members]);
 
+  const allCardFightersRanked = useMemo(() => {
+      if (!fighterStats || fighterStats.length === 0 || currentEventFights.length === 0) return [];
+      const fightIds = currentEventFights.map(f => String(f.id));
+      const filteredStats = fighterStats.filter(s => fightIds.includes(String(s.fight_id)));
+      const mappedStats = filteredStats.map(s => {
+          const fight = currentEventFights.find(f => String(f.id) === String(s.fight_id));
+          return { ...s, method: fight?.method || '' };
+      });
+      return mappedStats.sort((a, b) => (b.fantasy_points || 0) - (a.fantasy_points || 0));
+  }, [fighterStats, currentEventFights]);
+
   const leaderboard = useMemo(() => {
-      if (!members || !activeLeaguePicks || !fighterStats) return [];
+      if (!members || !allLeaguePicks || !fighterStats || !allFights) return [];
+
+      let pastEvents = [];
+      let currentBucket = [];
+      let groupReferenceTime = allFights.length > 0 ? new Date(allFights[0].start_time).getTime() : 0;
+      
+      const sortedFights = [...allFights].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+      sortedFights.forEach((fight) => {
+          const fightTime = new Date(fight.start_time).getTime();
+          if (fightTime - groupReferenceTime < 72 * 60 * 60 * 1000) {
+              currentBucket.push(fight);
+          } else {
+              pastEvents.push(currentBucket);
+              currentBucket = [fight];
+              groupReferenceTime = fightTime;
+          }
+      });
+      if (currentBucket.length > 0) pastEvents.push(currentBucket);
+
+      const historicalWinsMap = {};
+      members.forEach(m => historicalWinsMap[m.user_id] = 0);
+
+      pastEvents.forEach(eventFights => {
+          const isCompleted = eventFights.length > 0 && eventFights.every(f => f.winner !== null && f.winner !== undefined && f.winner !== '');
+          if (!isCompleted) return;
+
+          const eventFightIds = eventFights.map(f => String(f.id));
+          const eventPicks = allLeaguePicks.filter(p => eventFightIds.includes(String(p.fight_id)));
+          
+          if (eventPicks.length === 0) return;
+
+          let eventScores = {};
+          eventPicks.forEach(pick => {
+              const stats = fighterStats.find(s => String(s.fight_id) === String(pick.fight_id) && isFighterMatch(pick.selected_fighter, s.fighter_name));
+              if (stats) {
+                  eventScores[pick.user_id] = (eventScores[pick.user_id] || 0) + parseFloat(stats.fantasy_points || 0);
+              }
+          });
+
+          let maxScore = -1;
+          let winners = [];
+          for (const [userId, score] of Object.entries(eventScores)) {
+              if (score > maxScore) {
+                  maxScore = score;
+                  winners = [userId];
+              } else if (score === maxScore && maxScore > 0) {
+                  winners.push(userId); 
+              }
+          }
+
+          if (maxScore > 0) {
+              winners.forEach(w => {
+                  if (historicalWinsMap[w] !== undefined) historicalWinsMap[w] += 1;
+                  else historicalWinsMap[w] = 1; 
+              });
+          }
+      });
+
       const scores = members.map(member => {
           let totalScore = 0;
           const memberPicks = activeLeaguePicks.filter(p => p.user_id === member.user_id);
@@ -179,11 +248,13 @@ export default function LeaguePage() {
               displayName: member.displayName,
               avatarUrl: member.avatarUrl,
               pickCount: memberPicks.length,
-              totalScore: parseFloat(totalScore.toFixed(1))
+              totalScore: parseFloat(totalScore.toFixed(1)),
+              cardsWon: historicalWinsMap[member.user_id] || 0
           };
       });
-      return scores.sort((a, b) => b.totalScore - a.totalScore);
-  }, [members, activeLeaguePicks, fighterStats]);
+
+      return scores.sort((a, b) => b.totalScore - a.totalScore || b.cardsWon - a.cardsWon);
+  }, [members, activeLeaguePicks, allLeaguePicks, fighterStats, allFights]);
 
   const fetchLeagueData = async () => {
     try {
@@ -389,12 +460,18 @@ export default function LeaguePage() {
       return stats || { is_winner: null, sig_strikes: 0, takedowns: 0, knockdowns: 0, sub_attempts: 0, control_time_seconds: 0, fantasy_points: 0 };
   };
 
-  const renderTeamBoxScore = (email) => {
+  const renderTeamBoxScore = (email, playerName = null, totalScore = 0, showHeader = false) => {
       if (!email) return null; 
       const teamPicks = activeLeaguePicks.filter(p => p.user_id === email);
       
       return (
-          <div className="bg-black border-t border-gray-800 overflow-hidden w-full transition-all">
+          <div className={`bg-black overflow-hidden w-full transition-all ${showHeader ? 'border border-gray-800 rounded-xl' : 'border-t border-gray-800'}`}>
+              {showHeader && (
+                  <div className="bg-gray-900 p-3 border-b border-gray-800 flex justify-between items-center">
+                      <span className="text-xs font-black uppercase tracking-widest text-white">{playerName}'s Roster</span>
+                      <span className="text-pink-500 font-black text-xs">{totalScore} PTS</span>
+                  </div>
+              )}
               <div className="overflow-x-auto custom-scrollbar">
                   <table className="w-full text-left text-[9px] sm:text-[10px] md:text-xs">
                       <thead className="bg-gray-950 text-gray-500 uppercase tracking-widest font-black text-[8px] sm:text-[9px]">
@@ -544,14 +621,12 @@ export default function LeaguePage() {
 
   return (
     <div className="flex min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
-      {/* Sidebar - HIDDEN ON MOBILE */}
       <div className="hidden lg:block">
         <LeagueRail initialLeagues={myLeagues} />
       </div>
 
       <main className="flex-1 h-screen overflow-y-auto overflow-x-hidden scrollbar-hide relative flex flex-col pb-24 md:pb-0">
         
-        {/* Header */}
         <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -577,7 +652,6 @@ export default function LeaguePage() {
             </div>
         </header>
 
-        {/* League Hero */}
         <div className="relative w-full bg-gray-900 overflow-hidden border-b border-gray-800 h-[180px] md:h-[200px]">
             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent z-10" />
             {league?.image_url && (
@@ -610,7 +684,6 @@ export default function LeaguePage() {
             </div>
         </div>
 
-        {/* Tabs */}
         <div className="border-b border-gray-800 bg-gray-950 sticky top-16 z-40">
             <div className="max-w-7xl mx-auto px-4 md:px-6 flex gap-2 md:gap-0 overflow-x-auto scrollbar-hide">
                 <button 
@@ -643,12 +716,13 @@ export default function LeaguePage() {
         </div>
 
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen w-full">
-            <div className="relative flex flex-col xl:flex-row w-full gap-6 xl:gap-10">
+            
+            {/* 🎯 THE FIX: Bulletproof CSS Grid Layout replaces Flex */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-10 relative items-start">
                 
-                {/* LEFT COLUMN */}
-                <div className="w-full xl:w-[66%] transition-all">
+                {/* LEFT COLUMN (Takes up 2/3 of Grid) */}
+                <div className="lg:col-span-2 transition-all">
                     
-                    {/* DRAFT CARD TAB */}
                     {activeTab === 'card' && (
                         <>
                             <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
@@ -659,11 +733,7 @@ export default function LeaguePage() {
                                             {hasLockedRoster ? 'League Event Card' : 'Draft Your Roster'}
                                         </h2>
                                     </div>
-                                    
-                                    <button 
-                                        onClick={handleCopyCode}
-                                        className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1 rounded transition-all group"
-                                    >
+                                    <button onClick={handleCopyCode} className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1 rounded transition-all group">
                                         <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">
                                             <span className="hidden sm:inline">Share:</span>
                                             <span className="sm:hidden">Invite</span>
@@ -673,6 +743,96 @@ export default function LeaguePage() {
                                 </div>
                             </div>
                             
+                            {/* 🎯 NEW: LIVE RECORDINGS COPIED OVER TO DRAFT PAGE */}
+                            <div className="mb-6 space-y-6">
+                                <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg">
+                                    <button onClick={() => setShowGlobalBoxScore(!showGlobalBoxScore)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none">
+                                        <div className="flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse"></span>
+                                            <h3 className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] text-gray-400">League-Wide Live Box Score</h3>
+                                        </div>
+                                        <span className="text-pink-500 font-black text-[10px] uppercase tracking-widest bg-pink-950/30 px-3 py-1 rounded">{showGlobalBoxScore ? 'Hide ▲' : 'View ▼'}</span>
+                                    </button>
+                                    {showGlobalBoxScore && (
+                                        <div className="p-4 border-t border-gray-900 max-h-[800px] overflow-y-auto custom-scrollbar flex flex-col gap-6">
+                                            {leaderboard.map(player => (
+                                                <div key={player.user_id}>
+                                                    {renderTeamBoxScore(player.user_id, player.displayName, player.totalScore, true)}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg">
+                                    <button onClick={() => setShowAllFighters(!showAllFighters)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none">
+                                        <div className="flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+                                            <h3 className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] text-gray-400">Live Fighter Stats (Optimal Lineup)</h3>
+                                        </div>
+                                        <span className="text-teal-500 font-black text-[10px] uppercase tracking-widest bg-teal-950/30 px-3 py-1 rounded">{showAllFighters ? 'Hide ▲' : 'View ▼'}</span>
+                                    </button>
+                                    {showAllFighters && (
+                                        <div className="p-4 border-t border-gray-900 max-h-[600px] overflow-y-auto custom-scrollbar">
+                                            <div className="bg-black border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
+                                                <div className="w-full overflow-x-auto">
+                                                    <table className="w-full text-left text-[9px] sm:text-[10px] md:text-xs">
+                                                        <thead className="bg-gray-950 text-gray-500 uppercase tracking-widest font-black text-[8px] sm:text-[9px]">
+                                                            <tr>
+                                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Rnk</th>
+                                                                <th className="px-1 py-2 sm:p-2 md:p-3 truncate max-w-[60px] sm:max-w-none">Fighter</th>
+                                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Result</th>
+                                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">KD</th>
+                                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SS</th>
+                                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">TD</th>
+                                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SUB</th>
+                                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">CTRL</th>
+                                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-right text-teal-400">PTS</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-gray-900">
+                                                            {allCardFightersRanked.map((stats, idx) => {
+                                                                const m = Math.floor((stats.control_time_seconds || 0) / 60);
+                                                                const s = (stats.control_time_seconds || 0) % 60;
+                                                                const ctrlStr = `${m}:${s.toString().padStart(2, '0')}`;
+                                                                const winMethod = stats.method ? `\n(${stats.method})` : '';
+
+                                                                return (
+                                                                    <tr key={stats.id || idx} className="hover:bg-gray-900/50 transition-colors">
+                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 font-black text-gray-500 text-center">{idx + 1}</td>
+                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-white truncate max-w-[60px] sm:max-w-[100px] md:max-w-none" title={stats.fighter_name}>{stats.fighter_name}</td>
+                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center font-black text-[8px] sm:text-[9px] md:text-[10px] leading-tight">
+                                                                            {stats.is_winner === true ? (
+                                                                                <span className="text-green-500 whitespace-pre-wrap">W{winMethod}</span>
+                                                                            ) : stats.is_winner === false ? (
+                                                                                <span className="text-red-500 whitespace-pre-wrap">L{winMethod}</span>
+                                                                            ) : (
+                                                                                <span className="text-gray-600">-</span>
+                                                                            )}
+                                                                        </td>
+                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.knockdowns || 0}</td>
+                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
+                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
+                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>
+                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{ctrlStr}</td>
+                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-right font-black text-teal-400">{(stats.fantasy_points || 0).toFixed(1)}</td>
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                            {allCardFightersRanked.length === 0 && (
+                                                                <tr>
+                                                                    <td colSpan="9" className="p-6 text-center text-gray-600 font-bold uppercase tracking-widest text-[10px]">No stats available for this event yet</td>
+                                                                </tr>
+                                                            )}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
                             <div className={hasLockedRoster ? 'opacity-80' : ''}>
                                 {visibleFights.length > 0 ? (
                                     <FightDashboard 
@@ -694,9 +854,97 @@ export default function LeaguePage() {
                         </>
                     )}
 
-                    {/* LEADERBOARD TAB */}
                     {activeTab === 'leaderboard' && (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+                             
+                            <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg mb-6">
+                                <button onClick={() => setShowGlobalBoxScore(!showGlobalBoxScore)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse"></span>
+                                        <h3 className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] text-gray-400">League-Wide Live Box Score</h3>
+                                    </div>
+                                    <span className="text-pink-500 font-black text-[10px] uppercase tracking-widest bg-pink-950/30 px-3 py-1 rounded">{showGlobalBoxScore ? 'Hide ▲' : 'View ▼'}</span>
+                                </button>
+                                {showGlobalBoxScore && (
+                                    <div className="p-4 border-t border-gray-900 max-h-[800px] overflow-y-auto custom-scrollbar flex flex-col gap-6">
+                                        {leaderboard.map(player => (
+                                            <div key={player.user_id}>
+                                                {renderTeamBoxScore(player.user_id, player.displayName, player.totalScore, true)}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg mb-6">
+                                <button onClick={() => setShowAllFighters(!showAllFighters)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none">
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+                                        <h3 className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] text-gray-400">Live Fighter Stats (Optimal Lineup)</h3>
+                                    </div>
+                                    <span className="text-teal-500 font-black text-[10px] uppercase tracking-widest bg-teal-950/30 px-3 py-1 rounded">{showAllFighters ? 'Hide ▲' : 'View ▼'}</span>
+                                </button>
+                                
+                                {showAllFighters && (
+                                    <div className="p-4 border-t border-gray-900 max-h-[600px] overflow-y-auto custom-scrollbar">
+                                        <div className="bg-black border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
+                                            <div className="w-full overflow-x-auto">
+                                                <table className="w-full text-left text-[9px] sm:text-[10px] md:text-xs">
+                                                    <thead className="bg-gray-950 text-gray-500 uppercase tracking-widest font-black text-[8px] sm:text-[9px]">
+                                                        <tr>
+                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Rnk</th>
+                                                            <th className="px-1 py-2 sm:p-2 md:p-3 truncate max-w-[60px] sm:max-w-none">Fighter</th>
+                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Result</th>
+                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">KD</th>
+                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SS</th>
+                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">TD</th>
+                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SUB</th>
+                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">CTRL</th>
+                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-right text-teal-400">PTS</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-900">
+                                                        {allCardFightersRanked.map((stats, idx) => {
+                                                            const m = Math.floor((stats.control_time_seconds || 0) / 60);
+                                                            const s = (stats.control_time_seconds || 0) % 60;
+                                                            const ctrlStr = `${m}:${s.toString().padStart(2, '0')}`;
+                                                            const winMethod = stats.method ? `\n(${stats.method})` : '';
+
+                                                            return (
+                                                                <tr key={stats.id || idx} className="hover:bg-gray-900/50 transition-colors">
+                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 font-black text-gray-500 text-center">{idx + 1}</td>
+                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-white truncate max-w-[60px] sm:max-w-[100px] md:max-w-none" title={stats.fighter_name}>{stats.fighter_name}</td>
+                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-center font-black text-[8px] sm:text-[9px] md:text-[10px] leading-tight">
+                                                                        {stats.is_winner === true ? (
+                                                                            <span className="text-green-500 whitespace-pre-wrap">W{winMethod}</span>
+                                                                        ) : stats.is_winner === false ? (
+                                                                            <span className="text-red-500 whitespace-pre-wrap">L{winMethod}</span>
+                                                                        ) : (
+                                                                            <span className="text-gray-600">-</span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.knockdowns || 0}</td>
+                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
+                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
+                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>
+                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{ctrlStr}</td>
+                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-right font-black text-teal-400">{(stats.fantasy_points || 0).toFixed(1)}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                        {allCardFightersRanked.length === 0 && (
+                                                            <tr>
+                                                                <td colSpan="9" className="p-6 text-center text-gray-600 font-bold uppercase tracking-widest text-[10px]">No stats available for this event yet</td>
+                                                            </tr>
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
                              <div className="flex items-center gap-2 mb-6">
                                 <span className="text-2xl">🏆</span>
                                 <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
@@ -709,7 +957,8 @@ export default function LeaguePage() {
                                     <div className="min-w-[500px]">
                                         <div className="grid grid-cols-12 gap-4 p-4 border-b border-gray-800 bg-black/40 text-[9px] font-black uppercase tracking-widest text-gray-500">
                                             <div className="col-span-2 text-center">Rank</div>
-                                            <div className="col-span-6">Manager</div>
+                                            <div className="col-span-4">Manager</div>
+                                            <div className="col-span-2 text-center" title="Number of past events won">Trophies</div>
                                             <div className="col-span-2 text-center">Roster</div>
                                             <div className="col-span-2 text-right">Fantasy PTS</div>
                                         </div>
@@ -723,7 +972,7 @@ export default function LeaguePage() {
                                                         <div className="col-span-2 text-center font-black text-lg italic text-gray-600">
                                                             #{index + 1}
                                                         </div>
-                                                        <div className="col-span-6 flex items-center gap-3 overflow-hidden">
+                                                        <div className="col-span-4 flex items-center gap-3 overflow-hidden">
                                                             {player.avatarUrl ? (
                                                                 <img src={player.avatarUrl} alt={player.displayName} className="w-8 h-8 rounded-full object-cover border border-gray-700 shrink-0" />
                                                             ) : (
@@ -742,6 +991,12 @@ export default function LeaguePage() {
                                                                 )}
                                                             </div>
                                                         </div>
+                                                        
+                                                        <div className="col-span-2 flex items-center justify-center gap-1">
+                                                            <span className="text-yellow-500 text-sm drop-shadow-[0_0_10px_rgba(234,179,8,0.3)]">🏆</span>
+                                                            <span className="text-white font-black text-xs">{player.cardsWon}</span>
+                                                        </div>
+
                                                         <div className="col-span-2 text-center">
                                                             <span className={`text-[10px] font-black ${player.pickCount === 5 ? 'text-green-500' : 'text-gray-500'}`}>
                                                                 {player.pickCount} / 5
@@ -757,7 +1012,7 @@ export default function LeaguePage() {
 
                                                     {expandedUserRoster === player.user_id && (
                                                         <div className="bg-black border-y border-gray-800 animate-in slide-in-from-top-2 duration-200">
-                                                            {renderTeamBoxScore(player.user_id)}
+                                                            {renderTeamBoxScore(player.user_id, player.displayName, player.totalScore, false)}
                                                         </div>
                                                     )}
                                                 </div>
@@ -774,7 +1029,6 @@ export default function LeaguePage() {
                         </div>
                     )}
 
-                    {/* ACTIVITY FEED TAB */}
                     {activeTab === 'feed' && (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
                              <div className="flex items-center gap-2 mb-6">
@@ -823,11 +1077,9 @@ export default function LeaguePage() {
                         </div>
                     )}
 
-                    {/* 🎯 FIX: BULLETPROOF SETTINGS TAB UI */}
                     {activeTab === 'settings' && isAdmin && (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-12">
                             
-                            {/* 1. EDIT LEAGUE DETAILS */}
                             <div>
                                 <h2 className="text-xs font-black text-white uppercase tracking-widest mb-4 flex items-center gap-2">
                                     <span className="w-2 h-2 rounded-full bg-pink-600"></span>
@@ -862,11 +1114,9 @@ export default function LeaguePage() {
                                             />
                                         </div>
                                         
-                                        {/* 🎯 THE BULLETPROOF IMAGE UPLOAD UI */}
                                         <div className="min-w-0">
                                             <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">League Logo</label>
                                             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                                                {/* Strict Preview Box */}
                                                 {localLeagueImage ? (
                                                     <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden border border-gray-700 bg-black">
                                                         <img src={localLeagueImage} alt="League Preview" className="w-full h-full object-cover" />
@@ -877,7 +1127,6 @@ export default function LeaguePage() {
                                                     </div>
                                                 )}
                                                 
-                                                {/* Upload Button */}
                                                 <div className="w-full sm:flex-1 min-w-0">
                                                     <input 
                                                         type="file" 
@@ -918,7 +1167,6 @@ export default function LeaguePage() {
                                 </form>
                             </div>
 
-                            {/* 2. CONFIGURE FIGHT CARD */}
                             <div>
                                 <h2 className="text-xs font-black text-white uppercase tracking-widest mb-4">
                                     Configure Fight Card
@@ -944,7 +1192,6 @@ export default function LeaguePage() {
                                 </div>
                             </div>
 
-                            {/* 3. ROSTER */}
                             <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
                                 <div className="p-4 border-b border-gray-800 bg-black/20 flex justify-between items-center">
                                     <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest">Member Roster</h3>
@@ -986,7 +1233,6 @@ export default function LeaguePage() {
                                 </div>
                             </div>
 
-                            {/* 4. DANGER ZONE */}
                             <div className="pt-8 border-t border-gray-800">
                                 <div className="flex items-center justify-between gap-2 mb-4">
                                     <h2 className="text-xl font-black uppercase italic tracking-tighter text-red-600">
@@ -1009,50 +1255,45 @@ export default function LeaguePage() {
                     )}
                 </div>
 
-                {/* RIGHT COLUMN */}
-                <div className="hidden xl:block w-[33%] relative">
-                    <div className="sticky top-24 space-y-6">
+                {/* 🎯 THE FIX: self-start keeps the column sticky and prevents stretching to bottom */}
+                <div className="hidden lg:block lg:col-span-1 sticky top-24 self-start space-y-6">
+                    
+                    <div className="bg-gray-950 border border-gray-800 rounded-xl shadow-2xl overflow-hidden transition-all">
+                        <button 
+                            onClick={() => setIsRosterCollapsed(!isRosterCollapsed)}
+                            className="w-full flex items-center justify-between p-6 bg-gray-950 hover:bg-gray-900 transition-colors focus:outline-none border-b border-gray-900"
+                        >
+                            <div className="flex items-center gap-3 text-left">
+                                <span className="text-xl">{hasLockedRoster ? '🔒' : '📋'}</span>
+                                <div>
+                                    <h3 className="text-sm font-black text-white uppercase italic tracking-tighter">
+                                        {hasLockedRoster ? 'Locked Roster' : 'Fantasy Roster'}
+                                    </h3>
+                                    <p className={`text-[10px] font-bold uppercase tracking-widest ${hasLockedRoster ? 'text-green-500' : 'text-gray-500'}`}>
+                                        {hasLockedRoster ? 'Your picks are secured' : 'Select exactly 5 fighters'}
+                                    </p>
+                                </div>
+                            </div>
+                            <span className="text-pink-500 font-black text-[10px] uppercase tracking-widest bg-pink-950/30 px-3 py-1 rounded">
+                                {isRosterCollapsed ? 'Show ▼' : 'Hide ▲'}
+                            </span>
+                        </button>
                         
-                        {/* 🎯 THE COLLAPSIBLE 5-MAN DFS SLIP */}
-                        <div className="bg-gray-950 border border-gray-800 rounded-xl shadow-2xl overflow-hidden transition-all">
-                            <button 
-                                onClick={() => setIsRosterCollapsed(!isRosterCollapsed)}
-                                className="w-full flex items-center justify-between p-6 bg-gray-950 hover:bg-gray-900 transition-colors focus:outline-none border-b border-gray-900"
-                            >
-                                <div className="flex items-center gap-3 text-left">
-                                    <span className="text-xl">{hasLockedRoster ? '🔒' : '📋'}</span>
-                                    <div>
-                                        <h3 className="text-sm font-black text-white uppercase italic tracking-tighter">
-                                            {hasLockedRoster ? 'Locked Roster' : 'Fantasy Roster'}
-                                        </h3>
-                                        <p className={`text-[10px] font-bold uppercase tracking-widest ${hasLockedRoster ? 'text-green-500' : 'text-gray-500'}`}>
-                                            {hasLockedRoster ? 'Your picks are secured' : 'Select exactly 5 fighters'}
-                                        </p>
-                                    </div>
-                                </div>
-                                <span className="text-pink-500 font-black text-[10px] uppercase tracking-widest bg-pink-950/30 px-3 py-1 rounded">
-                                    {isRosterCollapsed ? 'Show ▼' : 'Hide ▲'}
-                                </span>
-                            </button>
-                            
-                            {!isRosterCollapsed && (
-                                <div className="p-6 bg-gray-950 animate-in fade-in slide-in-from-top-4 duration-300">
-                                    {renderRosterSlots()}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* LEAGUE CHAT */}
-                        <div className="h-[400px] flex flex-col">
-                            <div className="flex justify-between items-center mb-4 px-2">
-                                <h3 className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">League Chat</h3>
-                                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        {!isRosterCollapsed && (
+                            <div className="p-6 bg-gray-950 animate-in fade-in slide-in-from-top-4 duration-300">
+                                {renderRosterSlots()}
                             </div>
-                            <div className="flex-1 shadow-2xl shadow-black overflow-hidden rounded-xl border border-gray-900 bg-black">
-                                <ChatBox league_id={leagueId} />
-                            </div>
-                        </div>
+                        )}
+                    </div>
 
+                    <div className="h-[400px] flex flex-col">
+                        <div className="flex justify-between items-center mb-4 px-2">
+                            <h3 className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">League Chat</h3>
+                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        </div>
+                        <div className="flex-1 shadow-2xl shadow-black overflow-hidden rounded-xl border border-gray-900 bg-black">
+                            <ChatBox league_id={leagueId} />
+                        </div>
                     </div>
                 </div>
 
@@ -1060,9 +1301,8 @@ export default function LeaguePage() {
         </div>
       </main>
 
-      {/* --- MOBILE: BOTTOM FLOATING BAR --- */}
       {!hasLockedRoster && pendingPicks.length > 0 && (
-          <div className="xl:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <div className="lg:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
             <button 
               onClick={() => setShowMobileSlip(true)}
               className={`w-full text-white p-4 rounded-xl shadow-2xl flex justify-between items-center border active:scale-95 transition-all ${pendingPicks.length === 5 ? 'bg-pink-600 border-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.4)]' : 'bg-gray-900 border-gray-700'}`}
@@ -1080,9 +1320,8 @@ export default function LeaguePage() {
           </div>
       )}
 
-      {/* --- MOBILE: FULL SCREEN SLIP MODAL --- */}
       {showMobileSlip && !hasLockedRoster && (
-          <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm xl:hidden flex items-end">
+          <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm lg:hidden flex items-end">
             <div className="w-full bg-gray-950 rounded-t-3xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300">
                <div className="p-6 border-b border-gray-800 flex justify-between items-center">
                   <div>
@@ -1098,7 +1337,6 @@ export default function LeaguePage() {
           </div>
       )}
 
-      {/* --- MOBILE LEAGUE DRAWER --- */}
       <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
          <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
             <div className="p-6 border-b border-gray-800 flex justify-between items-center">
@@ -1132,7 +1370,6 @@ export default function LeaguePage() {
 
       <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
 
-      {/* --- RENDER TOAST --- */}
       {toast && (
         <Toast 
           message={toast.message} 
