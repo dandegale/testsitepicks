@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -81,9 +82,6 @@ export default function LoginPage() {
 
             {/* LOGO HEADER */}
             <div className="text-center mb-8">
-                
-                {/* --- UPDATED LOGO SIZE --- */}
-                {/* Changed w-64 to w-72 md:w-80 for a slightly larger look */}
                 <div className="mb-4 relative group">
                     <img 
                         src="/fightiq-logo.png" 
@@ -134,7 +132,7 @@ export default function LoginPage() {
                 )}
 
                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Email Address</label>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 block mb-1">Email Address</label>
                     <div className="relative group">
                         <input
                             type="email"
@@ -154,7 +152,7 @@ export default function LoginPage() {
                 </div>
 
                 <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Password</label>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 block mb-1">Password</label>
                     <div className="relative group">
                         <input
                             type="password"
@@ -170,6 +168,18 @@ export default function LoginPage() {
                             </svg>
                         </div>
                     </div>
+                    
+                    {/* 🎯 NEW: Centered link placed immediately beneath the input field */}
+                    {mode === 'login' && (
+                        <div className="text-center pt-3 pb-1">
+                            <Link 
+                                href="/forgot-password" 
+                                className="text-[10px] font-black uppercase tracking-widest text-pink-600 hover:text-pink-400 transition-colors"
+                            >
+                                Forgot Password?
+                            </Link>
+                        </div>
+                    )}
                 </div>
 
                 <button
