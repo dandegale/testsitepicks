@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 
-// Caches the scraped data for 24 hours (86400 seconds)
-export const revalidate = 86400; 
+// 🎯 Temporarily set to 0 to clear the bad cache on your live server. 
+// Once you confirm images are loading, change this back to 86400!
+export const revalidate = 0; 
 
 export async function GET(request, { params }) {
     const { slug } = await params;
@@ -22,13 +23,20 @@ export async function GET(request, { params }) {
     let fallbackHistory = [];
     let fallbackWinStats = null;
 
+    // 🛡️ THE FAKE BROWSER HEADERS (Bypasses Datacenter Bot Protection)
+    const spoofHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/json,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+    };
+
     // 🚀 FIRE ALL 5 DATA SOURCES CONCURRENTLY
     await Promise.allSettled([
         
-        // 1. ESPN API (Search by Last Name to bypass apostrophe issues)
+        // 1. ESPN API
         (async () => {
             const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/mma/ufc/athletes?limit=10&q=${encodeURIComponent(searchLastName)}`;
-            const res = await fetch(espnUrl);
+            const res = await fetch(espnUrl, { headers: spoofHeaders });
             if (res.ok) {
                 const data = await res.json();
                 const athletes = data.items || data.athletes || data.sports?.[0]?.leagues?.[0]?.athletes;
@@ -52,9 +60,10 @@ export async function GET(request, { params }) {
             }
         })(),
 
-        // 2. THE SPORTS DB (Search by Last Name)
+        // 2. THE SPORTS DB
         (async () => {
-            const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/searchplayers.php?p=${encodeURIComponent(searchLastName)}`);
+            const url = `https://www.thesportsdb.com/api/v1/json/3/searchplayers.php?p=${encodeURIComponent(searchLastName)}`;
+            const res = await fetch(url, { headers: spoofHeaders });
             if (res.ok) {
                 const data = await res.json();
                 if (data.player && data.player.length > 0) {
@@ -74,7 +83,7 @@ export async function GET(request, { params }) {
         // 3. UFC STATS
         (async () => {
             const searchUrl = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(searchLastName)}`;
-            const searchRes = await fetch(searchUrl);
+            const searchRes = await fetch(searchUrl, { headers: spoofHeaders });
             const searchHtml = await searchRes.text();
             
             const $search = cheerio.load(searchHtml);
@@ -93,7 +102,7 @@ export async function GET(request, { params }) {
             });
 
             if (fighterLink) {
-                const profileRes = await fetch(fighterLink);
+                const profileRes = await fetch(fighterLink, { headers: spoofHeaders });
                 const profileHtml = await profileRes.text();
                 const $ = cheerio.load(profileHtml);
                 
@@ -149,9 +158,10 @@ export async function GET(request, { params }) {
             }
         })(),
 
-        // 4. UFC.COM (Rankings & Next Fight)
+        // 4. UFC.COM
         (async () => {
-            const ufcRes = await fetch(`https://www.ufc.com/athlete/${slug.toLowerCase()}`);
+            const url = `https://www.ufc.com/athlete/${slug.toLowerCase()}`;
+            const ufcRes = await fetch(url, { headers: spoofHeaders });
             if (ufcRes.ok) {
                 const ufcHtml = await ufcRes.text();
                 const $ = cheerio.load(ufcHtml);
@@ -179,19 +189,19 @@ export async function GET(request, { params }) {
             }
         })(),
 
-        // 5. WIKIPEDIA (Primary History)
+        // 5. WIKIPEDIA
         (async () => {
-            let searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(slug.replace(/-/g, ' ') + " fighter")}&format=json&origin=*`);
+            let searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(slug.replace(/-/g, ' ') + " fighter")}&format=json&origin=*`, { headers: spoofHeaders });
             let searchData = await searchRes.json();
             
             if (!searchData.query?.search?.length) {
-                 searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(slug.replace(/-/g, ' '))}&format=json&origin=*`);
+                 searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(slug.replace(/-/g, ' '))}&format=json&origin=*`, { headers: spoofHeaders });
                  searchData = await searchRes.json();
             }
 
             if (searchData.query?.search?.length) {
                 const title = searchData.query.search[0].title;
-                const htmlRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`);
+                const htmlRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`, { headers: spoofHeaders });
                 const htmlText = await htmlRes.text();
                 const $ = cheerio.load(htmlText);
 
