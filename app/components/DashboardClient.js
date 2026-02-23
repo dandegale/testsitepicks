@@ -12,7 +12,6 @@ import LeagueRail from './LeagueRail';
 import BettingSlip from './BettingSlip'; 
 import MobileNav from './MobileNav'; 
 import CreateLeagueModal from './CreateLeagueModal';
-// 1. IMPORT YOUR NEW SHOWDOWN MODAL
 import ShowdownModal from './ShowdownModal';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
@@ -53,7 +52,6 @@ export default function DashboardClient({
   const [showMobileSlip, setShowMobileSlip] = useState(false);
   
   const [showCreateModal, setShowCreateModal] = useState(false);
-  // 2. ADD STATE FOR THE 1v1 MODAL
   const [showShowdown, setShowShowdown] = useState(false);
   
   const [showOdds, setShowOdds] = useState(false); 
@@ -124,7 +122,13 @@ export default function DashboardClient({
     const { data: { user } } = await supabase.auth.getUser();
     if (user && user.email) {
         
-        const { data: picksData } = await supabase.from('picks').select('*').eq('user_id', user.email);
+        // 🚨 CRITICAL FIX: Add .is('league_id', null) to prevent League picks from leaking into Global!
+        const { data: picksData } = await supabase
+          .from('picks')
+          .select('*')
+          .eq('user_id', user.email)
+          .is('league_id', null); 
+
         if (picksData) {
             setClientPicks(picksData); 
             const { data: results } = await supabase.from('fights').select('id, winner').not('winner', 'is', null);
@@ -208,7 +212,6 @@ export default function DashboardClient({
 
       {/* MOBILE DRAWER */}
       <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
-         {/* ... (Mobile drawer code remains identical) ... */}
          <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
             <div className="p-6 border-b border-gray-800 flex justify-between items-center">
                 <span className="font-black italic text-xl">YOUR LEAGUES</span>
@@ -282,7 +285,6 @@ export default function DashboardClient({
                 </div>
                 <div className="flex items-center gap-3 md:gap-6">
                     
-                    {/* 3. NEW 1V1 SHOWDOWN BUTTON ADDED HERE */}
                     <button 
                         onClick={() => setShowShowdown(true)}
                         className="flex bg-gradient-to-r from-pink-600 to-teal-600 hover:from-pink-500 hover:to-teal-500 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-white shadow-[0_0_15px_rgba(219,39,119,0.2)] hover:shadow-[0_0_20px_rgba(20,184,166,0.4)] transition-all items-center gap-2 active:scale-95"
@@ -469,7 +471,6 @@ export default function DashboardClient({
         onRefresh={() => window.location.reload()} 
       />
 
-      {/* 4. RENDER THE SHOWDOWN MODAL OVERLAY */}
       <ShowdownModal 
         isOpen={showShowdown} 
         onClose={() => setShowShowdown(false)} 
