@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 
-export const revalidate = 0; // Keeping at 0 until we confirm it works live!
+export const revalidate = 0; // Keep at 0 until confirmed working!
 
 export async function GET(request, { params }) {
     const { slug } = await params;
@@ -15,36 +15,32 @@ export async function GET(request, { params }) {
         image: null, height: '—', weight: '—', age: '—', reach: '—',
         stance: '—', record: '—', ranking: '', country: '—', nickname: '',
         history: [], winStats: { ko: 0, koPct: 0, sub: 0, subPct: 0, dec: 0, decPct: 0, totalWins: 0 },
-        _debug: {} // Hidden tracker to see exactly what fails on Vercel
+        _debug: {} 
     };
 
     let nextFight = null;
     let fallbackHistory = [];
     let fallbackWinStats = null;
 
-    const fetchOptions = {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*'
-        },
-        cache: 'no-store'
+    // Headers for direct HTML scraping (Bypasses basic bot checks)
+    const directHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     };
 
     // 🚀 FIRE ALL 5 DATA SOURCES CONCURRENTLY
     await Promise.allSettled([
         
-        // 1. ESPN API (Proxied to bypass Datacenter IP Blocks)
+        // 1. ESPN API (Using secure JSON proxy to bypass Vercel IP Block)
         (async () => {
             try {
                 const targetUrl = `https://site.api.espn.com/apis/site/v2/sports/mma/ufc/athletes?limit=10&q=${encodeURIComponent(searchLastName)}`;
-                // 🎯 FIX: Routing through AllOrigins to mask the Vercel IP
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
                 
-                const res = await fetch(proxyUrl, fetchOptions);
-                bio._debug.espnStatus = res.status;
-                
+                const res = await fetch(proxyUrl, { cache: 'no-store' });
                 if (res.ok) {
-                    const data = await res.json();
+                    const proxyData = await res.json();
+                    const data = JSON.parse(proxyData.contents); // Extract the raw JSON
+                    
                     const athletes = data.items || data.athletes || data.sports?.[0]?.leagues?.[0]?.athletes;
                     if (athletes && athletes.length > 0) {
                         const match = athletes.find(a => {
@@ -66,17 +62,17 @@ export async function GET(request, { params }) {
             } catch (e) { bio._debug.espnError = e.message; }
         })(),
 
-        // 2. THE SPORTS DB (Proxied to bypass Datacenter IP Blocks)
+        // 2. THE SPORTS DB (Using secure JSON proxy to bypass Vercel IP Block)
         (async () => {
             try {
                 const targetUrl = `https://www.thesportsdb.com/api/v1/json/3/searchplayers.php?p=${encodeURIComponent(searchLastName)}`;
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
                 
-                const res = await fetch(proxyUrl, fetchOptions);
-                bio._debug.tsdbStatus = res.status;
-
+                const res = await fetch(proxyUrl, { cache: 'no-store' });
                 if (res.ok) {
-                    const data = await res.json();
+                    const proxyData = await res.json();
+                    const data = JSON.parse(proxyData.contents);
+                    
                     if (data.player && data.player.length > 0) {
                         const match = data.player.find(p => {
                             const pName = p.strPlayer.replace(/[^a-z0-9]/gi, '').toLowerCase();
@@ -92,14 +88,11 @@ export async function GET(request, { params }) {
             } catch (e) { bio._debug.tsdbError = e.message; }
         })(),
 
-        // 3. UFC STATS
+        // 3. UFC STATS (DIRECT FETCH - No Proxy Needed)
         (async () => {
             try {
                 const searchUrl = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(searchLastName)}`;
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`;
-                
-                const searchRes = await fetch(proxyUrl, fetchOptions);
-                bio._debug.ufcStatsStatus = searchRes.status;
+                const searchRes = await fetch(searchUrl, { headers: directHeaders, cache: 'no-store' });
                 const searchHtml = await searchRes.text();
                 
                 const $search = cheerio.load(searchHtml);
@@ -118,7 +111,7 @@ export async function GET(request, { params }) {
                 });
 
                 if (fighterLink) {
-                    const profileRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(fighterLink)}`, fetchOptions);
+                    const profileRes = await fetch(fighterLink, { headers: directHeaders, cache: 'no-store' });
                     const profileHtml = await profileRes.text();
                     const $ = cheerio.load(profileHtml);
                     
@@ -129,7 +122,6 @@ export async function GET(request, { params }) {
                         if (text.includes('Reach:')) bio.reach = text.replace('Reach:', '').trim();
                         if (text.includes('STANCE:')) bio.stance = text.replace('STANCE:', '').trim();
                         
-                        // Fallback Age Calculation if ESPN is blocked
                         if (text.includes('DOB:') && bio.age === '—') {
                             const dobStr = text.replace('DOB:', '').trim();
                             if (dobStr !== '--') {
@@ -184,13 +176,11 @@ export async function GET(request, { params }) {
             } catch (e) { bio._debug.ufcStatsError = e.message; }
         })(),
 
-        // 4. UFC.COM
+        // 4. UFC.COM (DIRECT FETCH - No Proxy Needed)
         (async () => {
             try {
                 const url = `https://www.ufc.com/athlete/${slug.toLowerCase()}`;
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-                const ufcRes = await fetch(proxyUrl, fetchOptions);
-                bio._debug.ufcComStatus = ufcRes.status;
+                const ufcRes = await fetch(url, { headers: directHeaders, cache: 'no-store' });
 
                 if (ufcRes.ok) {
                     const ufcHtml = await ufcRes.text();
@@ -220,23 +210,22 @@ export async function GET(request, { params }) {
             } catch (e) { bio._debug.ufcComError = e.message; }
         })(),
 
-        // 5. WIKIPEDIA
+        // 5. WIKIPEDIA (DIRECT FETCH - No Proxy Needed)
         (async () => {
             try {
                 let searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(slug.replace(/-/g, ' ') + " fighter")}&format=json&origin=*`;
-                let searchRes = await fetch(searchUrl, fetchOptions);
-                bio._debug.wikiStatus = searchRes.status;
+                let searchRes = await fetch(searchUrl, { headers: directHeaders, cache: 'no-store' });
                 let searchData = await searchRes.json();
                 
                 if (!searchData.query?.search?.length) {
                      searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(slug.replace(/-/g, ' '))}&format=json&origin=*`;
-                     searchRes = await fetch(searchUrl, fetchOptions);
+                     searchRes = await fetch(searchUrl, { headers: directHeaders, cache: 'no-store' });
                      searchData = await searchRes.json();
                 }
 
                 if (searchData.query?.search?.length) {
                     const title = searchData.query.search[0].title;
-                    const htmlRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`, fetchOptions);
+                    const htmlRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`, { headers: directHeaders, cache: 'no-store' });
                     const htmlText = await htmlRes.text();
                     const $ = cheerio.load(htmlText);
 
