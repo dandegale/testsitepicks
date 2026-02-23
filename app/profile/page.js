@@ -55,19 +55,29 @@ export default function Profile() {
   const [username, setUsername] = useState('');
   const [newUsername, setNewUsername] = useState('');
   const [avatarUrl, setAvatarUrl] = useState(null);
+  const [backgroundUrl, setBackgroundUrl] = useState(null); 
   const [uploading, setUploading] = useState(false);
+  const [uploadingBg, setUploadingBg] = useState(false);    
   
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  
   const fileInputRef = useRef(null);
+  const bgInputRef = useRef(null); 
 
-  // --- PREFERENCES & STATS ---
+  // --- PRIVACY & PREFERENCES STATE ---
   const [showOdds, setShowOdds] = useState(false); 
   const [showLockedBadges, setShowLockedBadges] = useState(false);
   
-  // 🎯 NEW: State for user's actual earned badges
-  const [userBadges, setUserBadges] = useState([]);
+  const [privacy, setPrivacy] = useState({
+      isPublic: true,
+      showRecord: true,
+      showEarnings: true,
+      showHistory: false,
+      pinnedBadgeId: null
+  });
 
+  const [userBadges, setUserBadges] = useState([]);
   const [stats, setStats] = useState({ totalBets: 0, wins: 0, losses: 0, pending: 0, netProfit: 0 });
   const [history, setHistory] = useState([]);
   const router = useRouter();
@@ -89,9 +99,20 @@ export default function Profile() {
     setUsername(finalName);
     setNewUsername(finalName); 
     setAvatarUrl(profile?.avatar_url || null);
-    if (profile) setShowOdds(profile.show_odds === true);
+    setBackgroundUrl(profile?.background_url || null); 
+    
+    if (profile) {
+        setShowOdds(profile.show_odds === true);
+        setPrivacy({
+            isPublic: profile.is_public !== false, 
+            showRecord: profile.show_record !== false,
+            showEarnings: profile.show_earnings !== false,
+            showHistory: profile.show_history === true, 
+            pinnedBadgeId: profile.pinned_badge_id || null
+        });
+    }
 
-    // 🎯 NEW: Fetch earned badges from the database
+    // Fetch earned badges
     const { data: badgesData } = await supabase.from('user_badges').select('badge_id').eq('user_id', user.email);
     if (badgesData) {
         setUserBadges(badgesData.map(b => b.badge_id));
@@ -104,7 +125,6 @@ export default function Profile() {
       .eq('user_id', user.email) 
       .order('id', { ascending: false });
 
-    // Fallback if relation fails
     let finalPicks = picks;
     if (error) {
         const { data: fallback } = await supabase.from('picks').select('*').eq('user_id', user.email).order('id', { ascending: false });
@@ -116,44 +136,41 @@ export default function Profile() {
     setLoading(false);
   };
 
-  // --- AVATAR UPLOAD LOGIC ---
-  const handleAvatarUpload = async (event) => {
+  const handleImageUpload = async (event, bucketName, dbField, setLoadState, setUrlState) => {
     try {
-      setUploading(true);
+      setLoadState(true);
       if (!event.target.files || event.target.files.length === 0) {
         throw new Error('You must select an image to upload.');
       }
 
       const file = event.target.files[0];
       const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
-      const filePath = `${fileName}`;
+      const fileName = `${user.id}-${bucketName}-${Math.random()}.${fileExt}`;
 
-      // 1. Upload to Storage
+      // Upload to Storage Bucket
       const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file);
+        .from(bucketName)
+        .upload(fileName, file);
 
       if (uploadError) throw uploadError;
 
-      // 2. Get Public URL
+      // Get Public URL
       const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
+        .from(bucketName)
+        .getPublicUrl(fileName);
 
-      // 3. Update Profile
+      // Update Profile Table
       const { error: updateError } = await supabase
         .from('profiles')
-        .upsert({ id: user.id, avatar_url: publicUrl, updated_at: new Date() });
+        .upsert({ id: user.id, [dbField]: publicUrl, updated_at: new Date() });
 
       if (updateError) throw updateError;
 
-      setAvatarUrl(publicUrl);
-      alert('Avatar updated!');
+      setUrlState(publicUrl);
     } catch (error) {
-      alert('Error uploading avatar: ' + error.message);
+      alert(`Error uploading to ${bucketName}: ` + error.message);
     } finally {
-      setUploading(false);
+      setLoadState(false);
     }
   };
 
@@ -171,21 +188,28 @@ export default function Profile() {
   };
 
   const toggleOdds = async () => {
-      // Optimistic UI Update
       const newValue = !showOdds;
       setShowOdds(newValue);
-      
-      const { error } = await supabase.from('profiles').upsert({ 
-          id: user.id, 
-          show_odds: newValue,
-          updated_at: new Date()
-      });
-      
-      // Revert if database fails
-      if (error) {
-          console.error("Failed to save odds preference:", error);
-          setShowOdds(!newValue);
-      }
+      const { error } = await supabase.from('profiles').upsert({ id: user.id, show_odds: newValue, updated_at: new Date() });
+      if (error) setShowOdds(!newValue);
+  };
+
+  const togglePrivacySetting = async (field) => {
+    const newValue = !privacy[field];
+    setPrivacy(prev => ({ ...prev, [field]: newValue })); 
+    
+    const dbField = field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+    
+    const { error } = await supabase.from('profiles').upsert({ 
+        id: user.id, 
+        [dbField]: newValue, 
+        updated_at: new Date() 
+    });
+    
+    if (error) {
+        console.error(`Failed to save ${field}:`, error);
+        setPrivacy(prev => ({ ...prev, [field]: !newValue })); 
+    }
   };
 
   const calculateStats = (picks, fights, missingLeagues) => {
@@ -224,7 +248,6 @@ export default function Profile() {
     setHistory(historyData);
   };
 
-  // 🎯 Map the DB status onto the master list
   const badgesWithStatus = AVAILABLE_BADGES.map(badge => ({
       ...badge,
       earned: userBadges.includes(badge.id)
@@ -241,25 +264,56 @@ export default function Profile() {
   return (
     <main className="min-h-screen bg-black text-white pb-24 font-sans selection:bg-pink-500 selection:text-white">
       
-      {/* HEADER HERO */}
-      <div className="bg-gradient-to-b from-gray-900 to-black border-b border-gray-800 pt-10 pb-12 px-6">
+      {/* 🎯 HEADER HERO WITH CUSTOM BACKGROUND */}
+      <div className="relative border-b border-gray-800 pt-10 pb-12 px-6">
         
-        {/* Top Nav */}
-        <div className="max-w-4xl mx-auto flex justify-between items-center mb-8">
-            <Link href="/" className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition-colors group">
-                <span className="group-hover:-translate-x-1 transition-transform">←</span> Dashboard
-            </Link>
-            <LogOutButton />
+        {/* Background Image Layer */}
+        <div 
+            className="absolute inset-0 bg-gray-900 bg-cover bg-center transition-all duration-500"
+            style={{ backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : 'none' }}
+        >
+            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black"></div>
         </div>
 
-        <div className="max-w-xl mx-auto text-center">
+        {/* 🎯 NEW: PERSISTENT EDIT COVER BUTTON */}
+        <button 
+            onClick={() => bgInputRef.current?.click()}
+            disabled={uploadingBg}
+            className="absolute top-4 right-4 z-20 bg-black/60 hover:bg-black/90 backdrop-blur-sm border border-white/20 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest text-white transition-all flex items-center gap-2 shadow-lg"
+        >
+            <span className="text-sm">📷</span> {uploadingBg ? 'Uploading...' : 'Edit Cover'}
+        </button>
+
+        {/* Hidden Input for Backgrounds */}
+        <input 
+            type="file" 
+            ref={bgInputRef} 
+            onChange={(e) => handleImageUpload(e, 'backgrounds', 'background_url', setUploadingBg, setBackgroundUrl)} 
+            accept="image/*" 
+            className="hidden" 
+            disabled={uploadingBg} 
+        />
+
+        {/* Top Nav (Z-10 keeps it above background) */}
+        <div className="relative z-10 max-w-4xl mx-auto flex justify-between items-center mb-8">
+            <Link href="/" className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-white transition-colors group mt-1">
+                <span className="group-hover:-translate-x-1 transition-transform">←</span> Dashboard
+            </Link>
+            {/* Offset the logout button slightly so it doesn't crowd the Edit Cover button on mobile */}
+            <div className="mr-32 sm:mr-0">
+                <LogOutButton />
+            </div>
+        </div>
+
+        <div className="relative z-10 max-w-xl mx-auto text-center mt-4">
             {/* AVATAR CIRCLE */}
             <div className="relative group mx-auto w-32 h-32 mb-6">
                 <div 
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full h-full rounded-full overflow-hidden border-4 border-gray-900 shadow-2xl bg-gray-950 cursor-pointer group-hover:border-pink-600 transition-colors relative"
+                    className="w-full h-full rounded-full overflow-hidden border-4 border-black shadow-[0_0_30px_rgba(0,0,0,0.8)] bg-gray-950 cursor-pointer group-hover:border-pink-600 transition-colors relative"
                 >
                     {avatarUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
                         <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center text-4xl font-black text-gray-700">
@@ -277,7 +331,7 @@ export default function Profile() {
                 <input 
                     type="file" 
                     ref={fileInputRef}
-                    onChange={handleAvatarUpload}
+                    onChange={(e) => handleImageUpload(e, 'avatars', 'avatar_url', setUploading, setAvatarUrl)}
                     accept="image/*"
                     className="hidden"
                     disabled={uploading}
@@ -298,14 +352,14 @@ export default function Profile() {
                     <button onClick={() => setIsEditing(false)} className="bg-gray-800 w-10 h-10 rounded-lg text-gray-400 font-black hover:text-white hover:bg-gray-700 transition-colors">✕</button>
                 </div>
             ) : (
-                <div className="flex items-center justify-center gap-3 mb-2 group cursor-pointer" onClick={() => setIsEditing(true)}>
+                <div className="flex items-center justify-center gap-3 mb-2 group cursor-pointer drop-shadow-lg" onClick={() => setIsEditing(true)}>
                     <h1 className="text-3xl md:text-4xl font-black italic text-white uppercase tracking-tighter">
                         {username}
                     </h1>
                     <span className="opacity-0 group-hover:opacity-100 text-pink-600 text-sm transition-opacity">✎</span>
                 </div>
             )}
-            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-[0.2em]">{user?.email}</p>
+            <p className="text-gray-400 text-[10px] font-bold uppercase tracking-[0.2em] drop-shadow-md">{user?.email}</p>
         </div>
       </div>
 
@@ -326,6 +380,51 @@ export default function Profile() {
                 value={`${stats.netProfit >= 0 ? '+' : ''}${stats.netProfit}`} 
                 color={stats.netProfit >= 0 ? 'text-green-400' : 'text-pink-500'} 
             />
+        </div>
+
+        {/* 🎯 NEW: VISIBILITY SETTINGS SECTION */}
+        <div className="mb-12 bg-gray-950 border border-gray-900 rounded-xl p-5 md:p-6 shadow-xl relative overflow-hidden">
+            <div className="flex items-center gap-3 mb-6 border-b border-gray-800 pb-4 relative z-10">
+                <span className="text-xl">👁️</span>
+                <div>
+                    <h2 className="text-sm font-black text-white italic uppercase tracking-tighter">Public Visibility</h2>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Control what rivals see on your public page.</p>
+                </div>
+            </div>
+
+            <div className="space-y-3 relative z-10">
+                <ToggleRow 
+                    label="Make Profile Public" 
+                    desc="Allow others to view your profile page." 
+                    state={privacy.isPublic} 
+                    onToggle={() => togglePrivacySetting('isPublic')} 
+                    color="bg-teal-500" 
+                />
+                
+                <div className={`space-y-3 transition-all duration-300 ${privacy.isPublic ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
+                    <ToggleRow 
+                        label="Show Record & Accuracy" 
+                        desc="Display your Win/Loss ratio publicly." 
+                        state={privacy.showRecord} 
+                        onToggle={() => togglePrivacySetting('showRecord')} 
+                    />
+                    <ToggleRow 
+                        label="Show Total Earnings" 
+                        desc="Let people see your net profit points." 
+                        state={privacy.showEarnings} 
+                        onToggle={() => togglePrivacySetting('showEarnings')} 
+                    />
+                    <ToggleRow 
+                        label="Show Pick History" 
+                        desc="WARNING: Sharp players keep this hidden to avoid being sniped." 
+                        state={privacy.showHistory} 
+                        onToggle={() => togglePrivacySetting('showHistory')} 
+                        color="bg-pink-600" 
+                    />
+                </div>
+            </div>
+            {/* Ambient accent glow */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-teal-500/5 blur-[80px] rounded-full pointer-events-none"></div>
         </div>
 
         {/* 🎯 TROPHY ROOM SECTION */}
@@ -371,6 +470,7 @@ export default function Profile() {
                         
                         {/* Custom Image Renderer */}
                         <div className={`w-16 h-16 mb-3 flex items-center justify-center ${badge.earned ? 'opacity-100' : 'opacity-40'}`}>
+                             {/* eslint-disable-next-line @next/next/no-img-element */}
                              <img src={badge.imagePath} alt={badge.title} className="max-w-full max-h-full object-contain drop-shadow-xl" />
                         </div>
 
@@ -454,7 +554,27 @@ export default function Profile() {
   );
 }
 
-// Clean Sub-component
+// 🎯 NEW HELPER: Reusable Toggle Switch Row for Privacy Settings
+function ToggleRow({ label, desc, state, onToggle, color = 'bg-white' }) {
+    return (
+        <div className="flex items-center justify-between p-3 bg-black/40 rounded-lg hover:bg-gray-900 border border-transparent hover:border-gray-800 transition-colors">
+            <div>
+                <h4 className="text-[11px] font-black text-white uppercase tracking-widest">{label}</h4>
+                <p className="text-[9px] text-gray-500 font-bold mt-1">{desc}</p>
+            </div>
+            <button 
+                onClick={onToggle}
+                className={`relative w-10 h-5 rounded-full p-0.5 cursor-pointer transition-colors duration-300 shrink-0 border-2 border-transparent focus:outline-none ${state ? color : 'bg-gray-800'}`}
+            >
+                <div 
+                    className="w-3.5 h-3.5 bg-black rounded-full shadow-md transition-transform duration-300 ease-in-out"
+                    style={{ transform: state ? 'translateX(20px)' : 'translateX(0px)', backgroundColor: state ? 'black' : 'white' }}
+                />
+            </button>
+        </div>
+    );
+}
+
 function StatCard({ label, value, sub, color }) {
     return (
         <div className="bg-gray-950 border border-gray-900 rounded-xl p-5 text-center shadow-lg relative overflow-hidden group hover:border-gray-700 transition-colors">
