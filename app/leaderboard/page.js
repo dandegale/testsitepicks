@@ -46,7 +46,7 @@ export default function LeaderboardPage() {
     const { data: picks } = await supabase.from('picks').select('*');
     const { data: fights } = await supabase.from('fights').select('*');
     
-    // --- UPDATED: Fetch avatar_url ---
+    // Fetch avatar_url
     const { data: profiles } = await supabase
         .from('profiles')
         .select('email, username, avatar_url');
@@ -58,7 +58,6 @@ export default function LeaderboardPage() {
     setLoading(false);
   };
 
-  // --- THE MATH ENGINE (Fixed: +10 Stake & 1 Decimal) ---
   const calculatePoints = (odds) => {
     const numericOdds = parseInt(odds, 10);
     if (isNaN(numericOdds) || numericOdds === 0) return 20;
@@ -88,12 +87,11 @@ export default function LeaderboardPage() {
                 const userProfile = profiles.find(p => p.email === userId);
                 const displayName = userProfile?.username || pick.username || userId.split('@')[0];
                 
-                // --- NEW: Get Avatar URL ---
                 const avatarUrl = userProfile?.avatar_url || null;
 
                 scores[userId] = { 
                     name: displayName, 
-                    avatarUrl: avatarUrl, // Store it
+                    avatarUrl: avatarUrl,
                     score: 0, 
                     wins: 0,
                     fullEmail: userId 
@@ -249,23 +247,28 @@ export default function LeaderboardPage() {
                                         </span>
                                     </td>
                                     <td className="p-4 md:p-6">
+                                        {/* 🎯 WRAPPED AVATAR AND USERNAME IN LINK TO PUBLIC PROFILE */}
                                         <div className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-3">
-                                            {/* --- UPDATED: AVATAR LOGIC --- */}
-                                            {player.avatarUrl ? (
-                                                <img 
-                                                    src={player.avatarUrl} 
-                                                    alt={player.name} 
-                                                    className="w-8 h-8 rounded-full object-cover border border-gray-700"
-                                                />
-                                            ) : (
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500'}`}>
-                                                    {player.name ? player.name.substring(0, 2).toUpperCase() : '?'}
-                                                </div>
-                                            )}
+                                            <Link href={`/u/${encodeURIComponent(player.name)}`} className="flex-shrink-0 hover:opacity-80 transition-opacity">
+                                                {player.avatarUrl ? (
+                                                    <img 
+                                                        src={player.avatarUrl} 
+                                                        alt={player.name} 
+                                                        className="w-8 h-8 rounded-full object-cover border border-gray-700"
+                                                    />
+                                                ) : (
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500'}`}>
+                                                        {player.name ? player.name.substring(0, 2).toUpperCase() : '?'}
+                                                    </div>
+                                                )}
+                                            </Link>
                                             
-                                            {player.name}
+                                            <Link href={`/u/${encodeURIComponent(player.name)}`} className="hover:text-pink-400 transition-colors">
+                                                {player.name}
+                                            </Link>
+
                                             {player.fullEmail === user?.email && (
-                                                <span className="bg-pink-600 text-[8px] px-1.5 py-0.5 rounded text-white ml-2">YOU</span>
+                                                <span className="bg-pink-600 text-[8px] px-1.5 py-0.5 rounded text-white ml-2 cursor-default">YOU</span>
                                             )}
                                         </div>
                                     </td>
