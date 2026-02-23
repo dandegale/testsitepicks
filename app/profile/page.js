@@ -11,40 +11,40 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// --- FULL MASTER BADGE DATA ---
+// --- FULL MASTER BADGE DATA WITH IMAGES ---
 const AVAILABLE_BADGES = [
   // 🥊 Method of Victory
-  { id: 'b1', title: 'BMF', icon: '🏆', description: '5+ chosen fighters win by knockout on a single card.', earned: false, color: 'text-yellow-500', glow: 'shadow-[0_0_15px_rgba(234,179,8,0.4)]' },
-  { id: 'b2', title: 'The Sub Artist', icon: '🥋', description: '5+ chosen fighters win by submission on a single card.', earned: false, color: 'text-white', glow: 'shadow-[0_0_15px_rgba(255,255,255,0.4)]' },
-  { id: 'b3', title: 'Flashbang', icon: '🔥', description: 'Correctly picked a fighter who won by round 1 knockout.', earned: false, color: 'text-orange-500', glow: 'shadow-[0_0_15px_rgba(249,115,22,0.4)]' },
-  { id: 'b4', title: 'Decision Merchant', icon: '📋', description: 'All winners chosen won by decision.', earned: false, color: 'text-gray-300', glow: 'shadow-[0_0_15px_rgba(209,213,219,0.4)]' },
+  { id: 'b1', title: 'BMF', imagePath: '/badges/bmf.png', description: '5+ chosen fighters win by knockout on a single card.', earned: false, glow: 'shadow-[0_0_15px_rgba(234,179,8,0.4)]' },
+  { id: 'b2', title: 'The Sub Artist', imagePath: '/badges/sub-artist.png', description: '5+ chosen fighters win by submission on a single card.', earned: false, glow: 'shadow-[0_0_15px_rgba(255,255,255,0.4)]' },
+  { id: 'b3', title: 'Flashbang', imagePath: '/badges/flashbang.png', description: 'Correctly picked a fighter who won by round 1 knockout.', earned: false, glow: 'shadow-[0_0_15px_rgba(249,115,22,0.4)]' },
+  { id: 'b4', title: 'Decision Merchant', imagePath: '/badges/decision.png', description: 'All winners chosen won by decision.', earned: false, glow: 'shadow-[0_0_15px_rgba(209,213,219,0.4)]' },
 
   // 🎯 Accuracy & Prediction
-  { id: 'b5', title: 'The Boss', icon: '🛢️', description: 'Predicted every single winner on a fight card.', earned: false, color: 'text-green-500', glow: 'shadow-[0_0_15px_rgba(34,197,94,0.4)]' },
-  { id: 'b6', title: 'Undercard Assassin', icon: '🥷', description: 'Predicted all winners of the prelims.', earned: false, color: 'text-red-500', glow: 'shadow-[0_0_15px_rgba(239,68,68,0.4)]' },
-  { id: 'b7', title: 'Main Event Mafia', icon: '🎩', description: 'Correctly predicted the Main Event winner 5 events in a row.', earned: false, color: 'text-purple-400', glow: 'shadow-[0_0_15px_rgba(192,132,252,0.4)]' },
-  { id: 'b8', title: 'Flawless Victory', icon: '☠️', description: 'Won a 1v1 Showdown where your opponent scored zero points.', earned: false, color: 'text-red-600', glow: 'shadow-[0_0_15px_rgba(220,38,38,0.6)]' },
+  { id: 'b5', title: 'The Boss', imagePath: '/badges/boss.png', description: 'Predicted every single winner on a fight card.', earned: false, glow: 'shadow-[0_0_15px_rgba(34,197,94,0.4)]' },
+  { id: 'b6', title: 'Undercard Assassin', imagePath: '/badges/assassin.png', description: 'Predicted all winners of the prelims.', earned: false, glow: 'shadow-[0_0_15px_rgba(239,68,68,0.4)]' },
+  { id: 'b7', title: 'Main Event Mafia', imagePath: '/badges/mafia.png', description: 'Correctly predicted the Main Event winner 5 events in a row.', earned: false, glow: 'shadow-[0_0_15px_rgba(192,132,252,0.4)]' },
+  { id: 'b8', title: 'Flawless Victory', imagePath: '/badges/fatality.png', description: 'Won a 1v1 Showdown where your opponent scored zero points.', earned: false, glow: 'shadow-[0_0_15px_rgba(220,38,38,0.6)]' },
 
   // 🔥 Pick Streaks
-  { id: 'b9', title: 'On Fire (3)', icon: '💨', description: 'Awarded for 3 correct picks in a row.', earned: false, color: 'text-green-400', glow: 'shadow-[0_0_15px_rgba(74,222,128,0.4)]' },
-  { id: 'b10', title: 'Heating Up (5)', icon: '⚡', description: 'Awarded for 5 correct picks in a row.', earned: false, color: 'text-blue-400', glow: 'shadow-[0_0_15px_rgba(96,165,250,0.4)]' },
-  { id: 'b11', title: 'Unstoppable (10)', icon: '✨', description: 'Awarded for 10 correct picks in a row.', earned: false, color: 'text-pink-500', glow: 'shadow-[0_0_15px_rgba(236,72,153,0.4)]' },
-  { id: 'b12', title: 'God Tier (25)', icon: '☄️', description: 'Awarded for 25 correct picks in a row.', earned: false, color: 'text-red-500', glow: 'shadow-[0_0_15px_rgba(239,68,68,0.6)]' },
+  { id: 'b9', title: 'On Fire (3)', imagePath: '/badges/streak-3.png', description: 'Awarded for 3 correct picks in a row.', earned: false, glow: 'shadow-[0_0_15px_rgba(74,222,128,0.4)]' },
+  { id: 'b10', title: 'Heating Up (5)', imagePath: '/badges/streak-5.png', description: 'Awarded for 5 correct picks in a row.', earned: false, glow: 'shadow-[0_0_15px_rgba(96,165,250,0.4)]' },
+  { id: 'b11', title: 'Unstoppable (10)', imagePath: '/badges/streak-10.png', description: 'Awarded for 10 correct picks in a row.', earned: false, glow: 'shadow-[0_0_15px_rgba(236,72,153,0.4)]' },
+  { id: 'b12', title: 'God Tier (25)', imagePath: '/badges/streak-25.png', description: 'Awarded for 25 correct picks in a row.', earned: false, glow: 'shadow-[0_0_15px_rgba(239,68,68,0.6)]' },
 
   // 🎲 Risk & Odds
-  { id: 'b13', title: 'Whale Hunter', icon: '🔱', description: 'Winning pick on the biggest betting underdog of a fight card.', earned: false, color: 'text-yellow-400', glow: 'shadow-[0_0_15px_rgba(250,204,21,0.4)]' },
-  { id: 'b14', title: 'The Underdog', icon: '🐕', description: 'Correctly picking every underdog who won on a fight card.', earned: false, color: 'text-amber-600', glow: 'shadow-[0_0_15px_rgba(217,119,6,0.4)]' },
-  { id: 'b15', title: 'Chalk Eater', icon: '🍼', description: 'Your last 10 correct picks were all heavy favorites.', earned: false, color: 'text-blue-200', glow: 'shadow-[0_0_15px_rgba(191,219,254,0.4)]' },
-  { id: 'b16', title: 'Hail Mary', icon: '🙏', description: 'Won your League week via a massive underdog in the Main Event.', earned: false, color: 'text-teal-400', glow: 'shadow-[0_0_15px_rgba(45,212,191,0.4)]' },
+  { id: 'b13', title: 'Whale Hunter', imagePath: '/badges/whale.png', description: 'Winning pick on the biggest betting underdog of a fight card.', earned: false, glow: 'shadow-[0_0_15px_rgba(250,204,21,0.4)]' },
+  { id: 'b14', title: 'The Underdog', imagePath: '/badges/underdog.png', description: 'Correctly picking every underdog who won on a fight card.', earned: false, glow: 'shadow-[0_0_15px_rgba(217,119,6,0.4)]' },
+  { id: 'b15', title: 'Chalk Eater', imagePath: '/badges/chalk.png', description: 'Your last 10 correct picks were all heavy favorites.', earned: false, glow: 'shadow-[0_0_15px_rgba(191,219,254,0.4)]' },
+  { id: 'b16', title: 'Hail Mary', imagePath: '/badges/hail-mary.png', description: 'Won your League week via a massive underdog in the Main Event.', earned: false, glow: 'shadow-[0_0_15px_rgba(45,212,191,0.4)]' },
 
   // 🏔️ Hall of Shame
-  { id: 'b17', title: '2-3 Years Needed', icon: '⛰️', description: 'Most fighters lost by submission in a league event.', earned: false, color: 'text-slate-400', glow: 'shadow-[0_0_15px_rgba(148,163,184,0.4)]' },
+  { id: 'b17', title: '2-3 Years Needed', imagePath: '/badges/mountain.png', description: 'Most fighters lost by submission in a league event.', earned: false, glow: 'shadow-[0_0_15px_rgba(148,163,184,0.4)]' },
 
   // ⏳ Grinder / Status
-  { id: 'b18', title: 'Event Master', icon: '🗓️', description: 'Participated in every fight card for a full month.', earned: false, color: 'text-indigo-400', glow: 'shadow-[0_0_15px_rgba(129,140,248,0.4)]' },
-  { id: 'b19', title: 'Buzzer Beater', icon: '⏳', description: 'Locked in your roster less than 15 minutes before prelims.', earned: false, color: 'text-rose-400', glow: 'shadow-[0_0_15px_rgba(251,113,133,0.4)]' },
-  { id: 'b20', title: 'Showdown King', icon: '⚔️', description: 'Won 5 consecutive 1v1 Showdowns.', earned: false, color: 'text-cyan-400', glow: 'shadow-[0_0_15px_rgba(34,211,238,0.4)]' },
-  { id: 'b21', title: 'And New...', icon: '🥇', description: 'Finished 1st place in your League for a specific event.', earned: false, color: 'text-yellow-300', glow: 'shadow-[0_0_15px_rgba(253,224,71,0.5)]' }
+  { id: 'b18', title: 'Event Master', imagePath: '/badges/calendar.png', description: 'Participated in every fight card for a full month.', earned: false, glow: 'shadow-[0_0_15px_rgba(129,140,248,0.4)]' },
+  { id: 'b19', title: 'Buzzer Beater', imagePath: '/badges/buzzer.png', description: 'Locked in your roster less than 15 minutes before prelims.', earned: false, glow: 'shadow-[0_0_15px_rgba(251,113,133,0.4)]' },
+  { id: 'b20', title: 'Showdown King', imagePath: '/badges/swords.png', description: 'Won 5 consecutive 1v1 Showdowns.', earned: false, glow: 'shadow-[0_0_15px_rgba(34,211,238,0.4)]' },
+  { id: 'b21', title: 'And New...', imagePath: '/badges/belt.png', description: 'Finished 1st place in your League for a specific event.', earned: false, glow: 'shadow-[0_0_15px_rgba(253,224,71,0.5)]' }
 ];
 
 export default function Profile() {
@@ -63,7 +63,11 @@ export default function Profile() {
 
   // --- PREFERENCES & STATS ---
   const [showOdds, setShowOdds] = useState(false); 
-  const [showLockedBadges, setShowLockedBadges] = useState(false); // 🎯 NEW: Locked Badge Toggle State
+  const [showLockedBadges, setShowLockedBadges] = useState(false);
+  
+  // 🎯 NEW: State for user's actual earned badges
+  const [userBadges, setUserBadges] = useState([]);
+
   const [stats, setStats] = useState({ totalBets: 0, wins: 0, losses: 0, pending: 0, netProfit: 0 });
   const [history, setHistory] = useState([]);
   const router = useRouter();
@@ -86,6 +90,12 @@ export default function Profile() {
     setNewUsername(finalName); 
     setAvatarUrl(profile?.avatar_url || null);
     if (profile) setShowOdds(profile.show_odds === true);
+
+    // 🎯 NEW: Fetch earned badges from the database
+    const { data: badgesData } = await supabase.from('user_badges').select('badge_id').eq('user_id', user.email);
+    if (badgesData) {
+        setUserBadges(badgesData.map(b => b.badge_id));
+    }
 
     // Get Picks & Stats
     const { data: picks, error } = await supabase
@@ -214,8 +224,13 @@ export default function Profile() {
     setHistory(historyData);
   };
 
-  // Determine which badges to show based on the toggle
-  const visibleBadges = AVAILABLE_BADGES.filter(badge => showLockedBadges || badge.earned);
+  // 🎯 Map the DB status onto the master list
+  const badgesWithStatus = AVAILABLE_BADGES.map(badge => ({
+      ...badge,
+      earned: userBadges.includes(badge.id)
+  }));
+
+  const visibleBadges = badgesWithStatus.filter(badge => showLockedBadges || badge.earned);
 
   if (loading) return (
     <div className="min-h-screen bg-black flex items-center justify-center">
@@ -321,7 +336,6 @@ export default function Profile() {
                     <h2 className="text-sm font-black text-white italic uppercase tracking-tighter">Trophy Room</h2>
                 </div>
                 
-                {/* 🎯 THE MINI TOGGLE FOR LOCKED BADGES */}
                 <button 
                     onClick={() => setShowLockedBadges(!showLockedBadges)}
                     className="flex items-center gap-2 group focus:outline-none"
@@ -345,7 +359,7 @@ export default function Profile() {
                         className={`relative rounded-xl p-4 flex flex-col items-center justify-center text-center transition-all duration-300 border animate-in fade-in zoom-in-95
                             ${badge.earned 
                                 ? `bg-gray-900 border-gray-700 hover:border-gray-500 ${badge.glow}` 
-                                : 'bg-gray-950/50 border-gray-900 opacity-60 grayscale'
+                                : 'bg-gray-950/50 border-gray-900 opacity-50 grayscale hover:grayscale-0'
                             }
                         `}
                     >
@@ -354,9 +368,12 @@ export default function Profile() {
                                 🔒
                             </div>
                         )}
-                        <span className={`text-4xl mb-3 drop-shadow-lg ${badge.earned ? badge.color : 'opacity-50'}`}>
-                            {badge.icon}
-                        </span>
+                        
+                        {/* Custom Image Renderer */}
+                        <div className={`w-16 h-16 mb-3 flex items-center justify-center ${badge.earned ? 'opacity-100' : 'opacity-40'}`}>
+                             <img src={badge.imagePath} alt={badge.title} className="max-w-full max-h-full object-contain drop-shadow-xl" />
+                        </div>
+
                         <h3 className={`text-[10px] font-black uppercase tracking-widest mb-1 ${badge.earned ? 'text-white' : 'text-gray-500'}`}>
                             {badge.title}
                         </h3>
@@ -366,7 +383,6 @@ export default function Profile() {
                     </div>
                 ))}
 
-                {/* 🎯 FALLBACK IF THEY HAVE 0 BADGES AND TOGGLE IS OFF */}
                 {visibleBadges.length === 0 && (
                     <div className="col-span-full p-8 border border-gray-800 border-dashed rounded-xl text-center">
                         <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">
