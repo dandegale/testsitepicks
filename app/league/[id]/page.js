@@ -136,7 +136,6 @@ export default function LeaguePage() {
       return allLeaguePicks.filter(p => currentEventFightIds.includes(String(p.fight_id)));
   }, [allLeaguePicks, currentEventFights]);
 
-  // 🎯 CRITICAL ISOLATION FIX: We must filter by leagueId
   const existingPicks = useMemo(() => {
       if (!user) return [];
       return activeLeaguePicks.filter(p => 
@@ -240,7 +239,6 @@ export default function LeaguePage() {
 
       const scores = members.map(member => {
           let totalScore = 0;
-          // 🎯 MUST FILTER BOX SCORE BY LEAGUE ID TOO
           const memberPicks = activeLeaguePicks.filter(p => p.user_id === member.user_id && String(p.league_id) === String(leagueId));
 
           memberPicks.forEach(pick => {
@@ -312,7 +310,6 @@ export default function LeaguePage() {
         const { data: statsData } = await supabase.from('fighter_stats').select('*');
         setFighterStats(statsData || []);
 
-        // 🎯 WE ARE PULLING ALL PICKS GLOBALLY HERE. THAT IS WHY WE NEED THE FILTERS ABOVE!
         const { data: leaguePicksData } = await supabase.from('picks').select('*');
         setAllLeaguePicks(leaguePicksData || []);
 
@@ -468,14 +465,18 @@ export default function LeaguePage() {
 
   const renderTeamBoxScore = (email, playerName = null, totalScore = 0, showHeader = false) => {
       if (!email) return null; 
-      // 🎯 MUST FILTER BOX SCORE BY LEAGUE ID
       const teamPicks = activeLeaguePicks.filter(p => p.user_id === email && String(p.league_id) === String(leagueId));
       
       return (
           <div className={`bg-black overflow-hidden w-full transition-all ${showHeader ? 'border border-gray-800 rounded-xl' : 'border-t border-gray-800'}`}>
               {showHeader && (
                   <div className="bg-gray-900 p-3 border-b border-gray-800 flex justify-between items-center">
-                      <span className="text-xs font-black uppercase tracking-widest text-white">{playerName}'s Roster</span>
+                      <span className="text-xs font-black uppercase tracking-widest text-white">
+                          {/* 🎯 ADDED: Profile Link in Box Score Header */}
+                          <Link href={`/u/${encodeURIComponent(playerName)}`} className="hover:text-pink-400 transition-colors">
+                              {playerName}'s Roster
+                          </Link>
+                      </span>
                       <span className="text-pink-500 font-black text-xs">{totalScore} PTS</span>
                   </div>
               )}
@@ -979,18 +980,30 @@ export default function LeaguePage() {
                                                         <div className="col-span-2 text-center font-black text-lg italic text-gray-600">
                                                             #{index + 1}
                                                         </div>
+                                                        
+                                                        {/* 🎯 WRAPPED LEADERBOARD USERNAME/AVATAR IN LINK */}
                                                         <div className="col-span-4 flex items-center gap-3 overflow-hidden">
-                                                            {player.avatarUrl ? (
-                                                                <img src={player.avatarUrl} alt={player.displayName} className="w-8 h-8 rounded-full object-cover border border-gray-700 shrink-0" />
-                                                            ) : (
-                                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-300 shrink-0">
-                                                                    {player.displayName.charAt(0).toUpperCase()}
-                                                                </div>
-                                                            )}
+                                                            <Link 
+                                                                href={`/u/${encodeURIComponent(player.displayName)}`} 
+                                                                onClick={(e) => e.stopPropagation()} 
+                                                                className="flex-shrink-0 hover:opacity-80 transition-opacity"
+                                                            >
+                                                                {player.avatarUrl ? (
+                                                                    <img src={player.avatarUrl} alt={player.displayName} className="w-8 h-8 rounded-full object-cover border border-gray-700 shrink-0" />
+                                                                ) : (
+                                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-300 shrink-0">
+                                                                        {player.displayName.charAt(0).toUpperCase()}
+                                                                    </div>
+                                                                )}
+                                                            </Link>
                                                             <div className="min-w-0">
-                                                                <div className={`font-bold text-sm truncate ${user?.email === player.user_id ? 'text-pink-500' : 'text-white'}`}>
+                                                                <Link 
+                                                                    href={`/u/${encodeURIComponent(player.displayName)}`} 
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    className={`font-bold text-sm block truncate hover:text-pink-400 transition-colors ${user?.email === player.user_id ? 'text-pink-500' : 'text-white'}`}
+                                                                >
                                                                     {player.displayName}
-                                                                </div>
+                                                                </Link>
                                                                 {isEventConcluded && index === 0 && (
                                                                     <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest flex items-center gap-1.5 mt-1">
                                                                         <img src="/trophy.png" className="w-5 h-5 object-contain" alt="winner" />
@@ -1049,18 +1062,24 @@ export default function LeaguePage() {
                             <div className="space-y-4">
                                 {feedItems.map(item => (
                                     <div key={item.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between hover:border-gray-700 transition-colors">
+                                        
+                                        {/* 🎯 WRAPPED ACTIVITY FEED USERNAME/AVATAR IN LINK */}
                                         <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
-                                            {item.avatar ? (
-                                                <img src={item.avatar} alt={item.user} className="w-10 h-10 rounded-full object-cover border border-gray-700 shrink-0" />
-                                            ) : (
-                                                <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center font-black text-gray-500 border border-gray-700 shrink-0">
-                                                    {item.user.charAt(0).toUpperCase()}
-                                                </div>
-                                            )}
+                                            <Link href={`/u/${encodeURIComponent(item.user)}`} className="flex-shrink-0 hover:opacity-80 transition-opacity">
+                                                {item.avatar ? (
+                                                    <img src={item.avatar} alt={item.user} className="w-10 h-10 rounded-full object-cover border border-gray-700 shrink-0" />
+                                                ) : (
+                                                    <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center font-black text-gray-500 border border-gray-700 shrink-0">
+                                                        {item.user.charAt(0).toUpperCase()}
+                                                    </div>
+                                                )}
+                                            </Link>
                                             
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="font-bold text-white text-sm truncate">{item.user}</span>
+                                                    <Link href={`/u/${encodeURIComponent(item.user)}`} className="font-bold text-white hover:text-pink-400 transition-colors text-sm truncate">
+                                                        {item.user}
+                                                    </Link>
                                                     <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest hidden sm:inline">drafted</span>
                                                 </div>
                                                 <div className="text-base md:text-lg font-black italic text-pink-500 uppercase leading-none mt-1 truncate">
@@ -1208,16 +1227,22 @@ export default function LeaguePage() {
                                 <div className="divide-y divide-gray-800">
                                     {members.map((member) => (
                                         <div key={member.user_id} className="p-4 flex items-center justify-between hover:bg-gray-800/30 transition-colors">
+                                            
+                                            {/* 🎯 WRAPPED SETTINGS ROSTER USERNAME/AVATAR IN LINK */}
                                             <div className="flex items-center gap-4">
-                                                {member.avatarUrl ? (
-                                                    <img src={member.avatarUrl} alt={member.displayName} className="w-10 h-10 rounded-full object-cover border border-gray-700" />
-                                                ) : (
-                                                    <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-xs font-black text-gray-400 border border-gray-700">
-                                                        {member.displayName ? member.displayName.charAt(0).toUpperCase() : '?'}
-                                                    </div>
-                                                )}
+                                                <Link href={`/u/${encodeURIComponent(member.displayName)}`} className="flex-shrink-0 hover:opacity-80 transition-opacity">
+                                                    {member.avatarUrl ? (
+                                                        <img src={member.avatarUrl} alt={member.displayName} className="w-10 h-10 rounded-full object-cover border border-gray-700" />
+                                                    ) : (
+                                                        <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-xs font-black text-gray-400 border border-gray-700">
+                                                            {member.displayName ? member.displayName.charAt(0).toUpperCase() : '?'}
+                                                        </div>
+                                                    )}
+                                                </Link>
                                                 <div>
-                                                    <p className="text-sm font-bold text-white">{member.displayName}</p>
+                                                    <Link href={`/u/${encodeURIComponent(member.displayName)}`} className="text-sm font-bold text-white hover:text-pink-400 transition-colors">
+                                                        {member.displayName}
+                                                    </Link>
                                                     <p className="text-[10px] text-gray-500 uppercase font-mono">
                                                         Joined: {new Date(member.joined_at).toLocaleDateString()}
                                                     </p>
