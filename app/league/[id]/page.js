@@ -136,10 +136,14 @@ export default function LeaguePage() {
       return allLeaguePicks.filter(p => currentEventFightIds.includes(String(p.fight_id)));
   }, [allLeaguePicks, currentEventFights]);
 
+  // 🎯 CRITICAL ISOLATION FIX: We must filter by leagueId
   const existingPicks = useMemo(() => {
       if (!user) return [];
-      return activeLeaguePicks.filter(p => p.user_id === user.email);
-  }, [activeLeaguePicks, user]);
+      return activeLeaguePicks.filter(p => 
+          p.user_id === user.email && 
+          String(p.league_id) === String(leagueId)
+      );
+  }, [activeLeaguePicks, user, leagueId]);
 
   const hasLockedRoster = existingPicks.length >= 5;
 
@@ -236,7 +240,8 @@ export default function LeaguePage() {
 
       const scores = members.map(member => {
           let totalScore = 0;
-          const memberPicks = activeLeaguePicks.filter(p => p.user_id === member.user_id);
+          // 🎯 MUST FILTER BOX SCORE BY LEAGUE ID TOO
+          const memberPicks = activeLeaguePicks.filter(p => p.user_id === member.user_id && String(p.league_id) === String(leagueId));
 
           memberPicks.forEach(pick => {
               const stats = fighterStats.find(s => String(s.fight_id) === String(pick.fight_id) && isFighterMatch(pick.selected_fighter, s.fighter_name));
@@ -254,7 +259,7 @@ export default function LeaguePage() {
       });
 
       return scores.sort((a, b) => b.totalScore - a.totalScore || b.cardsWon - a.cardsWon);
-  }, [members, activeLeaguePicks, allLeaguePicks, fighterStats, allFights]);
+  }, [members, activeLeaguePicks, allLeaguePicks, fighterStats, allFights, leagueId]);
 
   const fetchLeagueData = async () => {
     try {
@@ -307,7 +312,8 @@ export default function LeaguePage() {
         const { data: statsData } = await supabase.from('fighter_stats').select('*');
         setFighterStats(statsData || []);
 
-        const { data: leaguePicksData } = await supabase.from('picks').select('*').eq('league_id', leagueId);
+        // 🎯 WE ARE PULLING ALL PICKS GLOBALLY HERE. THAT IS WHY WE NEED THE FILTERS ABOVE!
+        const { data: leaguePicksData } = await supabase.from('picks').select('*');
         setAllLeaguePicks(leaguePicksData || []);
 
     } catch (error) { console.error("League Load Error:", error); } finally { setLoading(false); }
@@ -462,7 +468,8 @@ export default function LeaguePage() {
 
   const renderTeamBoxScore = (email, playerName = null, totalScore = 0, showHeader = false) => {
       if (!email) return null; 
-      const teamPicks = activeLeaguePicks.filter(p => p.user_id === email);
+      // 🎯 MUST FILTER BOX SCORE BY LEAGUE ID
+      const teamPicks = activeLeaguePicks.filter(p => p.user_id === email && String(p.league_id) === String(leagueId));
       
       return (
           <div className={`bg-black overflow-hidden w-full transition-all ${showHeader ? 'border border-gray-800 rounded-xl' : 'border-t border-gray-800'}`}>
