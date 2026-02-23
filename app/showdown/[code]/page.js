@@ -300,7 +300,12 @@ export default function ShowdownPage() {
       return (
           <div className="bg-black border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
               <div className="bg-gray-900 p-3 border-b border-gray-800 flex justify-between items-center">
-                  <span className="text-xs font-black uppercase tracking-widest text-white">{playerName}'s Roster</span>
+                  {/* 🎯 LINK ADDED TO BOX SCORE HEADER */}
+                  <span className="text-xs font-black uppercase tracking-widest text-white">
+                      <Link href={`/u/${encodeURIComponent(playerName)}`} className="hover:text-pink-400 transition-colors">
+                          {playerName}'s Roster
+                      </Link>
+                  </span>
                   <span className="text-pink-500 font-black text-xs">{totalScore} PTS</span>
               </div>
               <div className="w-full">
@@ -535,11 +540,12 @@ export default function ShowdownPage() {
             <div className="absolute inset-0 flex flex-col justify-center p-4 md:p-6 z-20">
                 <div className="max-w-7xl mx-auto w-full flex flex-row items-center justify-center gap-4 md:gap-16">
                     
-                    <div className="text-center group flex flex-col items-center w-28 md:w-48 relative">
+                    {/* 🎯 LINK ADDED TO CREATOR BANNER NAME */}
+                    <Link href={`/u/${encodeURIComponent(creatorName)}`} className="text-center group flex flex-col items-center w-28 md:w-48 relative hover:opacity-80 transition-opacity">
                       {showdownWinner === 'creator' && <div className="absolute -top-8 text-3xl animate-bounce">👑</div>}
-                      <img src="/pink-gloves.png" className={`w-16 md:w-32 transition-transform duration-500 ${showdownWinner === 'creator' ? 'scale-110 drop-shadow-[0_0_40px_rgba(219,39,119,0.8)]' : 'drop-shadow-[0_0_30px_rgba(219,39,119,0.4)]'}`} />
-                      <p className={`font-black uppercase text-[10px] md:text-xs mt-3 tracking-widest w-full truncate ${showdownWinner === 'creator' ? 'text-white' : 'text-pink-500'}`}>{creatorName}</p>
-                    </div>
+                      <img src="/pink-gloves.png" className={`w-16 md:w-32 transition-transform duration-500 ${showdownWinner === 'creator' ? 'scale-110 drop-shadow-[0_0_40px_rgba(219,39,119,0.8)]' : 'drop-shadow-[0_0_30px_rgba(219,39,119,0.4)] group-hover:drop-shadow-[0_0_40px_rgba(219,39,119,0.6)]'}`} />
+                      <p className={`font-black uppercase text-[10px] md:text-xs mt-3 tracking-widest w-full truncate ${showdownWinner === 'creator' ? 'text-white' : 'text-pink-500 group-hover:text-pink-400'}`}>{creatorName}</p>
+                    </Link>
 
                     <div className="flex flex-col items-center shrink-0">
                         <div className="flex items-center gap-2 md:gap-6 text-3xl md:text-5xl font-black italic tracking-tighter mb-1">
@@ -550,11 +556,20 @@ export default function ShowdownPage() {
                         <div className="text-[10px] font-black text-gray-600 uppercase tracking-widest italic mt-1">Fantasy Points</div>
                     </div>
 
-                    <div className="text-center group flex flex-col items-center w-28 md:w-48 relative">
-                      {showdownWinner === 'opponent' && <div className="absolute -top-8 text-3xl animate-bounce">👑</div>}
-                      <img src="/teal-gloves.png" className={`w-16 md:w-32 transition-transform duration-500 ${showdownWinner === 'opponent' ? 'scale-110 drop-shadow-[0_0_40px_rgba(20,184,166,0.8)]' : 'drop-shadow-[0_0_30px_rgba(20,184,166,0.4)]'}`} />
-                      <p className={`font-black uppercase text-[10px] md:text-xs mt-3 tracking-widest w-full truncate ${showdownWinner === 'opponent' ? 'text-white' : 'text-teal-400'}`}>{opponentName || 'WAITING...'}</p>
-                    </div>
+                    {/* 🎯 LINK ADDED TO OPPONENT BANNER NAME (IF EXISTS) */}
+                    {opponentName ? (
+                        <Link href={`/u/${encodeURIComponent(opponentName)}`} className="text-center group flex flex-col items-center w-28 md:w-48 relative hover:opacity-80 transition-opacity">
+                            {showdownWinner === 'opponent' && <div className="absolute -top-8 text-3xl animate-bounce">👑</div>}
+                            <img src="/teal-gloves.png" className={`w-16 md:w-32 transition-transform duration-500 ${showdownWinner === 'opponent' ? 'scale-110 drop-shadow-[0_0_40px_rgba(20,184,166,0.8)]' : 'drop-shadow-[0_0_30px_rgba(20,184,166,0.4)] group-hover:drop-shadow-[0_0_40px_rgba(20,184,166,0.6)]'}`} />
+                            <p className={`font-black uppercase text-[10px] md:text-xs mt-3 tracking-widest w-full truncate ${showdownWinner === 'opponent' ? 'text-white' : 'text-teal-400 group-hover:text-teal-300'}`}>{opponentName}</p>
+                        </Link>
+                    ) : (
+                        <div className="text-center group flex flex-col items-center w-28 md:w-48 relative">
+                          {showdownWinner === 'opponent' && <div className="absolute -top-8 text-3xl animate-bounce">👑</div>}
+                          <img src="/teal-gloves.png" className={`w-16 md:w-32 transition-transform duration-500 ${showdownWinner === 'opponent' ? 'scale-110 drop-shadow-[0_0_40px_rgba(20,184,166,0.8)]' : 'drop-shadow-[0_0_30px_rgba(20,184,166,0.4)]'}`} />
+                          <p className={`font-black uppercase text-[10px] md:text-xs mt-3 tracking-widest w-full truncate ${showdownWinner === 'opponent' ? 'text-white' : 'text-teal-400'}`}>WAITING...</p>
+                        </div>
+                    )}
 
                 </div>
             </div>
