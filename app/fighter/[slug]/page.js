@@ -1,35 +1,14 @@
 'use client';
 
-import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabase = (supabaseUrl && supabaseKey) 
-  ? createClient(supabaseUrl, supabaseKey)
-  : null;
 
 export default function FighterProfilePage() {
   const params = useParams();
   const slug = params?.slug;
 
-  const [fighterBio, setFighterBio] = useState({
-    image: null,
-    height: '—',
-    weight: '—',
-    age: '—',
-    reach: '—',
-    stance: '—',
-    record: '—',
-    ranking: '', 
-    country: '—',
-    nickname: '',
-    history: [],
-    winStats: { ko: 0, koPct: 0, sub: 0, subPct: 0, dec: 0, decPct: 0, totalWins: 0 }
-  });
-  
+  const [fighterBio, setFighterBio] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const formatName = (s) => {
@@ -39,220 +18,18 @@ export default function FighterProfilePage() {
 
   const displayName = slug ? formatName(slug) : "Loading...";
 
-  // ------------------------------------------------------------------
-  // FIX: Using Codetabs Proxy. It is highly reliable for raw HTML.
-  // ------------------------------------------------------------------
-  const smartFetch = async (url) => {
-      try {
-          const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`);
-          if (res.ok) {
-              return await res.text();
-          }
-      } catch (e) { 
-          console.error(`Fetch Failed for ${url}`, e); 
-      }
-      return null;
-  };
-
   useEffect(() => {
     if (!slug) return;
 
     async function fetchData() {
-      const searchName = slug.replace(/-/g, ' '); 
-      const nameParts = searchName.split(' ');
-      const lastName = nameParts[nameParts.length - 1];
-      const firstName = nameParts[0];
-
-      let tempBio = { ...fighterBio };
-      let nextFight = null;
-
       try {
-          // 1. FETCH IMAGE (TheSportsDB)
-          try {
-            const tsdbRes = await fetch(`https://www.thesportsdb.com/api/v1/json/3/searchplayers.php?p=${encodeURIComponent(searchName)}`);
-            const tsdbData = await tsdbRes.json();
-            
-            if (tsdbData.player && tsdbData.player.length > 0) {
-               const bestMatch = tsdbData.player.find(p => 
-                  p.strSport === 'MMA' || 
-                  (p.strDescriptionEN && p.strDescriptionEN.includes('UFC')) || 
-                  p.strTeam === 'UFC'
-               ) || tsdbData.player[0]; 
-
-               const forbidden = ['Motorsport', 'Soccer', 'Basketball', 'Baseball', 'American Football'];
-               if (bestMatch && !forbidden.includes(bestMatch.strSport)) {
-                   tempBio.image = bestMatch.strCutout || bestMatch.strThumb || null;
-                   tempBio.country = bestMatch.strNationality || tempBio.country;
-               }
-            }
-          } catch (e) {}
-
-          // 2. FETCH STATS (UFCSTATS.COM)
-          try {
-              // CRITICAL FIX: Reverted to HTTP for UFCStats. The proxy handles the secure connection to the browser.
-              const searchUrl = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(lastName)}`;
-              const searchHtml = await smartFetch(searchUrl);
-              
-              if (searchHtml) {
-                  const parser = new DOMParser();
-                  const doc = parser.parseFromString(searchHtml, 'text/html');
-                  
-                  const rows = Array.from(doc.querySelectorAll('.b-statistics__table-row'));
-                  const fighterLink = rows.find(row => {
-                      const cols = row.querySelectorAll('td');
-                      if (cols.length < 2) return false;
-                      const fName = cols[0].textContent.trim().toLowerCase();
-                      const lName = cols[1].textContent.trim().toLowerCase();
-                      return fName === firstName.toLowerCase() && lName === lastName.toLowerCase();
-                  })?.querySelector('a')?.href;
-
-                  if (fighterLink) {
-                      // Fetch the specific profile page
-                      const profileHtml = await smartFetch(fighterLink);
-                      
-                      if (profileHtml) {
-                          const profileDoc = parser.parseFromString(profileHtml, 'text/html');
-                          
-                          const listItems = Array.from(profileDoc.querySelectorAll('.b-list__box-list-item'));
-                          listItems.forEach(item => {
-                              const text = item.textContent.trim();
-                              const label = item.querySelector('i')?.textContent.trim().replace(':', '');
-                              const value = text.replace(label + ':', '').trim();
-
-                              if (label === 'Height') tempBio.height = value;
-                              if (label === 'Weight') tempBio.weight = value;
-                              if (label === 'Reach') tempBio.reach = value; 
-                              if (label === 'STANCE') tempBio.stance = value;
-                              if (label === 'DOB' && value !== '--') {
-                                  const birthYear = new Date(value).getFullYear();
-                                  const currentYear = new Date().getFullYear();
-                                  tempBio.age = (currentYear - birthYear).toString();
-                              }
-                          });
-
-                          const recordText = profileDoc.querySelector('.b-content__title-record')?.textContent.trim();
-                          if (recordText) {
-                              const recMatch = recordText.match(/Record:\s*([\d\-\sNC]+)/);
-                              if (recMatch) tempBio.record = recMatch[1].trim();
-                          }
-                          
-                          const nickText = profileDoc.querySelector('.b-content__nickname')?.textContent.trim();
-                          if (nickText) tempBio.nickname = nickText;
-                      }
-                  }
-              }
-          } catch (err) { console.error("UFCStats Fetch Error:", err); }
-
-          // 3. FETCH RANKING (UFC.COM)
-          try {
-              const ufcUrl = `https://www.ufc.com/athlete/${slug.toLowerCase()}`;
-              const ufcHtml = await smartFetch(ufcUrl);
-              if (ufcHtml) {
-                  const uParser = new DOMParser();
-                  const uDoc = uParser.parseFromString(ufcHtml, 'text/html');
-                  
-                  const heroText = uDoc.querySelector('.hero-profile__division-title')?.textContent || "";
-                  if (heroText.toLowerCase().includes('champion')) {
-                      tempBio.ranking = 'C';
-                  } else {
-                      const rankMatch = uDoc.body.innerText.match(/#\s*(\d+)/);
-                      if (rankMatch) tempBio.ranking = `#${rankMatch[1]}`;
-                  }
-
-                  const firstCard = uDoc.querySelector('.c-card-event--result'); 
-                  if (firstCard) {
-                      const outcome = firstCard.querySelector('.c-card-event--result__outcome')?.textContent?.trim();
-                      if (!outcome || outcome === "") {
-                          const opponent = firstCard.querySelector('.c-card-event--result__fighter')?.textContent?.trim();
-                          const date = firstCard.querySelector('.c-card-event--result__date')?.textContent?.trim();
-                          const headline = firstCard.querySelector('.c-card-event--result__headline')?.textContent?.trim();
-                          if (opponent) {
-                              nextFight = {
-                                  outcome: "Upcoming",
-                                  opponent: opponent.replace(/vs\.?/i, '').trim(),
-                                  method: headline || "Scheduled",
-                                  date: date || "Upcoming",
-                                  event: "UFC Event"
-                              };
-                          }
-                      }
-                  }
-              }
-          } catch (e) {}
-
-          // 4. FETCH HISTORY (WIKIPEDIA)
-          try {
-              let searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(searchName + " fighter")}&format=json&origin=*`);
-              let searchData = await searchRes.json();
-              
-              if (!searchData.query?.search?.length) {
-                   searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(searchName)}&format=json&origin=*`);
-                   searchData = await searchRes.json();
-              }
-
-              if (searchData.query?.search?.length) {
-                  const title = searchData.query.search[0].title;
-                  const htmlRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`);
-                  const htmlText = await htmlRes.text();
-                  
-                  const parser = new DOMParser();
-                  const doc = parser.parseFromString(htmlText, 'text/html');
-
-                  const tables = Array.from(doc.querySelectorAll('table.wikitable'));
-                  let bestTable = null; let maxScore = 0;
-                  tables.forEach(table => {
-                      const text = table.textContent.toLowerCase();
-                      let score = 0;
-                      if (text.includes("res")) score += 2;
-                      if (text.includes("opponent")) score += 3;
-                      if (text.includes("kickboxing")) score -= 5;
-                      if (score > maxScore) { maxScore = score; bestTable = table; }
-                  });
-
-                  if (bestTable) {
-                      const rows = bestTable.querySelectorAll('tbody tr');
-                      const scrapedHistory = [];
-                      let wins = 0; let winsKO = 0, winsSub = 0, winsDec = 0;
-                      rows.forEach(row => {
-                          const cells = row.querySelectorAll('td');
-                          if (cells.length > 5) {
-                              const resText = cells[0].textContent.trim();
-                              if (!['Win', 'Loss', 'Draw', 'NC'].some(r => resText.includes(r))) return;
-                              const opponent = cells[2].textContent.replace(/\n/g, '').trim();
-                              const method = cells[3].textContent.split('[')[0].trim();
-                              const event = cells[4].textContent.trim();
-                              const date = cells[5].textContent.trim();
-                              let outcome = "—";
-                              if (row.classList.contains("table-yes2") || resText.includes("Win")) {
-                                  outcome = "Win"; wins++;
-                                  const m = method.toLowerCase();
-                                  if (m.includes('ko') || m.includes('tko')) winsKO++;
-                                  else if (m.includes('sub')) winsSub++;
-                                  else if (m.includes('dec')) winsDec++;
-                              } else if (resText.includes("Loss")) outcome = "Loss";
-                              else if (resText.includes("Draw")) outcome = "Draw";
-
-                              if (opponent) scrapedHistory.push({ outcome, opponent, method, event, date });
-                          }
-                      });
-                      if (nextFight) scrapedHistory.unshift(nextFight);
-                      if (scrapedHistory.length > 0) {
-                          tempBio.history = scrapedHistory;
-                          if (wins > 0) {
-                              tempBio.winStats = {
-                                  ko: winsKO, koPct: Math.round((winsKO/wins)*100),
-                                  sub: winsSub, subPct: Math.round((winsSub/wins)*100),
-                                  dec: winsDec, decPct: Math.round((winsDec/wins)*100),
-                                  totalWins: wins
-                              };
-                          }
-                      }
-                  }
-              }
-          } catch (err) {}
-
+          // 🚀 We just hit our new backend route!
+          const res = await fetch(`/api/fighter/${slug}`);
+          const data = await res.json();
+          setFighterBio(data);
+      } catch (error) {
+          console.error("Failed to load fighter data:", error);
       } finally {
-          setFighterBio(tempBio);
           setLoading(false);
       }
     }
@@ -260,18 +37,18 @@ export default function FighterProfilePage() {
     fetchData();
   }, [slug]);
 
-  if (!slug || loading) {
+  if (!slug || loading || !fighterBio) {
       return (
         <div className="min-h-screen bg-black text-white flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
                 <div className="w-12 h-12 border-4 border-pink-600 border-t-transparent rounded-full animate-spin"></div>
-                <div className="text-xs font-black uppercase tracking-widest text-gray-500">Loading Fighter Info...</div>
+                <div className="text-xs font-black uppercase tracking-widest text-gray-500">Compiling Fighter Data...</div>
             </div>
         </div>
       );
   }
 
-  const displayRecord = (fighterBio?.record && fighterBio.record !== '—') ? fighterBio.record : `0-0-0`;
+  const displayRecord = (fighterBio.record && fighterBio.record !== '—') ? fighterBio.record : `0-0-0`;
 
   return (
     <div className="min-h-screen bg-black text-white font-sans selection:bg-pink-500">
@@ -282,6 +59,7 @@ export default function FighterProfilePage() {
         {fighterBio.image ? (
             <>
                 <div className="absolute right-0 top-0 h-full w-full md:w-2/3 bg-cover bg-center opacity-20 blur-3xl scale-110" style={{ backgroundImage: `url(${fighterBio.image})` }} />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={fighterBio.image} alt={displayName} className="absolute right-0 bottom-0 h-[90%] w-auto max-w-[60%] object-contain object-bottom z-10 mr-4 md:mr-10 opacity-90 drop-shadow-2xl" />
                 <div className="absolute inset-0 bg-gradient-to-r from-black via-black/60 to-transparent z-20" />
             </>
@@ -292,10 +70,12 @@ export default function FighterProfilePage() {
         )}
         
         <div className="absolute bottom-0 left-0 w-full p-6 md:p-10 z-30 max-w-7xl mx-auto flex flex-col justify-end h-full pointer-events-none">
-            <Link href="/" className="text-pink-500 text-xs font-black uppercase tracking-widest mb-4 inline-block hover:text-white transition-colors pointer-events-auto">← Back to Dashboard</Link>
+            <Link href="/" className="text-pink-500 text-xs font-black uppercase tracking-widest mb-4 inline-block hover:text-white transition-colors pointer-events-auto w-fit">
+                ← Back to Dashboard
+            </Link>
             <div className="relative z-40 max-w-[85%]">
                 <div className="flex flex-wrap items-baseline gap-4 mb-2">
-                    <h1 className="text-5xl md:text-8xl font-black italic uppercase tracking-tighter leading-none">{displayName}</h1>
+                    <h1 className="text-5xl md:text-8xl font-black italic uppercase tracking-tighter leading-none drop-shadow-lg">{displayName}</h1>
                     {fighterBio.ranking && <span className="self-center text-3xl md:text-5xl font-black italic text-white ml-2">{fighterBio.ranking}</span>}
                     {displayRecord !== '0-0-0' && <span className="self-center text-3xl md:text-5xl font-black italic text-teal-400 bg-teal-900/20 px-4 py-1 rounded-lg border border-teal-800/50 ml-4">{displayRecord}</span>}
                 </div>
@@ -356,11 +136,20 @@ export default function FighterProfilePage() {
                     fighterBio.history.map((fight, i) => {
                         const isWin = fight.outcome === 'Win';
                         const isUpcoming = fight.outcome === 'Upcoming';
+                        
+                        // Formats the opponent name into a URL-friendly slug
+                        const opponentSlug = fight.opponent.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
                         return (
                             <div key={i} className={`group border rounded-xl p-4 transition-all flex items-center justify-between ${isUpcoming ? 'bg-yellow-900/10 border-yellow-600/50' : 'bg-gray-950 border-gray-900 hover:border-gray-700'}`}>
                                 <div className="min-w-0 flex-1 pr-4">
                                     <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${isUpcoming ? 'text-yellow-500' : 'text-gray-500'}`}>{fight.date}</p>
-                                    <h4 className="text-lg font-black italic uppercase text-white group-hover:text-pink-500 transition-colors truncate">vs. {fight.opponent}</h4>
+                                    <h4 className="text-lg font-black italic uppercase text-white truncate">
+                                        vs. 
+                                        <Link href={`/fighter/${opponentSlug}`} className="ml-2 hover:text-pink-500 transition-colors">
+                                            {fight.opponent}
+                                        </Link>
+                                    </h4>
                                     <p className="text-xs text-gray-400 font-bold uppercase truncate">{fight.event} • {fight.method}</p>
                                 </div>
                                 <div className="shrink-0">
