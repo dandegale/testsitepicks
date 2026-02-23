@@ -4,8 +4,8 @@ import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-// 🎯 IMPORT YOUR BADGE ENGINES
-import { awardEventBadges, evaluateUserStreaks } from '../utils/badgeEngine';
+// This jumps out of the admin folder, out of the app folder, and into utils
+import { awardEventBadges, evaluateUserStreaks } from '../../utils/badgeEngine';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
