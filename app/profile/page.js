@@ -468,10 +468,10 @@ export default function Profile() {
                             </div>
                         )}
                         
-                        {/* Custom Image Renderer */}
-                        <div className={`w-16 h-16 mb-3 flex items-center justify-center ${badge.earned ? 'opacity-100' : 'opacity-40'}`}>
+                        {/* 🎯 UPDATED IMAGE RENDERER: Larger size (w-24 h-24), hover effect, deeper shadow */}
+                        <div className={`w-24 h-24 mb-4 flex items-center justify-center transition-transform hover:scale-110 ${badge.earned ? 'opacity-100' : 'opacity-40'}`}>
                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                             <img src={badge.imagePath} alt={badge.title} className="max-w-full max-h-full object-contain drop-shadow-xl" />
+                             <img src={badge.imagePath} alt={badge.title} className="max-w-full max-h-full object-contain drop-shadow-2xl" />
                         </div>
 
                         <h3 className={`text-[10px] font-black uppercase tracking-widest mb-1 ${badge.earned ? 'text-white' : 'text-gray-500'}`}>
