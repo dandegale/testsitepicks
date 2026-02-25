@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/update-fights",
+      "path": "/api/sync-odds",
       "schedule": "0 22 * * *"
     }
   ]
