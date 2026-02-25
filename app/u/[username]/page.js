@@ -3,7 +3,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation'; // 🎯 NEW: Grabs the username from the URL
+import { useParams } from 'next/navigation';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -37,28 +37,27 @@ const AVAILABLE_BADGES = [
 
 export default function PublicProfile() {
   const params = useParams();
-  const rawUsername = params.username; // Note: Next.js URLs might encode spaces
+  const rawUsername = params.username; 
   const decodedUsername = decodeURIComponent(rawUsername);
 
   const [loading, setLoading] = useState(true);
   const [profileExists, setProfileExists] = useState(true);
   
-  // Profile Data
   const [profile, setProfile] = useState(null);
   const [userBadges, setUserBadges] = useState([]);
   const [stats, setStats] = useState({ totalBets: 0, wins: 0, losses: 0, pending: 0, netProfit: 0 });
   const [history, setHistory] = useState([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   useEffect(() => {
     fetchPublicData();
   }, [decodedUsername]);
 
   const fetchPublicData = async () => {
-    // 1. Fetch Profile by Username
     const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
-        .ilike('username', decodedUsername) // Case insensitive search!
+        .ilike('username', decodedUsername) 
         .single();
 
     if (profileError || !profileData) {
@@ -69,13 +68,11 @@ export default function PublicProfile() {
 
     setProfile(profileData);
 
-    // 2. Stop here if the profile is set to Private!
     if (profileData.is_public === false) {
         setLoading(false);
         return;
     }
 
-    // 3. We need their email to look up picks and badges.
     const userEmail = profileData.email;
     if (!userEmail) {
         console.warn("No email found on this profile to link stats.");
@@ -83,11 +80,9 @@ export default function PublicProfile() {
         return;
     }
 
-    // 4. Fetch Badges
     const { data: badgesData } = await supabase.from('user_badges').select('badge_id').eq('user_id', userEmail);
     if (badgesData) setUserBadges(badgesData.map(b => b.badge_id));
 
-    // 5. Fetch Picks & Fights
     const { data: picks } = await supabase.from('picks').select('*, leagues(name)').eq('user_id', userEmail).order('id', { ascending: false });
     const { data: fights } = await supabase.from('fights').select('*');
     
@@ -131,205 +126,272 @@ export default function PublicProfile() {
     setHistory(historyData);
   };
 
-  // Build the list of earned badges
-  const earnedBadges = AVAILABLE_BADGES.filter(badge => userBadges.includes(badge.id));
+  const badgesWithStatus = AVAILABLE_BADGES.map(badge => ({ ...badge, earned: userBadges.includes(badge.id) }));
+  const earnedCount = badgesWithStatus.filter(b => b.earned).length;
 
   if (loading) return (
-    <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="w-10 h-10 border-4 border-pink-600 border-t-transparent rounded-full animate-spin"></div>
+    <div className="min-h-screen bg-[#050505] flex items-center justify-center relative overflow-hidden">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-pink-600/20 blur-[100px] rounded-full"></div>
+        <div className="w-12 h-12 border-4 border-pink-600 border-t-transparent rounded-full animate-spin relative z-10"></div>
     </div>
   );
 
   if (!profileExists) return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center text-center p-6">
-          <span className="text-4xl mb-4">👻</span>
-          <h1 className="text-2xl font-black italic text-white uppercase tracking-tighter mb-2">Fighter Not Found</h1>
-          <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-6">This profile does not exist or has been deleted.</p>
-          <Link href="/" className="text-pink-600 text-xs font-black uppercase hover:text-pink-400">← Back to Dashboard</Link>
+      <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center text-center p-6 relative overflow-hidden">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-red-900/10 blur-[150px] rounded-full"></div>
+          <span className="text-5xl mb-6 relative z-10 drop-shadow-xl">👻</span>
+          <h1 className="text-3xl font-black italic text-white uppercase tracking-tighter mb-2 relative z-10">Fighter Not Found</h1>
+          <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-8 relative z-10">This profile does not exist or has been deleted.</p>
+          <Link href="/" className="bg-pink-950/30 border border-pink-900/50 hover:bg-pink-900/50 px-6 py-3 rounded-full text-pink-400 text-[10px] font-black uppercase tracking-widest transition-all relative z-10">
+              ← Return to Base
+          </Link>
       </div>
   );
 
-  // Default flags (assume true if not explicitly false)
   const isPublic = profile.is_public !== false;
   const showRecord = profile.show_record !== false;
   const showEarnings = profile.show_earnings !== false;
   const showHistory = profile.show_history === true;
 
   return (
-    <main className="min-h-screen bg-black text-white pb-24 font-sans selection:bg-pink-500 selection:text-white">
+    <main className="min-h-screen bg-[#050505] text-white pb-24 font-sans selection:bg-teal-500 selection:text-white relative overflow-hidden">
       
-      {/* 🎯 READ-ONLY HEADER HERO */}
-      <div className="relative border-b border-gray-800 pt-10 pb-12 px-6">
-        
-        {/* Background Image Layer */}
+      {/* 🌟 AMBIENT THEME GLOWS */}
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
+          <div className="absolute top-[10%] left-[5%] w-[400px] h-[400px] bg-pink-600/10 rounded-full blur-[150px]"></div>
+          <div className="absolute top-[40%] right-[5%] w-[500px] h-[500px] bg-teal-500/10 rounded-full blur-[150px]"></div>
+          <div className="absolute bottom-[-10%] left-[20%] w-[600px] h-[600px] bg-pink-900/10 rounded-full blur-[180px]"></div>
+      </div>
+
+      {/* 🚀 READ-ONLY CINEMATIC HERO */}
+      <div className="relative h-[40vh] min-h-[300px] w-full border-b border-pink-500/10 flex flex-col z-10">
         <div 
-            className="absolute inset-0 bg-gray-900 bg-cover bg-center transition-all duration-500"
+            className="absolute inset-0 bg-gray-900 bg-cover bg-center transition-all duration-700"
             style={{ backgroundImage: profile.background_url ? `url(${profile.background_url})` : 'none' }}
         >
-            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/80 to-black"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/60 to-transparent"></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-[#050505] via-transparent to-transparent opacity-80"></div>
         </div>
 
-        {/* Top Nav */}
-        <div className="relative z-10 max-w-4xl mx-auto flex justify-between items-center mb-8">
-            <Link href="/" className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-white transition-colors group mt-1">
+        <div className="relative z-10 w-full max-w-7xl mx-auto px-6 pt-6 flex justify-between items-center">
+            <Link href="/" className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-white/50 hover:text-pink-400 transition-colors group bg-black/40 hover:bg-black/80 backdrop-blur-md border border-white/5 hover:border-pink-500/30 px-4 py-2 rounded-full">
                 <span className="group-hover:-translate-x-1 transition-transform">←</span> Back
             </Link>
         </div>
 
-        <div className="relative z-10 max-w-xl mx-auto text-center mt-4">
-            {/* AVATAR CIRCLE */}
-            <div className="relative mx-auto w-32 h-32 mb-6">
-                <div className="w-full h-full rounded-full overflow-hidden border-4 border-black shadow-[0_0_30px_rgba(0,0,0,0.8)] bg-gray-950">
+        <div className="relative z-10 w-full max-w-7xl mx-auto px-6 mt-auto pb-8 flex flex-col md:flex-row items-center md:items-end gap-6">
+            <div className="relative w-32 h-32 md:w-40 md:h-40 shrink-0">
+                <div className="w-full h-full rounded-2xl overflow-hidden border-4 border-[#050505] shadow-[0_0_30px_rgba(20,184,166,0.15)] bg-gray-900 relative transform md:translate-y-8">
                     {profile.avatar_url ? (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={profile.avatar_url} alt={`${profile.username}'s Avatar`} className="w-full h-full object-cover" />
+                        <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
                     ) : (
-                        <div className="w-full h-full flex items-center justify-center text-4xl font-black text-gray-700">
+                        <div className="w-full h-full flex items-center justify-center text-5xl font-black text-teal-700 bg-gradient-to-br from-gray-900 to-black">
                             {profile.username.charAt(0).toUpperCase()}
                         </div>
                     )}
                 </div>
             </div>
 
-            {/* USERNAME */}
-            <h1 className="text-3xl md:text-4xl font-black italic text-white uppercase tracking-tighter drop-shadow-lg mb-2">
-                {profile.username}
-            </h1>
-            
-            {!isPublic && (
-                <span className="inline-block bg-pink-900/50 text-pink-500 border border-pink-900 px-3 py-1 rounded text-[10px] font-black uppercase tracking-widest">
-                    🔒 Private Account
-                </span>
-            )}
+            <div className="text-center md:text-left mb-2 md:mb-0">
+                <div className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-4">
+                    <h1 className="text-4xl md:text-5xl font-black italic text-white uppercase tracking-tighter drop-shadow-lg">
+                        {profile.username}
+                    </h1>
+                    
+                    {!isPublic && (
+                        <span className="bg-pink-950/30 text-pink-400 border border-pink-500/30 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center gap-1 shadow-[0_0_10px_rgba(219,39,119,0.1)]">
+                            🔒 Private Account
+                        </span>
+                    )}
+                </div>
+                
+                <div className="flex items-center justify-center md:justify-start gap-3 mt-3">
+                    <span className="bg-gradient-to-r from-teal-500 to-teal-400 text-black border border-teal-400/50 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest shadow-[0_0_10px_rgba(20,184,166,0.3)]">
+                        Fighter Profile
+                    </span>
+                </div>
+            </div>
         </div>
       </div>
 
       {/* 🛑 STOP RENDER IF PRIVATE */}
       {!isPublic ? (
-          <div className="max-w-4xl mx-auto px-4 py-24 text-center">
-              <span className="text-5xl mb-4 block opacity-50">🛡️</span>
-              <h2 className="text-xl font-black text-gray-400 italic uppercase tracking-tighter mb-2">Access Denied</h2>
-              <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest">This manager has hidden their profile from the public.</p>
+          <div className="relative z-10 max-w-4xl mx-auto px-6 py-24 text-center">
+              <span className="text-6xl mb-6 block opacity-50 drop-shadow-[0_0_20px_rgba(219,39,119,0.4)]">🛡️</span>
+              <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter mb-2">Classified Data</h2>
+              <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">This manager has restricted public access to their record.</p>
           </div>
       ) : (
-          /* ✅ MAIN CONTENT CONTAINER (IF PUBLIC) */
-          <div className="max-w-4xl mx-auto px-4 py-8">
+          /* 🚀 TWO-COLUMN GRID DASHBOARD (IF PUBLIC) */
+          <div className="relative z-10 max-w-7xl mx-auto px-6 py-12 md:py-16 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
             
-            {/* 🎯 PRIVACY-RESPECTING STATS CARDS */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-                <StatCard 
-                    label="Record" 
-                    value={showRecord ? `${stats.wins}-${stats.losses}` : 'HIDDEN 🔒'} 
-                    sub={showRecord ? "W-L" : ""}
-                    color={showRecord ? "text-white" : "text-gray-600 text-lg"} 
-                />
-                <StatCard 
-                    label="Accuracy" 
-                    value={showRecord ? `${stats.totalBets > 0 ? Math.round((stats.wins / (stats.wins + stats.losses)) * 100) : 0}%` : 'HIDDEN 🔒'} 
-                    color={showRecord ? "text-teal-400" : "text-gray-600 text-lg"} 
-                />
-                <StatCard label="Pending" value={stats.pending} color="text-pink-500" />
-                <StatCard 
-                    label="Earnings" 
-                    value={showEarnings ? `${stats.netProfit >= 0 ? '+' : ''}${stats.netProfit}` : 'HIDDEN 🔒'} 
-                    color={showEarnings ? (stats.netProfit >= 0 ? 'text-green-400' : 'text-pink-500') : "text-gray-600 text-lg"} 
-                />
-            </div>
-
-            {/* 🎯 TROPHY ROOM SECTION */}
-            <div className="mb-12">
-                <div className="flex items-center gap-3 mb-5 px-1">
-                    <span className="text-xl">🏆</span>
-                    <h2 className="text-sm font-black text-white italic uppercase tracking-tighter">Trophy Room</h2>
-                </div>
+            {/* LEFT COLUMN: Tale of the Tape */}
+            <div className="lg:col-span-4 space-y-8">
                 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {earnedBadges.length === 0 ? (
-                        <div className="col-span-full p-8 border border-gray-800 border-dashed rounded-xl text-center">
-                            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">
-                                No badges earned yet.
-                            </p>
-                        </div>
-                    ) : (
-                        earnedBadges.map((badge) => (
-                            <div 
-                                key={badge.id} 
-                                className={`relative rounded-xl p-4 flex flex-col items-center justify-center text-center transition-all duration-300 border bg-gray-900 border-gray-700 ${badge.glow}`}
-                            >
-                                <div className="w-16 h-16 mb-3 flex items-center justify-center opacity-100">
-                                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                                     <img src={badge.imagePath} alt={badge.title} className="max-w-full max-h-full object-contain drop-shadow-xl" />
-                                </div>
-                                <h3 className="text-[10px] font-black uppercase tracking-widest mb-1 text-white">
-                                    {badge.title}
-                                </h3>
-                                <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed">
-                                    {badge.description}
-                                </p>
-                            </div>
-                        ))
-                    )}
+                <div className="bg-black/40 backdrop-blur-xl border border-teal-900/40 rounded-3xl p-6 shadow-2xl hover:border-teal-500/40 transition-colors">
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="w-2 h-8 bg-gradient-to-b from-teal-400 to-pink-500 rounded-full"></div>
+                        <h2 className="text-sm font-black text-white italic uppercase tracking-widest">Tale of the Tape</h2>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                        <StatGlass 
+                            label="Record" 
+                            value={showRecord ? `${stats.wins}-${stats.losses}` : '🔒'} 
+                            color={showRecord ? "text-white" : "text-gray-700"} 
+                        />
+                        <StatGlass 
+                            label="Accuracy" 
+                            value={showRecord ? `${stats.totalBets > 0 ? Math.round((stats.wins / (stats.wins + stats.losses)) * 100) : 0}%` : '🔒'} 
+                            color={showRecord ? "text-teal-400 glow-teal" : "text-gray-700"} 
+                        />
+                        <StatGlass 
+                            label="Pending" 
+                            value={stats.pending} 
+                            color="text-white/80" 
+                        />
+                        <StatGlass 
+                            label="Earnings" 
+                            value={showEarnings ? `${stats.netProfit >= 0 ? '+' : ''}${stats.netProfit}` : '🔒'} 
+                            color={showEarnings ? (stats.netProfit >= 0 ? 'text-teal-400' : 'text-pink-500') : "text-gray-700"} 
+                        />
+                    </div>
                 </div>
             </div>
 
-            {/* 🎯 PRIVACY-RESPECTING HISTORY */}
-            <div className="flex items-center gap-3 mb-5 px-1">
-                <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
-                <h2 className="text-sm font-black text-white italic uppercase tracking-tighter">Fight History</h2>
-            </div>
-
-            <div className="bg-gray-950 border border-gray-900 rounded-xl overflow-hidden shadow-xl">
-                {!showHistory ? (
-                    <div className="p-12 text-center">
-                        <span className="text-4xl mb-3 block opacity-50">🥷</span>
-                        <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest">
-                            This manager keeps their strategy hidden.
-                        </p>
-                    </div>
-                ) : history.length === 0 ? (
-                    <div className="p-12 text-center">
-                        <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest">No fights recorded yet.</p>
-                    </div>
-                ) : (
-                    <div className="divide-y divide-gray-900">
-                        {history.map((item) => (
-                            <div key={item.id} className="p-4 md:p-5 flex items-center justify-between bg-black/20 hover:bg-gray-900 transition-colors border-l-2 border-transparent hover:border-pink-600 group">
-                                <div>
-                                    <div className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1.5">{item.leagueName}</div>
-                                    <div className="font-black text-white text-sm md:text-base uppercase tracking-tighter group-hover:text-pink-100 transition-colors">{item.selection}</div>
-                                    <div className="text-[10px] text-gray-500 font-bold uppercase mt-1">{item.fightName}</div>
+            {/* RIGHT COLUMN: Trophies & History */}
+            <div className="lg:col-span-8 space-y-8">
+                
+                {/* Trophy Room */}
+                <div className="bg-black/40 backdrop-blur-xl border border-teal-900/40 hover:border-teal-500/40 transition-colors rounded-3xl p-6 md:p-8 shadow-2xl">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+                        <div>
+                            <div className="flex items-center gap-3 mb-2">
+                                <span className="text-2xl drop-shadow-[0_0_10px_rgba(234,179,8,0.5)]">🏆</span>
+                                <h2 className="text-xl font-black text-white italic uppercase tracking-tighter">Trophy Room</h2>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="w-32 h-1.5 bg-gray-900 rounded-full overflow-hidden shadow-inner">
+                                    <div className="h-full bg-gradient-to-r from-pink-600 to-teal-400" style={{ width: `${Math.round((earnedCount/AVAILABLE_BADGES.length)*100)}%` }}></div>
                                 </div>
-                                <div className="text-right flex flex-col items-end">
-                                    <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded border mb-2 ${
-                                        item.result === 'Win' ? 'bg-green-950/30 text-green-400 border-green-900/50' : 
-                                        item.result === 'Loss' ? 'bg-red-950/30 text-red-400 border-red-900/50' : 
-                                        'bg-pink-950/30 text-pink-400 border-pink-900/50'
-                                    }`}>
-                                        {item.result}
-                                    </span>
-                                    <div className={`text-sm md:text-base font-black italic tracking-tighter ${item.profitChange > 0 ? 'text-green-500' : item.profitChange < 0 ? 'text-red-500' : 'text-gray-600'}`}>
-                                        {item.result === 'Pending' ? '---' : `${item.profitChange > 0 ? '+' : ''}${item.profitChange.toFixed(1)} PTS`}
-                                    </div>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-teal-500/70">{earnedCount} / {AVAILABLE_BADGES.length} Unlocked</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                        {badgesWithStatus.map((badge) => (
+                            <div key={badge.id} className={`relative rounded-2xl p-4 flex flex-col items-center justify-center text-center transition-all duration-300 animate-in fade-in zoom-in-95
+                                ${badge.earned ? `bg-teal-950/10 border border-pink-500/20 hover:border-pink-500/60 ${badge.glow}` : 'bg-black/60 border border-gray-800 opacity-40 grayscale'}`}>
+                                {!badge.earned && <div className="absolute top-3 right-3 text-gray-600 text-xs">🔒</div>}
+                                <div className={`w-20 h-20 md:w-24 md:h-24 mb-4 flex items-center justify-center transition-transform hover:scale-110 ${badge.earned ? 'opacity-100' : 'opacity-50'}`}>
+                                     <img src={badge.imagePath} alt={badge.title} className="max-w-full max-h-full object-contain drop-shadow-2xl" />
                                 </div>
+                                <h3 className={`text-[11px] font-black uppercase tracking-widest mb-1.5 ${badge.earned ? 'text-white' : 'text-gray-500'}`}>{badge.title}</h3>
+                                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest leading-relaxed">{badge.description}</p>
                             </div>
                         ))}
                     </div>
-                )}
-            </div>
+                </div>
 
+                {/* Collapsible Fight History (Or Privacy Lock) */}
+                <div className={`bg-black/40 backdrop-blur-xl transition-all duration-500 ease-in-out rounded-3xl shadow-2xl overflow-hidden border ${
+                    isHistoryOpen && showHistory 
+                    ? 'border-pink-500/40 shadow-[0_0_30px_rgba(219,39,119,0.1)]' 
+                    : 'border-teal-900/40 hover:border-teal-500/50'
+                }`}>
+                    
+                    {/* Clickable Header */}
+                    <div 
+                        className={`flex items-center justify-between p-6 md:p-8 select-none bg-transparent ${showHistory ? 'cursor-pointer group' : ''}`}
+                        onClick={() => { if(showHistory) setIsHistoryOpen(!isHistoryOpen) }}
+                    >
+                        <div className="flex items-center gap-3">
+                            <span className={`w-2.5 h-2.5 rounded-full animate-pulse transition-colors ${
+                                isHistoryOpen && showHistory ? 'bg-pink-500 shadow-[0_0_10px_rgba(219,39,119,0.8)]' : 'bg-teal-500 shadow-[0_0_10px_rgba(20,184,166,0.8)]'
+                            }`}></span>
+                            <h2 className={`text-xl font-black italic uppercase tracking-tighter transition-colors ${
+                                isHistoryOpen && showHistory ? 'text-pink-400' : 'text-white group-hover:text-teal-400'
+                            }`}>Fight History</h2>
+                        </div>
+                        
+                        {showHistory && (
+                            <div className={`p-2 rounded-full transition-all duration-300 border ${
+                                isHistoryOpen 
+                                ? 'bg-pink-500/10 border-pink-500/40 rotate-180 text-pink-400' 
+                                : 'bg-teal-950/20 border-teal-900/50 group-hover:bg-teal-500/20 group-hover:border-teal-500/50 text-teal-600 group-hover:text-teal-400'
+                            }`}>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Content Section */}
+                    {!showHistory ? (
+                        <div className="px-6 md:px-8 pb-8 pt-2">
+                            <div className="py-12 text-center bg-gray-900/30 rounded-2xl border border-gray-800">
+                                <span className="text-4xl mb-4 block opacity-50 drop-shadow-md">🥷</span>
+                                <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">
+                                    This manager keeps their strategy hidden.
+                                </p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className={`grid transition-all duration-500 ease-in-out ${isHistoryOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                            <div className="overflow-hidden min-h-0">
+                                <div className="px-6 md:px-8 pb-6 md:pb-8">
+                                    {history.length === 0 ? (
+                                        <div className="py-12 text-center bg-gray-900/30 rounded-2xl border border-gray-800">
+                                            <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">No history recorded yet.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {history.map((item) => (
+                                                <div key={item.id} className="p-4 rounded-2xl bg-black/60 hover:bg-black/80 border border-gray-800 hover:border-pink-500/30 transition-all flex items-center justify-between group">
+                                                    <div>
+                                                        <div className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1">{item.leagueName}</div>
+                                                        <div className="font-black text-white text-sm md:text-lg uppercase tracking-tighter group-hover:text-pink-400 transition-colors">{item.selection}</div>
+                                                        <div className="text-[10px] text-gray-600 font-bold uppercase mt-1">{item.fightName}</div>
+                                                    </div>
+                                                    <div className="text-right flex flex-col items-end">
+                                                        <span className={`text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg mb-2 border ${
+                                                            item.result === 'Win' ? 'bg-teal-950/30 text-teal-400 border-teal-900/50 shadow-[0_0_10px_rgba(20,184,166,0.1)]' : 
+                                                            item.result === 'Loss' ? 'bg-pink-950/30 text-pink-400 border-pink-900/50 shadow-[0_0_10px_rgba(219,39,119,0.1)]' : 
+                                                            'bg-gray-900 text-gray-500 border-gray-800'
+                                                        }`}>
+                                                            {item.result}
+                                                        </span>
+                                                        <div className={`text-sm md:text-base font-black italic tracking-tighter ${item.profitChange > 0 ? 'text-teal-400' : item.profitChange < 0 ? 'text-pink-400' : 'text-gray-600'}`}>
+                                                            {item.result === 'Pending' ? '---' : `${item.profitChange > 0 ? '+' : ''}${item.profitChange.toFixed(1)} PTS`}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                </div>
+
+            </div>
           </div>
       )}
     </main>
   );
 }
 
-// Clean Sub-component
-function StatCard({ label, value, sub, color }) {
+// --- NEW COMPONENT HELPERS WITH THEME BORDERS ---
+
+function StatGlass({ label, value, color }) {
     return (
-        <div className="bg-gray-950 border border-gray-900 rounded-xl p-5 text-center shadow-lg relative overflow-hidden">
-            <div className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">{label}</div>
-            <div className={`text-2xl md:text-3xl font-black italic tracking-tighter ${color}`}>{value}</div>
-            {sub && <div className="text-[9px] text-gray-600 font-bold mt-1 uppercase tracking-widest">{sub}</div>}
+        <div className="bg-teal-950/10 border border-teal-900/40 rounded-2xl p-4 text-center hover:bg-teal-900/20 hover:border-teal-500/40 transition-all">
+            <div className="text-[9px] font-black text-teal-500/60 uppercase tracking-widest mb-1">{label}</div>
+            <div className={`text-xl md:text-2xl font-black italic tracking-tighter ${color}`}>{value}</div>
         </div>
     );
 }
