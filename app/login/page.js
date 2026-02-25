@@ -34,6 +34,7 @@ export default function LoginPage() {
       if (mode === 'signup') {
         if (!username.trim()) throw new Error("Please create a username.");
 
+        // 1. Create the user in the Auth table
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -42,6 +43,24 @@ export default function LoginPage() {
 
         if (error) throw error;
 
+        // 🎯 2. THE FIX: Immediately push the username to the public profiles table
+        if (data?.user) {
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .upsert({ 
+              id: data.user.id, 
+              username: username,
+              updated_at: new Date()
+            });
+            
+          if (profileError) {
+              console.error("Failed to save profile:", profileError.message);
+              // We don't throw here so the user still gets logged in, 
+              // but you might want to handle this based on your RLS settings.
+          }
+        }
+
+        // 3. Handle routing
         if (data.user && !data.session) {
           setSuccessMsg("Account created! Check your email to confirm.");
         } else {
@@ -49,6 +68,7 @@ export default function LoginPage() {
         }
 
       } else {
+        // LOGIN LOGIC
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
