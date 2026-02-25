@@ -205,20 +205,24 @@ export default function Profile() {
             <div className="absolute inset-0 bg-gradient-to-r from-[#050505] via-transparent to-transparent opacity-80"></div>
         </div>
 
-        <button 
-            onClick={() => bgInputRef.current?.click()}
-            disabled={uploadingBg}
-            className="absolute top-6 right-6 z-20 bg-black/40 hover:bg-black/80 backdrop-blur-md border border-teal-500/30 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest text-teal-400 hover:text-teal-300 hover:border-teal-400/60 transition-all flex items-center gap-2"
-        >
-            <span>📷</span> {uploadingBg ? 'Uploading...' : 'Edit Cover'}
-        </button>
         <input type="file" ref={bgInputRef} onChange={(e) => handleImageUpload(e, 'backgrounds', 'background_url', setUploadingBg, setBackgroundUrl)} accept="image/*" className="hidden" />
 
+        {/* 🎯 FIX: Top Nav & Action Buttons (Grouped to prevent overlap) */}
         <div className="relative z-10 w-full max-w-7xl mx-auto px-6 pt-6 flex justify-between items-center">
             <Link href="/" className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-white/50 hover:text-pink-400 transition-colors group">
                 <span className="group-hover:-translate-x-1 transition-transform">←</span> Dashboard
             </Link>
-            <LogOutButton />
+            
+            <div className="flex items-center gap-3">
+                <button 
+                    onClick={() => bgInputRef.current?.click()}
+                    disabled={uploadingBg}
+                    className="bg-black/40 hover:bg-black/80 backdrop-blur-md border border-teal-500/30 px-3 py-1.5 md:px-4 md:py-2 rounded-full text-[9px] md:text-[10px] font-black uppercase tracking-widest text-teal-400 hover:text-teal-300 hover:border-teal-500/60 transition-all flex items-center gap-1 md:gap-2"
+                >
+                    <span>📷</span> <span className="hidden sm:inline">{uploadingBg ? 'Uploading...' : 'Edit Cover'}</span>
+                </button>
+                <LogOutButton />
+            </div>
         </div>
 
         <div className="relative z-10 w-full max-w-7xl mx-auto px-6 mt-auto pb-8 flex flex-col md:flex-row items-center md:items-end gap-6">
@@ -371,14 +375,13 @@ export default function Profile() {
                 </div>
             </div>
 
-            {/* 🎯 BUG FIX: Collapsible Fight History (min-h-0 fixes the giant height bug) */}
+            {/* Collapsible Fight History */}
             <div className={`bg-black/40 backdrop-blur-xl transition-all duration-500 ease-in-out rounded-3xl shadow-2xl overflow-hidden border ${
                 isHistoryOpen 
                 ? 'border-pink-500/40 shadow-[0_0_30px_rgba(219,39,119,0.1)]' 
                 : 'border-teal-900/40 hover:border-teal-500/50'
             }`}>
                 
-                {/* Clickable Header */}
                 <div 
                     className="flex items-center justify-between p-6 md:p-8 cursor-pointer group select-none bg-transparent"
                     onClick={() => setIsHistoryOpen(!isHistoryOpen)}
@@ -403,7 +406,6 @@ export default function Profile() {
                     </div>
                 </div>
 
-                {/* 🎯 MIN-H-0 FIX: The grid trick now shrinks the content down to exactly zero pixels! */}
                 <div className={`grid transition-all duration-500 ease-in-out ${isHistoryOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                     <div className="overflow-hidden min-h-0">
                         <div className="px-6 md:px-8 pb-6 md:pb-8">
