@@ -1,17 +1,18 @@
 'use client';
 
 import { createClient } from '@supabase/supabase-js';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import LogOutButton from '../components/LogOutButton'; 
+import Cropper from 'react-easy-crop'; // 🎯 NEW: Cropper Library
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// --- FULL MASTER BADGE DATA WITH IMAGES ---
+// --- FULL MASTER BADGE DATA ---
 const AVAILABLE_BADGES = [
   { id: 'b1', title: 'BMF', imagePath: '/badges/bmf.png', description: '5+ chosen fighters win by knockout on a single card.', earned: false, glow: 'shadow-[0_0_15px_rgba(234,179,8,0.4)]' },
   { id: 'b2', title: 'The Sub Artist', imagePath: '/badges/sub-artist.png', description: '5+ chosen fighters win by submission on a single card.', earned: false, glow: 'shadow-[0_0_15px_rgba(255,255,255,0.4)]' },
@@ -51,6 +52,14 @@ export default function Profile() {
   
   const fileInputRef = useRef(null);
   const bgInputRef = useRef(null); 
+
+  // 🎯 NEW: Cropping State
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState(null);
+  const [cropType, setCropType] = useState('backgrounds'); // 'backgrounds' or 'avatars'
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
 
   const [showOdds, setShowOdds] = useState(false); 
   const [showLockedBadges, setShowLockedBadges] = useState(false);
@@ -101,21 +110,6 @@ export default function Profile() {
     const { data: fights } = await supabase.from('fights').select('*');
     calculateStats(finalPicks || [], fights || [], !!error);
     setLoading(false);
-  };
-
-  const handleImageUpload = async (event, bucketName, dbField, setLoadState, setUrlState) => {
-    try {
-      setLoadState(true);
-      if (!event.target.files || event.target.files.length === 0) throw new Error('You must select an image to upload.');
-      const file = event.target.files[0];
-      const fileName = `${user.id}-${bucketName}-${Math.random()}.${file.name.split('.').pop()}`;
-      const { error: uploadError } = await supabase.storage.from(bucketName).upload(fileName, file);
-      if (uploadError) throw uploadError;
-      const { data: { publicUrl } } = supabase.storage.from(bucketName).getPublicUrl(fileName);
-      const { error: updateError } = await supabase.from('profiles').upsert({ id: user.id, [dbField]: publicUrl, updated_at: new Date() });
-      if (updateError) throw updateError;
-      setUrlState(publicUrl);
-    } catch (error) { alert(`Error uploading: ` + error.message); } finally { setLoadState(false); }
   };
 
   const handleSaveProfile = async () => {
@@ -174,6 +168,69 @@ export default function Profile() {
     setHistory(historyData);
   };
 
+  // ----------------------------------------------------------------------
+  // 🎯 IMAGE UPLOAD & CROPPING LOGIC
+  // ----------------------------------------------------------------------
+
+  // 1. Read file and open modal
+  const onFileChange = async (e, type) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      let imageDataUrl = await readFile(file);
+      setImageToCrop(imageDataUrl);
+      setCropType(type); // 'backgrounds' or 'avatars'
+      setCrop({ x: 0, y: 0 });
+      setZoom(1);
+      setCropModalOpen(true);
+      
+      // Reset inputs so you can select the same file again if needed
+      if (bgInputRef.current) bgInputRef.current.value = '';
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
+  // 2. Process crop and upload to Supabase
+  const handleCropSave = async () => {
+    try {
+      if (cropType === 'backgrounds') setUploadingBg(true);
+      else setUploading(true);
+      
+      setCropModalOpen(false); // Close modal immediately for better UX
+
+      // Generate cropped image Blob
+      const croppedImageBlob = await getCroppedImg(imageToCrop, croppedAreaPixels);
+      const fileName = `${user.id}-${cropType}-${Math.random()}.jpg`;
+
+      // Upload to Supabase Storage
+      const { error: uploadError } = await supabase.storage.from(cropType).upload(fileName, croppedImageBlob, { contentType: 'image/jpeg' });
+      if (uploadError) throw uploadError;
+
+      // Get Public URL
+      const { data: { publicUrl } } = supabase.storage.from(cropType).getPublicUrl(fileName);
+      const dbField = cropType === 'backgrounds' ? 'background_url' : 'avatar_url';
+
+      // Update Database
+      const { error: updateError } = await supabase.from('profiles').upsert({ id: user.id, [dbField]: publicUrl, updated_at: new Date() });
+      if (updateError) throw updateError;
+
+      // Update State
+      if (cropType === 'backgrounds') setBackgroundUrl(publicUrl);
+      else setAvatarUrl(publicUrl);
+
+    } catch (error) {
+      alert(`Error uploading image: ` + error.message);
+    } finally {
+      setUploadingBg(false);
+      setUploading(false);
+      setImageToCrop(null);
+    }
+  };
+
+
   const badgesWithStatus = AVAILABLE_BADGES.map(badge => ({ ...badge, earned: userBadges.includes(badge.id) }));
   const visibleBadges = badgesWithStatus.filter(badge => showLockedBadges || badge.earned);
   const earnedCount = badgesWithStatus.filter(b => b.earned).length;
@@ -188,6 +245,56 @@ export default function Profile() {
   return (
     <main className="min-h-screen bg-[#050505] text-white pb-24 font-sans selection:bg-teal-500 selection:text-white relative overflow-hidden">
       
+      {/* 🎯 CROPPING MODAL OVERLAY */}
+      {cropModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 md:p-12">
+              <div className="w-full max-w-4xl bg-gray-950 border border-teal-500/30 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(20,184,166,0.15)] flex flex-col h-[80vh] md:h-auto md:aspect-[4/3] max-h-screen animate-in fade-in zoom-in-95">
+                  
+                  <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900/50">
+                      <h3 className="font-black italic uppercase text-teal-400 tracking-widest">
+                          Adjust {cropType === 'backgrounds' ? 'Cover Photo' : 'Avatar'}
+                      </h3>
+                      <button onClick={() => setCropModalOpen(false)} className="text-gray-500 hover:text-white transition-colors">✕</button>
+                  </div>
+
+                  <div className="relative flex-grow bg-black">
+                      <Cropper
+                          image={imageToCrop}
+                          crop={crop}
+                          zoom={zoom}
+                          aspect={cropType === 'backgrounds' ? 21 / 9 : 1}
+                          cropShape={cropType === 'avatars' ? 'round' : 'rect'}
+                          onCropChange={setCrop}
+                          onCropComplete={onCropComplete}
+                          onZoomChange={setZoom}
+                      />
+                  </div>
+
+                  <div className="p-4 md:p-6 border-t border-gray-800 bg-gray-900/50 flex flex-col md:flex-row items-center justify-between gap-4">
+                      <div className="flex items-center gap-4 w-full md:w-1/2">
+                          <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Zoom</span>
+                          <input 
+                              type="range" 
+                              min={1} max={3} step={0.1} 
+                              value={zoom} 
+                              onChange={(e) => setZoom(e.target.value)} 
+                              className="w-full accent-teal-500 bg-gray-800 h-1.5 rounded-lg appearance-none cursor-pointer"
+                          />
+                      </div>
+                      
+                      <div className="flex items-center gap-3 w-full md:w-auto">
+                          <button onClick={() => setCropModalOpen(false)} className="flex-1 md:flex-none px-6 py-2.5 rounded-full text-xs font-black uppercase tracking-widest text-gray-400 hover:bg-gray-800 transition-colors">
+                              Cancel
+                          </button>
+                          <button onClick={handleCropSave} className="flex-1 md:flex-none px-6 py-2.5 rounded-full text-xs font-black uppercase tracking-widest bg-teal-500 text-black hover:bg-teal-400 transition-colors shadow-[0_0_15px_rgba(20,184,166,0.3)]">
+                              Save Image
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* 🌟 AMBIENT THEME GLOWS */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
           <div className="absolute top-[10%] left-[5%] w-[400px] h-[400px] bg-pink-600/10 rounded-full blur-[150px]"></div>
@@ -205,9 +312,9 @@ export default function Profile() {
             <div className="absolute inset-0 bg-gradient-to-r from-[#050505] via-transparent to-transparent opacity-80"></div>
         </div>
 
-        <input type="file" ref={bgInputRef} onChange={(e) => handleImageUpload(e, 'backgrounds', 'background_url', setUploadingBg, setBackgroundUrl)} accept="image/*" className="hidden" />
+        {/* 🎯 CHANGED TO onFileChange */}
+        <input type="file" ref={bgInputRef} onChange={(e) => onFileChange(e, 'backgrounds')} accept="image/*" className="hidden" />
 
-        {/* 🎯 FIX: Top Nav & Action Buttons (Grouped to prevent overlap) */}
         <div className="relative z-10 w-full max-w-7xl mx-auto px-6 pt-6 flex justify-between items-center">
             <Link href="/" className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-white/50 hover:text-pink-400 transition-colors group">
                 <span className="group-hover:-translate-x-1 transition-transform">←</span> Dashboard
@@ -216,10 +323,10 @@ export default function Profile() {
             <div className="flex items-center gap-3">
                 <button 
                     onClick={() => bgInputRef.current?.click()}
-                    disabled={uploadingBg}
+                    disabled={uploadingBg || cropModalOpen}
                     className="bg-black/40 hover:bg-black/80 backdrop-blur-md border border-teal-500/30 px-3 py-1.5 md:px-4 md:py-2 rounded-full text-[9px] md:text-[10px] font-black uppercase tracking-widest text-teal-400 hover:text-teal-300 hover:border-teal-500/60 transition-all flex items-center gap-1 md:gap-2"
                 >
-                    <span>📷</span> <span className="hidden sm:inline">{uploadingBg ? 'Uploading...' : 'Edit Cover'}</span>
+                    <span>📷</span> <span className="hidden sm:inline">{uploadingBg ? 'Saving...' : 'Edit Cover'}</span>
                 </button>
                 <LogOutButton />
             </div>
@@ -242,7 +349,8 @@ export default function Profile() {
                         <span className="text-xs font-black uppercase text-teal-400 tracking-widest">{uploading ? '...' : 'Upload'}</span>
                     </div>
                 </div>
-                <input type="file" ref={fileInputRef} onChange={(e) => handleImageUpload(e, 'avatars', 'avatar_url', setUploading, setAvatarUrl)} accept="image/*" className="hidden" />
+                {/* 🎯 CHANGED TO onFileChange */}
+                <input type="file" ref={fileInputRef} onChange={(e) => onFileChange(e, 'avatars')} accept="image/*" className="hidden" />
             </div>
 
             <div className="text-center md:text-left mb-2 md:mb-0">
@@ -281,7 +389,6 @@ export default function Profile() {
         {/* LEFT COLUMN: Tale of the Tape & Settings */}
         <div className="lg:col-span-4 space-y-8">
             
-            {/* Tale of the Tape (Stats) */}
             <div className="bg-black/40 backdrop-blur-xl border border-teal-900/40 rounded-3xl p-6 shadow-2xl hover:border-teal-500/40 transition-colors">
                 <div className="flex items-center gap-3 mb-6">
                     <div className="w-2 h-8 bg-gradient-to-b from-teal-400 to-pink-500 rounded-full"></div>
@@ -296,7 +403,6 @@ export default function Profile() {
                 </div>
             </div>
 
-            {/* Visibility Settings */}
             <div className="bg-black/40 backdrop-blur-xl border border-teal-900/40 rounded-3xl p-6 shadow-2xl relative overflow-hidden hover:border-teal-500/40 transition-colors">
                 <div className="flex items-center gap-3 mb-6 relative z-10">
                     <span className="text-xl drop-shadow-[0_0_10px_rgba(20,184,166,0.8)]">👁️</span>
@@ -316,7 +422,6 @@ export default function Profile() {
                 </div>
             </div>
 
-            {/* Odds Toggle */}
             <div className="bg-black/40 backdrop-blur-xl border border-pink-900/40 rounded-3xl p-6 shadow-2xl flex items-center justify-between hover:border-pink-500/40 transition-colors">
                 <div>
                     <h4 className="text-xs font-black text-white uppercase tracking-widest">Vegas Odds</h4>
@@ -331,7 +436,6 @@ export default function Profile() {
         {/* RIGHT COLUMN: Trophies & History */}
         <div className="lg:col-span-8 space-y-8">
             
-            {/* Trophy Room */}
             <div className="bg-black/40 backdrop-blur-xl border border-teal-900/40 hover:border-teal-500/40 transition-colors rounded-3xl p-6 md:p-8 shadow-2xl">
                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                     <div>
@@ -375,13 +479,11 @@ export default function Profile() {
                 </div>
             </div>
 
-            {/* Collapsible Fight History */}
             <div className={`bg-black/40 backdrop-blur-xl transition-all duration-500 ease-in-out rounded-3xl shadow-2xl overflow-hidden border ${
                 isHistoryOpen 
                 ? 'border-pink-500/40 shadow-[0_0_30px_rgba(219,39,119,0.1)]' 
                 : 'border-teal-900/40 hover:border-teal-500/50'
             }`}>
-                
                 <div 
                     className="flex items-center justify-between p-6 md:p-8 cursor-pointer group select-none bg-transparent"
                     onClick={() => setIsHistoryOpen(!isHistoryOpen)}
@@ -450,7 +552,61 @@ export default function Profile() {
   );
 }
 
-// --- NEW COMPONENT HELPERS WITH THEME BORDERS ---
+// ----------------------------------------------------------------------
+// 🎯 NEW: UTILITY FUNCTIONS FOR CANVAS CROPPING
+// ----------------------------------------------------------------------
+
+function readFile(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.addEventListener('load', () => resolve(reader.result), false);
+    reader.readAsDataURL(file);
+  });
+}
+
+const createImage = (url) =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener('load', () => resolve(image));
+    image.addEventListener('error', (error) => reject(error));
+    image.setAttribute('crossOrigin', 'anonymous'); 
+    image.src = url;
+  });
+
+async function getCroppedImg(imageSrc, pixelCrop) {
+  const image = await createImage(imageSrc);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx) return null;
+
+  // Set canvas size to the exact crop size
+  canvas.width = pixelCrop.width;
+  canvas.height = pixelCrop.height;
+
+  // Draw the cropped portion onto the canvas
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    pixelCrop.width,
+    pixelCrop.height
+  );
+
+  // Return as a Blob so it can be uploaded easily
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((file) => {
+      if (file) resolve(file);
+      else reject(new Error('Canvas is empty'));
+    }, 'image/jpeg', 0.9);
+  });
+}
+
+// --- STANDARD COMPONENTS ---
 
 function StatGlass({ label, value, color }) {
     return (
