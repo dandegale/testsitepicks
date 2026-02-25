@@ -126,8 +126,9 @@ export default function PublicProfile() {
     setHistory(historyData);
   };
 
-  const badgesWithStatus = AVAILABLE_BADGES.map(badge => ({ ...badge, earned: userBadges.includes(badge.id) }));
-  const earnedCount = badgesWithStatus.filter(b => b.earned).length;
+  // 🎯 ONLY Grab the earned badges to render on the public page
+  const earnedBadgesToDisplay = AVAILABLE_BADGES.filter(badge => userBadges.includes(badge.id));
+  const earnedCount = earnedBadgesToDisplay.length;
 
   if (loading) return (
     <div className="min-h-screen bg-[#050505] flex items-center justify-center relative overflow-hidden">
@@ -280,17 +281,22 @@ export default function PublicProfile() {
                     </div>
                     
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                        {badgesWithStatus.map((badge) => (
-                            <div key={badge.id} className={`relative rounded-2xl p-4 flex flex-col items-center justify-center text-center transition-all duration-300 animate-in fade-in zoom-in-95
-                                ${badge.earned ? `bg-teal-950/10 border border-pink-500/20 hover:border-pink-500/60 ${badge.glow}` : 'bg-black/60 border border-gray-800 opacity-40 grayscale'}`}>
-                                {!badge.earned && <div className="absolute top-3 right-3 text-gray-600 text-xs">🔒</div>}
-                                <div className={`w-20 h-20 md:w-24 md:h-24 mb-4 flex items-center justify-center transition-transform hover:scale-110 ${badge.earned ? 'opacity-100' : 'opacity-50'}`}>
-                                     <img src={badge.imagePath} alt={badge.title} className="max-w-full max-h-full object-contain drop-shadow-2xl" />
+                        {/* 🎯 ONLY renders badges the user has actually earned */}
+                        {earnedBadgesToDisplay.length > 0 ? (
+                            earnedBadgesToDisplay.map((badge) => (
+                                <div key={badge.id} className={`relative rounded-2xl p-4 flex flex-col items-center justify-center text-center transition-all duration-300 animate-in fade-in zoom-in-95 bg-teal-950/10 border border-pink-500/20 hover:border-pink-500/60 ${badge.glow}`}>
+                                    <div className="w-20 h-20 md:w-24 md:h-24 mb-4 flex items-center justify-center transition-transform hover:scale-110 opacity-100">
+                                         <img src={badge.imagePath} alt={badge.title} className="max-w-full max-h-full object-contain drop-shadow-2xl" />
+                                    </div>
+                                    <h3 className="text-[11px] font-black uppercase tracking-widest mb-1.5 text-white">{badge.title}</h3>
+                                    <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest leading-relaxed">{badge.description}</p>
                                 </div>
-                                <h3 className={`text-[11px] font-black uppercase tracking-widest mb-1.5 ${badge.earned ? 'text-white' : 'text-gray-500'}`}>{badge.title}</h3>
-                                <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest leading-relaxed">{badge.description}</p>
+                            ))
+                        ) : (
+                            <div className="col-span-full py-12 border border-gray-800 border-dashed rounded-2xl text-center">
+                                <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest">No badges earned yet.</p>
                             </div>
-                        ))}
+                        )}
                     </div>
                 </div>
 
