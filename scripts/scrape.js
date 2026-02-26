@@ -243,20 +243,42 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             r.fantasy_points = parseFloat(Math.min(r.fantasy_points, 999.99).toFixed(2));
         });
 
+        // 1. Save fighter points to the stats table
         const { error } = await supabase.from('fighter_stats').upsert(results, { onConflict: 'fight_id, fighter_name' });
         if (error) throw new Error(`Supabase Stats Error: ${error.message}`);
         
-        let finalMethodString = winMethodStr;
+        // ---------------------------------------------------------
+        // 🎯 NEW: UPDATE FIGHTS TABLE (Winner, Method, Round)
+        // ---------------------------------------------------------
+        let finalMethodString = winMethodStr; // Keep this just for the console logs
         if (isKO || isSub) {
             finalMethodString = `${winMethodStr} R${finishRound}`;
         }
 
         if (statuses.includes('W')) {
-            const winnerName = fighters[winnerIndex];
-            await supabase.from('fights').update({ 
-                winner: winnerName,
-                method: finalMethodString 
+            // Guarantee we save the exact spelling from your database so badges grade properly
+            const winnerCore = getCoreName(fighters[winnerIndex]);
+            let exactDbWinnerName = fighters[winnerIndex]; 
+            
+            if (dbFight.fighter_1_name && dbFight.fighter_1_name.toLowerCase().includes(winnerCore)) {
+                exactDbWinnerName = dbFight.fighter_1_name;
+            } else if (dbFight.fighter_2_name && dbFight.fighter_2_name.toLowerCase().includes(winnerCore)) {
+                exactDbWinnerName = dbFight.fighter_2_name;
+            }
+
+            // Clean up method string (e.g. 'KO/TKO', 'SUB', 'DEC')
+            const cleanMethod = winMethodStr ? winMethodStr.trim() : (isDec ? 'DEC' : 'UNKNOWN');
+
+            // Save winner, method, and integer round explicitly
+            const { error: updateError } = await supabase.from('fights').update({ 
+                winner: exactDbWinnerName,
+                method: cleanMethod,
+                round: finishRound 
             }).eq('id', dbFight.id);
+
+            if (updateError) {
+                console.error(`❌ Failed to update winner for ${exactDbWinnerName}:`, updateError.message);
+            }
         }
 
         // 🎯 TERMINAL LOGGING
