@@ -268,12 +268,13 @@ export default function PublicProfile() {
                     <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                         <div>
                            <div className="flex items-center gap-3 mb-2">
+
     <img 
         src="/trophy.png" 
         alt="Trophies" 
-        className="w-7 h-7 md:w-8 md:h-8 object-contain drop-shadow-[0_0_15px_rgba(234,179,8,0.6)]" 
+        className="w-10 h-10 md:w-12 md:h-12 object-contain drop-shadow-[0_0_15px_rgba(234,179,8,0.6)] hover:scale-110 transition-transform" 
     />
-    <h2 className="text-xl font-black text-white italic uppercase tracking-tighter">Trophy Room</h2>
+    <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter">Trophy Room</h2>
 </div>
                             <div className="flex items-center gap-3">
                                 <div className="w-32 h-1.5 bg-gray-900 rounded-full overflow-hidden shadow-inner">
