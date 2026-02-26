@@ -1,8 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 // ⚠️ IMPORTANT: Update this import path to wherever you saved your Badge Engine code!
-import { awardEventBadges, evaluateUserStreaks } from '../../../../lib/badgeEngine'; 
-
+import { awardEventBadges, evaluateUserStreaks } from '@/lib/badgeEngine';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
