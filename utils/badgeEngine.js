@@ -2,13 +2,13 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY // Use Service Role for backend engine overrides
 );
 
 export async function awardEventBadges(eventId) {
   console.log(`🏆 Running Badge Engine for Event: ${eventId}`);
 
-  // 1. Get all fights for this event
+  // 1. Get all graded fights for this event
   const { data: fights } = await supabase
     .from('fights')
     .select('*')
@@ -18,23 +18,30 @@ export async function awardEventBadges(eventId) {
   if (!fights || fights.length === 0) return { success: true, message: 'No graded fights found.' };
 
   const fightIds = fights.map(f => f.id);
+  const totalEventFights = fights.length;
 
-  // Find the biggest underdog on the card (highest positive odds)
+  // 2. ADVANCED ODDS TRACKING: Find the biggest underdog AND all winning underdogs
   let biggestUnderdogFightId = null;
   let highestOdds = 0;
+  const winningUnderdogFightIds = new Set();
   
   fights.forEach(f => {
-      // Determine if fighter 1 or 2 was the underdog and won
-      if (f.winner === f.fighter_1_name && parseInt(f.fighter_1_odds) > highestOdds) {
-          highestOdds = parseInt(f.fighter_1_odds);
-          biggestUnderdogFightId = f.id;
-      } else if (f.winner === f.fighter_2_name && parseInt(f.fighter_2_odds) > highestOdds) {
-          highestOdds = parseInt(f.fighter_2_odds);
-          biggestUnderdogFightId = f.id;
+      let f1Odds = parseInt(f.fighter_1_odds) || -9999;
+      let f2Odds = parseInt(f.fighter_2_odds) || -9999;
+      let isUnderdogWin = false;
+
+      if (f.winner === f.fighter_1_name && f1Odds > 0) {
+          isUnderdogWin = true;
+          if (f1Odds > highestOdds) { highestOdds = f1Odds; biggestUnderdogFightId = f.id; }
+      } else if (f.winner === f.fighter_2_name && f2Odds > 0) {
+          isUnderdogWin = true;
+          if (f2Odds > highestOdds) { highestOdds = f2Odds; biggestUnderdogFightId = f.id; }
       }
+
+      if (isUnderdogWin) winningUnderdogFightIds.add(f.id);
   });
 
-  // 2. Get all picks for these fights
+  // 3. Get all picks for these fights
   const { data: picks } = await supabase
     .from('picks')
     .select('*')
@@ -42,7 +49,7 @@ export async function awardEventBadges(eventId) {
 
   if (!picks || picks.length === 0) return { success: true, message: 'No picks found for this event.' };
 
-  // 3. Group picks by user email
+  // 4. Group picks by user EMAIL (user_id)
   const userPicks = {};
   picks.forEach(pick => {
     if (!userPicks[pick.user_id]) userPicks[pick.user_id] = [];
@@ -51,8 +58,8 @@ export async function awardEventBadges(eventId) {
 
   const newlyEarnedBadges = [];
 
-  // 4. THE MATRIX: Evaluate each user's performance
-  for (const [userId, uPicks] of Object.entries(userPicks)) {
+  // 5. THE MATRIX: Evaluate each user's performance
+  for (const [userEmail, uPicks] of Object.entries(userPicks)) {
     
     let koWins = 0;
     let subWins = 0;
@@ -60,10 +67,9 @@ export async function awardEventBadges(eventId) {
     let totalWins = 0;
     let hasRound1KO = false;
     let hasBiggestUnderdog = false;
+    let pickedUnderdogWins = 0;
     let isPerfectCard = true;
 
-    // We only care about global picks for "Perfect Card", or you can allow league picks.
-    // For this engine, we look at their performance across the event.
     uPicks.forEach(pick => {
       const fight = fights.find(f => f.id === pick.fight_id);
       if (fight) {
@@ -80,48 +86,50 @@ export async function awardEventBadges(eventId) {
             if (method.includes('SUB')) subWins++;
             if (method.includes('DEC')) decWins++;
 
-            // Did they pick the biggest underdog?
-            if (pick.fight_id === biggestUnderdogFightId) {
-                hasBiggestUnderdog = true;
-            }
+            // Whale Hunter Check
+            if (pick.fight_id === biggestUnderdogFightId) hasBiggestUnderdog = true;
+            
+            // The Underdog Check
+            if (winningUnderdogFightIds.has(pick.fight_id)) pickedUnderdogWins++;
 
           } else {
-              // They got a pick wrong on this card
               isPerfectCard = false;
           }
       }
     });
 
     // --- BADGE LOGIC CONDITIONS ---
-
-    if (koWins >= 5) newlyEarnedBadges.push({ user_id: userId, badge_id: 'b1' }); // BMF
-    if (subWins >= 5) newlyEarnedBadges.push({ user_id: userId, badge_id: 'b2' }); // Sub Artist
-    if (hasRound1KO) newlyEarnedBadges.push({ user_id: userId, badge_id: 'b3' }); // Flashbang
+    if (koWins >= 5) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b1' }); // BMF
+    if (subWins >= 5) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b2' }); // Sub Artist
+    if (hasRound1KO) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b3' }); // Flashbang
     
     if (totalWins >= 3 && decWins === totalWins) {
-        newlyEarnedBadges.push({ user_id: userId, badge_id: 'b4' }); // Decision Merchant
+        newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b4' }); // Decision Merchant
     }
 
-    if (isPerfectCard && uPicks.length >= 3) {
-        newlyEarnedBadges.push({ user_id: userId, badge_id: 'b5' }); // The Boss
+    if (isPerfectCard && uPicks.length === totalEventFights && totalEventFights >= 5) {
+        newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b5' }); // The Boss
     }
 
     if (hasBiggestUnderdog) {
-        newlyEarnedBadges.push({ user_id: userId, badge_id: 'b13' }); // Whale Hunter
+        newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b13' }); // Whale Hunter
+    }
+
+    if (winningUnderdogFightIds.size >= 2 && pickedUnderdogWins === winningUnderdogFightIds.size) {
+        newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b14' }); // The Underdog
     }
   }
 
-  // 5. Save the earned badges to the database
+  // 6. Save the earned badges to the database
   if (newlyEarnedBadges.length > 0) {
-    console.log(`🏆 Found ${newlyEarnedBadges.length} badges to award! Saving to DB...`);
+    console.log(`🏆 Found ${newlyEarnedBadges.length} Event Badges to award! Saving to DB...`);
     
-    // Upsert avoids duplicate errors because of the UNIQUE(user_id, badge_id) constraint in Supabase
     const { error } = await supabase
         .from('user_badges')
         .upsert(newlyEarnedBadges, { onConflict: 'user_id, badge_id' });
 
     if (error) {
-        console.error("Error saving badges:", error);
+        console.error("❌ Error saving badges:", error);
         return { success: false, error };
     }
   } 
@@ -130,82 +138,65 @@ export async function awardEventBadges(eventId) {
 }
 
 // ----------------------------------------------------------------------------------
-// 🎯 NEW: STREAK ENGINE (Checks Career History)
+// 🎯 STREAK ENGINE (Checks Career History via Email)
 // ----------------------------------------------------------------------------------
 
-export async function evaluateUserStreaks(userId) {
-  console.log(`🔥 Evaluating Streaks for User: ${userId}`);
+export async function evaluateUserStreaks(userEmail) {
+  console.log(`🔥 Evaluating Streaks for User: ${userEmail}`);
 
-  // 1. Fetch all picks for this user, including the fight data
   const { data: picksData, error } = await supabase
     .from('picks')
     .select('*, fights(*)')
-    .eq('user_id', userId);
+    .eq('user_id', userEmail);
 
   if (error || !picksData || picksData.length === 0) return { success: true, message: 'No picks found.' };
 
-  // 2. Filter out pending fights (we only want graded fights where winner is not null)
   const gradedPicks = picksData.filter(p => p.fights && p.fights.winner !== null);
-
   if (gradedPicks.length === 0) return { success: true, message: 'No graded fights found for user.' };
 
-  // 3. Sort chronologically by the time the fight started
   gradedPicks.sort((a, b) => new Date(a.fights.start_time) - new Date(b.fights.start_time));
 
-  // --- STREAK MATH ---
   let currentWinStreak = 0;
-  let maxWinStreak = 0; // Tracks their all-time best streak
+  let maxWinStreak = 0; 
   const winningPicks = [];
 
   gradedPicks.forEach(pick => {
     if (pick.selected_fighter === pick.fights.winner) {
-      // It's a win!
       currentWinStreak++;
-      winningPicks.push(pick); // Save for Chalk Eater logic
-      if (currentWinStreak > maxWinStreak) {
-        maxWinStreak = currentWinStreak;
-      }
+      winningPicks.push(pick); 
+      if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak;
     } else {
-      // It's a loss, reset the streak counter
       currentWinStreak = 0;
     }
   });
 
   const newlyEarnedBadges = [];
 
-  // --- AWARD STREAK BADGES ---
-  if (maxWinStreak >= 3) newlyEarnedBadges.push({ user_id: userId, badge_id: 'b9' });  // On Fire
-  if (maxWinStreak >= 5) newlyEarnedBadges.push({ user_id: userId, badge_id: 'b10' }); // Heating Up
-  if (maxWinStreak >= 10) newlyEarnedBadges.push({ user_id: userId, badge_id: 'b11' }); // Unstoppable
-  if (maxWinStreak >= 25) newlyEarnedBadges.push({ user_id: userId, badge_id: 'b12' }); // God Tier
+  if (maxWinStreak >= 3) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b9' });  
+  if (maxWinStreak >= 5) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b10' }); 
+  if (maxWinStreak >= 10) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b11' }); 
+  if (maxWinStreak >= 25) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b12' }); 
 
-  // --- AWARD "CHALK EATER" BADGE ---
-  // Logic: "Last 10 correct picks were all heavy favorites (<= -250)"
   if (winningPicks.length >= 10) {
-    const last10Wins = winningPicks.slice(-10); // Grab exactly the last 10 wins
-    
+    const last10Wins = winningPicks.slice(-10); 
     const isChalkEater = last10Wins.every(pick => {
       const odds = parseInt(pick.odds_at_pick, 10);
-      // Validates odds exist, and are worse than or equal to -250 (e.g. -300, -450)
       return !isNaN(odds) && odds <= -250; 
     });
 
-    if (isChalkEater) {
-      newlyEarnedBadges.push({ user_id: userId, badge_id: 'b15' }); // Chalk Eater
-    }
+    if (isChalkEater) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b15' }); 
   }
 
-  // --- SAVE TO DATABASE ---
   if (newlyEarnedBadges.length > 0) {
     const { error: upsertError } = await supabase
       .from('user_badges')
       .upsert(newlyEarnedBadges, { onConflict: 'user_id, badge_id' });
 
     if (upsertError) {
-      console.error(`Error saving streak badges for ${userId}:`, upsertError);
+      console.error(`❌ Error saving streak badges for ${userEmail}:`, upsertError);
       return { success: false, error: upsertError };
     } else {
-      console.log(`✅ Granted ${newlyEarnedBadges.length} streak/history badges to ${userId}!`);
+      console.log(`✅ Granted ${newlyEarnedBadges.length} streak/history badges to ${userEmail}!`);
     }
   }
 
