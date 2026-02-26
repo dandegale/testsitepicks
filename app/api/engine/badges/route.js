@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
-// ⚠️ IMPORTANT: Update this import path to wherever you saved your Badge Engine code!
 import { awardEventBadges, evaluateUserStreaks } from '@/utils/badgeEngine';
+
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
@@ -13,13 +13,13 @@ export async function GET() {
   );
 
   try {
-    // 1. Find the fights that happened in the last 48 hours that HAVE a winner
-    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    // 1. Find the fights that happened in the last 14 days that HAVE a winner
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
     
     const { data: recentFights, error: fightError } = await supabase
         .from('fights')
         .select('event_id, id')
-        .gte('start_time', fortyEightHoursAgo)
+        .gte('start_time', fourteenDaysAgo) // <--- Now looking back 14 days
         .not('winner', 'is', null);
 
     if (fightError || !recentFights || recentFights.length === 0) {
