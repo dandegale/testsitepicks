@@ -201,6 +201,9 @@ export default function LeaguePage() {
       const historicalWinsMap = {};
       members.forEach(m => historicalWinsMap[m.user_id] = 0);
 
+      // 🎯 NEW: Track who won the MOST RECENT event to award the Belt!
+      let latestWinners = [];
+
       pastEvents.forEach(eventFights => {
           const isCompleted = eventFights.length > 0 && eventFights.every(f => f.winner !== null && f.winner !== undefined && f.winner !== '');
           if (!isCompleted) return;
@@ -234,6 +237,8 @@ export default function LeaguePage() {
                   if (historicalWinsMap[w] !== undefined) historicalWinsMap[w] += 1;
                   else historicalWinsMap[w] = 1; 
               });
+              // Continuously updates so the last completed event sets the Reigning Champ
+              latestWinners = winners; 
           }
       });
 
@@ -252,7 +257,8 @@ export default function LeaguePage() {
               avatarUrl: member.avatarUrl,
               pickCount: memberPicks.length,
               totalScore: parseFloat(totalScore.toFixed(1)),
-              cardsWon: historicalWinsMap[member.user_id] || 0
+              cardsWon: historicalWinsMap[member.user_id] || 0,
+              isReigningChamp: latestWinners.includes(member.user_id) // 🎯 Flag the champ
           };
       });
 
@@ -463,7 +469,8 @@ export default function LeaguePage() {
       return stats || { is_winner: null, sig_strikes: 0, takedowns: 0, knockdowns: 0, sub_attempts: 0, control_time_seconds: 0, fantasy_points: 0 };
   };
 
-  const renderTeamBoxScore = (email, playerName = null, totalScore = 0, showHeader = false) => {
+  // 🎯 Updated to accept isReigningChamp and display the belt in their Box Score header
+  const renderTeamBoxScore = (email, playerName = null, totalScore = 0, showHeader = false, isReigningChamp = false) => {
       if (!email) return null; 
       const teamPicks = activeLeaguePicks.filter(p => p.user_id === email && String(p.league_id) === String(leagueId));
       
@@ -471,11 +478,13 @@ export default function LeaguePage() {
           <div className={`bg-black overflow-hidden w-full transition-all ${showHeader ? 'border border-gray-800 rounded-xl' : 'border-t border-gray-800'}`}>
               {showHeader && (
                   <div className="bg-gray-900 p-3 border-b border-gray-800 flex justify-between items-center">
-                      <span className="text-xs font-black uppercase tracking-widest text-white">
-                          {/* 🎯 ADDED: Profile Link in Box Score Header */}
+                      <span className="text-xs font-black uppercase tracking-widest text-white flex items-center gap-2">
                           <Link href={`/u/${encodeURIComponent(playerName)}`} className="hover:text-pink-400 transition-colors">
                               {playerName}'s Roster
                           </Link>
+                          {isReigningChamp && (
+                              <img src="/champion.png" alt="Champ" className="w-5 h-5 drop-shadow-[0_0_10px_rgba(234,179,8,0.8)]" title="Reigning Champion" />
+                          )}
                       </span>
                       <span className="text-pink-500 font-black text-xs">{totalScore} PTS</span>
                   </div>
@@ -765,7 +774,7 @@ export default function LeaguePage() {
                                         <div className="p-4 border-t border-gray-900 max-h-[800px] overflow-y-auto custom-scrollbar flex flex-col gap-6">
                                             {leaderboard.map(player => (
                                                 <div key={player.user_id}>
-                                                    {renderTeamBoxScore(player.user_id, player.displayName, player.totalScore, true)}
+                                                    {renderTeamBoxScore(player.user_id, player.displayName, player.totalScore, true, player.isReigningChamp)}
                                                 </div>
                                             ))}
                                         </div>
@@ -877,7 +886,7 @@ export default function LeaguePage() {
                                     <div className="p-4 border-t border-gray-900 max-h-[800px] overflow-y-auto custom-scrollbar flex flex-col gap-6">
                                         {leaderboard.map(player => (
                                             <div key={player.user_id}>
-                                                {renderTeamBoxScore(player.user_id, player.displayName, player.totalScore, true)}
+                                                {renderTeamBoxScore(player.user_id, player.displayName, player.totalScore, true, player.isReigningChamp)}
                                             </div>
                                         ))}
                                     </div>
@@ -981,7 +990,6 @@ export default function LeaguePage() {
                                                             #{index + 1}
                                                         </div>
                                                         
-                                                        {/* 🎯 WRAPPED LEADERBOARD USERNAME/AVATAR IN LINK */}
                                                         <div className="col-span-4 flex items-center gap-3 overflow-hidden">
                                                             <Link 
                                                                 href={`/u/${encodeURIComponent(player.displayName)}`} 
@@ -1004,10 +1012,12 @@ export default function LeaguePage() {
                                                                 >
                                                                     {player.displayName}
                                                                 </Link>
-                                                                {isEventConcluded && index === 0 && (
+                                                                
+                                                                {/* 🎯 REIGNING CHAMPION BELT */}
+                                                                {player.isReigningChamp && (
                                                                     <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest flex items-center gap-1.5 mt-1">
-                                                                        <img src="/trophy.png" className="w-5 h-5 object-contain" alt="winner" />
-                                                                        Champion
+                                                                        <img src="/champion.png" className="w-5 h-5 object-contain drop-shadow-[0_0_10px_rgba(234,179,8,0.8)]" alt="Reigning Champ" />
+                                                                        Reigning Champ
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -1033,7 +1043,7 @@ export default function LeaguePage() {
 
                                                     {expandedUserRoster === player.user_id && (
                                                         <div className="bg-black border-y border-gray-800 animate-in slide-in-from-top-2 duration-200">
-                                                            {renderTeamBoxScore(player.user_id, player.displayName, player.totalScore, false)}
+                                                            {renderTeamBoxScore(player.user_id, player.displayName, player.totalScore, false, player.isReigningChamp)}
                                                         </div>
                                                     )}
                                                 </div>
@@ -1063,7 +1073,6 @@ export default function LeaguePage() {
                                 {feedItems.map(item => (
                                     <div key={item.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between hover:border-gray-700 transition-colors">
                                         
-                                        {/* 🎯 WRAPPED ACTIVITY FEED USERNAME/AVATAR IN LINK */}
                                         <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
                                             <Link href={`/u/${encodeURIComponent(item.user)}`} className="flex-shrink-0 hover:opacity-80 transition-opacity">
                                                 {item.avatar ? (
@@ -1228,7 +1237,6 @@ export default function LeaguePage() {
                                     {members.map((member) => (
                                         <div key={member.user_id} className="p-4 flex items-center justify-between hover:bg-gray-800/30 transition-colors">
                                             
-                                            {/* 🎯 WRAPPED SETTINGS ROSTER USERNAME/AVATAR IN LINK */}
                                             <div className="flex items-center gap-4">
                                                 <Link href={`/u/${encodeURIComponent(member.displayName)}`} className="flex-shrink-0 hover:opacity-80 transition-opacity">
                                                     {member.avatarUrl ? (

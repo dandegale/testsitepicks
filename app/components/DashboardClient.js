@@ -13,7 +13,7 @@ import BettingSlip from './BettingSlip';
 import MobileNav from './MobileNav'; 
 import CreateLeagueModal from './CreateLeagueModal';
 import ShowdownModal from './ShowdownModal';
-import OnboardingModal from './OnboardingModal'; // 🎯 NEW: Imported the Onboarding Modal
+import OnboardingModal from './OnboardingModal'; 
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -87,7 +87,15 @@ export default function DashboardClient({
           const fTime = new Date(f.start_time).getTime();
           return fTime > (now - TWELVE_HOURS);
       });
-      validFights.sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+
+      // 1. Sort ascending (This weekend's event first, next month's event last)
+      // Added tie-breaker for identical API timestamps
+      validFights.sort((a, b) => {
+          const timeA = new Date(a.start_time).getTime();
+          const timeB = new Date(b.start_time).getTime();
+          if (timeA === timeB) return a.id > b.id ? 1 : -1;
+          return timeA - timeB;
+      });
 
       let finalGroupedFights = {};
       const tempGroups = [];
@@ -95,6 +103,7 @@ export default function DashboardClient({
       let groupReferenceTime = validFights.length > 0 ? new Date(validFights[0].start_time).getTime() : 0;
       const THREE_DAYS_MS = 72 * 60 * 60 * 1000;
 
+      // 2. Group the fights by event window
       validFights.forEach((fight) => {
           const fightTime = new Date(fight.start_time).getTime();
           if (fightTime - groupReferenceTime < THREE_DAYS_MS) {
@@ -107,23 +116,27 @@ export default function DashboardClient({
       });
       if (currentBucket.length > 0) tempGroups.push(currentBucket);
 
+      // 3. Process each card individually
       tempGroups.forEach(bucket => {
           if (bucket.length === 0) return;
+          
+          // Because it's sorted ascending, the LAST item in the bucket is the Main Event
           const mainEventFight = bucket[bucket.length - 1];
           const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
               month: 'short', day: 'numeric', timeZone: 'America/New_York' 
           });
           const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
+          
+          // 4. Reverse ONLY the individual bucket so the Main Event is at the top of its specific card
           finalGroupedFights[title] = [...bucket].reverse();
       });
+
       return { cleanFights: validFights, cleanGroups: finalGroupedFights };
   }, [fights]);
 
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user && user.email) {
-        
-        // 🚨 CRITICAL FIX: Add .is('league_id', null) to prevent League picks from leaking into Global!
         const { data: picksData } = await supabase
           .from('picks')
           .select('*')
@@ -206,7 +219,6 @@ export default function DashboardClient({
   return (
     <div className="flex min-h-screen bg-black text-white overflow-hidden font-sans selection:bg-pink-500 selection:text-white">
       
-      {/* 🎯 NEW: Added the OnboardingModal component here */}
       <OnboardingModal />
 
       {/* DESKTOP RAIL */}
@@ -227,8 +239,16 @@ export default function DashboardClient({
                     {clientLeagues && clientLeagues.length > 0 ? (
                         clientLeagues.map(league => (
                             <Link key={league.id} href={`/league/${league.id}`} className="flex items-center gap-4 p-3 rounded-xl bg-gray-800/40 hover:bg-gray-800 border border-gray-700/50 hover:border-pink-500/50 transition-all group">
-                                <div className="w-10 h-10 rounded-full bg-gray-900 border border-gray-600 flex items-center justify-center text-[10px] font-black text-gray-400 group-hover:text-pink-500 group-hover:border-pink-500 transition-all shrink-0">
-                                     {league.name ? league.name.substring(0,2).toUpperCase() : 'LG'}
+                                <div className="w-10 h-10 rounded-full bg-gray-900 border border-gray-600 flex items-center justify-center text-[10px] font-black text-gray-400 group-hover:text-pink-500 group-hover:border-pink-500 transition-all shrink-0 overflow-hidden relative">
+                                    {league.image_url ? (
+                                        <img 
+                                            src={league.image_url} 
+                                            alt={league.name} 
+                                            className="w-full h-full object-cover"
+                                        />
+                                    ) : (
+                                        league.name ? league.name.substring(0,2).toUpperCase() : 'LG'
+                                    )}
                                 </div>
                                 <span className="font-bold text-sm text-gray-300 group-hover:text-white truncate">
                                     {league.name}
@@ -247,14 +267,12 @@ export default function DashboardClient({
                         </div>
                     )}
                     
-                    {clientLeagues && clientLeagues.length > 0 && (
-                        <button 
-                            onClick={() => { setShowMobileLeagues(false); setShowCreateModal(true); }}
-                            className="w-full py-3 mt-2 border border-dashed border-gray-700 text-gray-500 rounded hover:text-teal-400 hover:border-teal-500 transition-all text-xs font-bold uppercase"
-                        >
-                            + Create / Join
-                        </button>
-                    )}
+                    <button 
+                        onClick={() => { setShowMobileLeagues(false); setShowCreateModal(true); }}
+                        className="w-full py-3 mt-2 border border-dashed border-gray-700 text-gray-500 rounded hover:text-teal-400 hover:border-teal-500 transition-all text-xs font-bold uppercase"
+                    >
+                        + Create / Join
+                    </button>
                 </div>
                 
                 <div className="border-t border-gray-800 pt-6">
@@ -348,7 +366,6 @@ export default function DashboardClient({
 
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
             <div className={`mb-8 transition-all duration-500 origin-top ${isFocusMode ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100'}`}>
-                {/* --- MOBILE LEADERBOARD BANNER --- */}
                 <div className="md:hidden mt-4 px-1">
                     <Link href="/leaderboard" className="block w-full bg-gradient-to-r from-gray-900 to-black border border-gray-800 p-4 rounded-xl flex items-center justify-between shadow-lg active:scale-95 transition-transform group">
                         <div className="flex items-center gap-4">
