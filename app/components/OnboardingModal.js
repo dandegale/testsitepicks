@@ -31,19 +31,19 @@ export default function OnboardingModal() {
 
   const steps = [
     {
-      icon: "🥊",
-      title: "Lock Your Picks",
-      subtitle: "The Core Loop",
-      description: "Don't just pick the winner. Predict the exact method (KO, SUB, DEC) and round to maximize your fantasy points.",
+      icon: "🌍",
+      title: "Climb The Ranks",
+      subtitle: "Global Picks",
+      description: "Select your fighters for the upcoming card. Every strike, takedown, and finish earns you fantasy points to boost your Global Ranking.",
       accent: "text-pink-500",
       border: "border-pink-500/50",
       glow: "bg-pink-600/20"
     },
     {
       icon: "⚔️",
-      title: "1v1 Showdowns",
-      subtitle: "Settle The Score",
-      description: "Invite your friends to private leagues, or challenge them directly to a 1v1 Showdown. Winner takes the glory.",
+      title: "Draft Your Squad",
+      subtitle: "Private Leagues",
+      description: "Invite your friends to a private league and build a team of fighters. Outscore your rivals week after week to secure the ultimate bragging rights.",
       accent: "text-teal-500",
       border: "border-teal-500/50",
       glow: "bg-teal-600/20"
@@ -51,8 +51,8 @@ export default function OnboardingModal() {
     {
       icon: "🏆",
       title: "Build Your Legacy",
-      subtitle: "Earn The Badges",
-      description: "Hit a 10-fight win streak, predict a massive underdog, or pull off a Perfect Card to earn exclusive profile badges and climb the Global Leaderboard.",
+      subtitle: "Earn The Trophies",
+      description: "Rack up massive point totals, hit crazy win streaks, and dominate your friends to unlock exclusive profile badges and showcase your Fight IQ.",
       accent: "text-yellow-500",
       border: "border-yellow-500/50",
       glow: "bg-yellow-600/20"
@@ -102,7 +102,7 @@ export default function OnboardingModal() {
                     onClick={nextStep}
                     className={`w-full py-4 rounded-xl text-[11px] font-black uppercase tracking-widest text-white transition-all active:scale-95 border ${steps[currentStep].border} ${steps[currentStep].glow.replace('/20', '/40')} hover:bg-white/10`}
                 >
-                    {currentStep === 2 ? "Enter The Octagon" : "Next"}
+                    {currentStep === 2 ? "Let's Go" : "Next"}
                 </button>
                 
                 {currentStep < 2 && (
