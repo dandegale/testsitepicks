@@ -66,6 +66,21 @@ export async function GET() {
         const fightDate = new Date(event.commence_time);
         if (fightDate > futureLimit) continue;
 
+        // ---------------------------------------------------------
+        // 🎯 NEW: WEEKEND FILTER (Ghost Fight Prevention)
+        // ---------------------------------------------------------
+        // Get the short weekday name ('Sat', 'Sun', 'Mon', etc.) in Eastern Time
+        const estDayStr = new Intl.DateTimeFormat('en-US', { 
+            timeZone: 'America/New_York', 
+            weekday: 'short' 
+        }).format(fightDate);
+
+        // If it is NOT Saturday or Sunday, skip it entirely
+        if (estDayStr !== 'Sat' && estDayStr !== 'Sun') {
+            continue; 
+        }
+        // ---------------------------------------------------------
+
         let bestBookmaker = null;
         for (const book of PREFERRED_BOOKS) {
             bestBookmaker = event.bookmakers.find(b => b.key === book);
