@@ -13,36 +13,37 @@ export async function GET() {
   );
 
   try {
-    // 1. Find the fights that happened in the last 14 days that HAVE a winner
-    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
-    
+    // 1. Find ANY fight in the database that has been graded (winner is not null)
+    // We order by start_time descending to grab the most recent graded event.
     const { data: recentFights, error: fightError } = await supabase
         .from('fights')
         .select('event_id, id')
-        .gte('start_time', fourteenDaysAgo) // <--- Now looking back 14 days
-        .not('winner', 'is', null);
+        .not('winner', 'is', null)
+        .order('start_time', { ascending: false });
 
     if (fightError || !recentFights || recentFights.length === 0) {
-        return NextResponse.json({ message: 'No recently graded fights found to process.' });
+        return NextResponse.json({ message: 'No graded fights found in the entire database. Run your scraper first!' });
     }
 
-    // 2. Extract the unique event_id from those recent fights
-    // (Assuming all fights this weekend share the same event_id)
+    // 2. Extract the unique event_id from the absolute most recent graded fight
     const targetEventId = recentFights[0].event_id; 
+
+    // Filter recentFights to ONLY include fights from that specific event
+    const targetEventFights = recentFights.filter(f => f.event_id === targetEventId);
     
     // 3. RUN THE EVENT BADGE ENGINE
     console.log(`🎯 Running Event Badges for Event ID: ${targetEventId}`);
     const eventBadgeResult = await awardEventBadges(targetEventId);
 
-    // 4. Find all users who made picks on these recent fights
-    const recentFightIds = recentFights.map(f => f.id);
+    // 4. Find all users who made picks on these specific event fights
+    const targetFightIds = targetEventFights.map(f => f.id);
     const { data: recentPicks } = await supabase
         .from('picks')
         .select('user_id')
-        .in('fight_id', recentFightIds);
+        .in('fight_id', targetFightIds);
 
-    // Get a unique list of user emails who participated this weekend
-    const activeUsers = [...new Set(recentPicks.map(p => p.user_id))];
+    // Get a unique list of user emails who participated in this event
+    const activeUsers = [...new Set(recentPicks?.map(p => p.user_id) || [])];
 
     // 5. RUN THE STREAK ENGINE FOR THOSE USERS
     console.log(`🔥 Running Streak Engine for ${activeUsers.length} active users...`);
@@ -55,7 +56,7 @@ export async function GET() {
 
     return NextResponse.json({ 
         message: '✅ Engine Run Complete!', 
-        eventBadgesProcessed: eventBadgeResult.count,
+        eventBadgesProcessed: eventBadgeResult?.count || 0,
         usersStreaksUpdated: totalStreaksProcessed
     });
 
