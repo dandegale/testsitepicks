@@ -5,14 +5,15 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY // Use Service Role for backend engine overrides
 );
 
-export async function awardEventBadges(eventId) {
-  console.log(`🏆 Running Badge Engine for Event: ${eventId}`);
+// 👇 CHANGED: Now accepts targetDate instead of eventId
+export async function awardEventBadges(targetDate) {
+  console.log(`🏆 Running Badge Engine for Date: ${targetDate}`);
 
-  // 1. Get all graded fights for this event
+  // 1. Get all graded fights for this date
   const { data: fights } = await supabase
     .from('fights')
     .select('*')
-    .eq('event_id', eventId)
+    .like('start_time', `${targetDate}%`) // 👇 CHANGED: Searches by date string
     .not('winner', 'is', null);
 
   if (!fights || fights.length === 0) return { success: true, message: 'No graded fights found.' };

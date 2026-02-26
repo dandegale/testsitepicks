@@ -14,35 +14,39 @@ export async function GET() {
 
   try {
     // 1. Find ANY fight in the database that has been graded (winner is not null)
-    // We order by start_time descending to grab the most recent graded event.
+    // 🚨 Notice: We are selecting 'start_time' now, NOT 'event_id'
     const { data: recentFights, error: fightError } = await supabase
         .from('fights')
-        .select('event_id, id')
+        .select('start_time, id, winner')
         .not('winner', 'is', null)
         .order('start_time', { ascending: false });
 
-    if (fightError || !recentFights || recentFights.length === 0) {
+    if (fightError) {
+        console.error("SUPABASE ERROR:", fightError);
+        return NextResponse.json({ message: "Database Error", details: fightError });
+    }
+
+    if (!recentFights || recentFights.length === 0) {
         return NextResponse.json({ message: 'No graded fights found in the entire database. Run your scraper first!' });
     }
 
-    // 2. Extract the unique event_id from the absolute most recent graded fight
-    const targetEventId = recentFights[0].event_id; 
+    // 2. Extract the exact DATE (YYYY-MM-DD) from the most recent graded fight
+    const targetDate = recentFights[0].start_time.split('T')[0]; 
 
-    // Filter recentFights to ONLY include fights from that specific event
-    const targetEventFights = recentFights.filter(f => f.event_id === targetEventId);
+    // Filter recentFights to ONLY include fights that happened on that exact same day
+    const targetEventFights = recentFights.filter(f => f.start_time.startsWith(targetDate));
     
-    // 3. RUN THE EVENT BADGE ENGINE
-    console.log(`🎯 Running Event Badges for Event ID: ${targetEventId}`);
-    const eventBadgeResult = await awardEventBadges(targetEventId);
+    // 3. RUN THE EVENT BADGE ENGINE (Passing the Date instead of an ID)
+    console.log(`🎯 Running Event Badges for Date: ${targetDate} (${targetEventFights.length} fights)`);
+    const eventBadgeResult = await awardEventBadges(targetDate);
 
-    // 4. Find all users who made picks on these specific event fights
+    // 4. Find all users who made picks on these specific fights
     const targetFightIds = targetEventFights.map(f => f.id);
     const { data: recentPicks } = await supabase
         .from('picks')
         .select('user_id')
         .in('fight_id', targetFightIds);
 
-    // Get a unique list of user emails who participated in this event
     const activeUsers = [...new Set(recentPicks?.map(p => p.user_id) || [])];
 
     // 5. RUN THE STREAK ENGINE FOR THOSE USERS
