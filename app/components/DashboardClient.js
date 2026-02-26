@@ -13,6 +13,7 @@ import BettingSlip from './BettingSlip';
 import MobileNav from './MobileNav'; 
 import CreateLeagueModal from './CreateLeagueModal';
 import ShowdownModal from './ShowdownModal';
+import OnboardingModal from './OnboardingModal'; // 🎯 NEW: Imported the Onboarding Modal
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -205,6 +206,9 @@ export default function DashboardClient({
   return (
     <div className="flex min-h-screen bg-black text-white overflow-hidden font-sans selection:bg-pink-500 selection:text-white">
       
+      {/* 🎯 NEW: Added the OnboardingModal component here */}
+      <OnboardingModal />
+
       {/* DESKTOP RAIL */}
       <div className={`hidden md:block transition-all duration-500 ${isFocusMode ? '-ml-20' : 'ml-0'}`}>
         <LeagueRail initialLeagues={clientLeagues} />
