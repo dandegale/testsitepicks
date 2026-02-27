@@ -3,6 +3,13 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
+// 🎯 NEW: Helper function to manually shift the API time back exactly 5 hours
+function shiftToEST(utcDateString) {
+    const date = new Date(utcDateString);
+    date.setHours(date.getHours() - 5);
+    return date.toISOString(); 
+}
+
 export async function GET() {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
       return NextResponse.json({ error: 'Missing SUPABASE_SERVICE_ROLE_KEY' }, { status: 500 });
@@ -17,19 +24,27 @@ export async function GET() {
 
   try {
     // ---------------------------------------------------------
-    // 1. FETCH ESPN UFC SCOREBOARD (The Ultimate Whitelist)
+    // 1. FETCH ESPN UFC SCOREBOARD & EVENT NAMES
     // ---------------------------------------------------------
     let ufcNames = [];
+    let fighterEventMap = {}; 
+
     try {
         const espnRes = await fetch('https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard');
         const espnData = await espnRes.json();
         
         if (espnData && espnData.events) {
             espnData.events.forEach(event => {
+                const realEventName = event.name || event.shortName; 
+
                 event.competitions?.forEach(comp => {
                     comp.competitors?.forEach(c => {
                         if (c.athlete?.displayName) {
-                            ufcNames.push(c.athlete.displayName);
+                            const fighterName = c.athlete.displayName;
+                            ufcNames.push(fighterName);
+                            
+                            const cleanName = fighterName.toLowerCase().replace(/['".,-]/g, '').trim();
+                            fighterEventMap[cleanName] = realEventName;
                         }
                     });
                 });
@@ -66,7 +81,7 @@ export async function GET() {
         const fightDate = new Date(event.commence_time);
         if (fightDate > futureLimit) continue;
 
-        // WEEKEND FILTER (Ghost Fight Prevention)
+        // WEEKEND FILTER 
         const estDayStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' }).format(fightDate);
         if (estDayStr !== 'Sat' && estDayStr !== 'Sun') continue; 
 
@@ -87,11 +102,20 @@ export async function GET() {
         if (f1Key.includes('tbd') || f2Key.includes('tbd') || f1Key.includes('tba') || f2Key.includes('tba')) continue;
         if (bookedFighters.has(f1Key) || bookedFighters.has(f2Key)) continue;
 
-        // 🎯 Dynamic Event Name logic
+        // ESPN EVENT MAPPING
+        const clean = (str) => str.toLowerCase().replace(/['".,-]/g, '').trim();
+        const c1 = clean(f1Key);
+        const c2 = clean(f2Key);
+        
+        const espnEventName = fighterEventMap[c1] || fighterEventMap[c2];
         const dateStr = fightDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
-        const dynamicEventName = event.sport_title && event.sport_title !== 'Mixed Martial Arts' 
-            ? event.sport_title 
-            : `UFC Fight Night (${dateStr})`;
+        
+        let dynamicEventName = `UFC Fight Night (${dateStr})`;
+        if (espnEventName) {
+            dynamicEventName = espnEventName; 
+        } else if (event.sport_title && event.sport_title !== 'Mixed Martial Arts') {
+            dynamicEventName = event.sport_title;
+        }
 
         const match = existingFights.find(dbFight => {
             const dbF1 = dbFight.fighter_1_name.toLowerCase().trim();
@@ -101,8 +125,10 @@ export async function GET() {
             return isDirect || isReverse;
         });
 
+        // 🎯 NEW: Create the -5 hours shifted timestamp
+        const adjustedEstTime = shiftToEST(event.commence_time);
+
         if (match) {
-            // Update Existing Fight
             confirmedDbIds.add(match.id);
             bookedFighters.add(f1Key);
             bookedFighters.add(f2Key);
@@ -113,24 +139,23 @@ export async function GET() {
             const newFighter1Odds = isReversedMatch ? outcome2.price : outcome1.price;
             const newFighter2Odds = isReversedMatch ? outcome1.price : outcome2.price;
 
-            if (match.fighter_1_odds !== newFighter1Odds || match.fighter_2_odds !== newFighter2Odds) {
+            // Updates Existing Fight (Includes Event Name & Adjusted Time)
+            if (match.fighter_1_odds !== newFighter1Odds || match.fighter_2_odds !== newFighter2Odds || match.event_name !== dynamicEventName || match.start_time !== adjustedEstTime) {
                 await supabase
                     .from('fights')
                     .update({
+                        event_name: dynamicEventName, 
+                        start_time: adjustedEstTime, // Updates the time to the -5 hour shift
                         fighter_1_odds: newFighter1Odds,
                         fighter_2_odds: newFighter2Odds,
                         source: bestBookmaker.key
                     })
                     .eq('id', match.id);
                 
-                logs.push(`Updated Odds: ${match.fighter_1_name} vs ${match.fighter_2_name}`);
+                logs.push(`Updated Odds/Event/Time: ${match.fighter_1_name} vs ${match.fighter_2_name}`);
             }
         } else {
-            // 3. THE GATEKEEPER: Check Odds API against ESPN UFC List
-            const clean = (str) => str.toLowerCase().replace(/['".,-]/g, '').trim();
-            const c1 = clean(f1Key);
-            const c2 = clean(f2Key);
-            
+            // THE GATEKEEPER
             const isConfirmedUfc = ufcNames.some(name => {
                 const cn = clean(name);
                 return c1 === cn || c2 === cn || c1.includes(cn) || c2.includes(cn);
@@ -140,10 +165,9 @@ export async function GET() {
                 bookedFighters.add(f1Key);
                 bookedFighters.add(f2Key);
 
-                // 🎯 FIX: Using the raw API timestamp (safest for Postgres) and catching errors!
                 const { error: insertError } = await supabase.from('fights').insert({
                     event_name: dynamicEventName, 
-                    start_time: event.commence_time, // <--- Reverted to safe ISO string
+                    start_time: adjustedEstTime, // 🎯 INSERTS WITH THE -5 HOUR SHIFT!
                     fighter_1_name: outcome1.name,
                     fighter_1_odds: outcome1.price,
                     fighter_2_name: outcome2.name,
