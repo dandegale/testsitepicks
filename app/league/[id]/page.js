@@ -258,8 +258,7 @@ export default function LeaguePage() {
               pickCount: memberPicks.length,
               totalScore: parseFloat(totalScore.toFixed(1)),
               cardsWon: historicalWinsMap[member.user_id] || 0,
-              isReigningChamp: member.user_id === user?.email // 🎯 UI HACK
-              
+              isReigningChamp: latestWinners.includes(member.user_id) // 🎯 Flag the champ
           };
       });
 
