@@ -3,6 +3,20 @@
 import { useRef, useState } from 'react';
 import html2canvas from 'html2canvas';
 
+// Helper function: Converts the Base64 image into a real file safely across all browsers
+function dataURLtoFile(dataurl, filename) {
+    let arr = dataurl.split(','),
+        mime = arr[0].match(/:(.*?);/)[1],
+        bstr = atob(arr[1]), 
+        n = bstr.length, 
+        u8arr = new Uint8Array(n);
+        
+    while(n--){
+        u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, {type:mime});
+}
+
 export default function SocialShareSlip({ picks, username, eventName }) {
     const printRef = useRef();
     const [isGenerating, setIsGenerating] = useState(false);
@@ -12,21 +26,27 @@ export default function SocialShareSlip({ picks, username, eventName }) {
         try {
             const element = printRef.current;
             
+            // 🎯 We temporarily force opacity to 1 JUST for the millisecond the screenshot is taken
+            const originalOpacity = element.style.opacity;
+            element.style.opacity = '1';
+
             const canvas = await html2canvas(element, {
                 backgroundColor: '#000000',
                 scale: 3, 
                 useCORS: true,
-                logging: false
+                logging: true // Turned on logging just in case we need to see what's failing in the console!
             });
+
+            // Re-hide it
+            element.style.opacity = originalOpacity;
 
             const dataUrl = canvas.toDataURL('image/png');
             const filename = `FightIQ-${username || 'Roster'}.png`;
 
-            // 🎯 NEW: Convert the base64 image into a real File object
-            const blob = await (await fetch(dataUrl)).blob();
-            const imageFile = new File([blob], filename, { type: 'image/png' });
+            // Convert to a real file object using our safe helper function
+            const imageFile = dataURLtoFile(dataUrl, filename);
 
-            // 📱 THE MOBILE CHECK: Does this device support the native Share Menu?
+            // 📱 Mobile Share Sheet
             if (navigator.canShare && navigator.canShare({ files: [imageFile] })) {
                 try {
                     await navigator.share({
@@ -35,11 +55,10 @@ export default function SocialShareSlip({ picks, username, eventName }) {
                         files: [imageFile]
                     });
                 } catch (shareError) {
-                    // User likely just closed the share sheet manually, no big deal.
-                    console.log('Share sheet closed or failed:', shareError);
+                    console.log('Share sheet closed:', shareError);
                 }
             } else {
-                // 💻 DESKTOP FALLBACK: Standard automatic download
+                // 💻 Desktop Download
                 const link = document.createElement('a');
                 link.download = filename;
                 link.href = dataUrl;
@@ -47,8 +66,8 @@ export default function SocialShareSlip({ picks, username, eventName }) {
             }
 
         } catch (error) {
-            console.error("Error generating image:", error);
-            alert("Oops! Something went wrong saving the image.");
+            console.error("CRITICAL ERROR GENERATING IMAGE:", error);
+            alert("Oops! Something went wrong saving the image. Check console for details.");
         } finally {
             setIsGenerating(false);
         }
@@ -64,8 +83,8 @@ export default function SocialShareSlip({ picks, username, eventName }) {
                 {isGenerating ? '📸 Generating...' : '📸 Save Graphic To Share'}
             </button>
 
-            {/* Hidden Graphic */}
-            <div className="absolute -left-[9999px] -top-[9999px]">
+            {/* 🎯 THE FIX: Instead of throwing it off-screen, we keep it here but invisible and behind everything */}
+            <div className="absolute top-0 left-0 w-0 h-0 overflow-visible pointer-events-none -z-50 opacity-0">
                 <div 
                     ref={printRef} 
                     className="w-[400px] bg-black p-8 relative overflow-hidden"
