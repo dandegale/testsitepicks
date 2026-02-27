@@ -66,20 +66,9 @@ export async function GET() {
         const fightDate = new Date(event.commence_time);
         if (fightDate > futureLimit) continue;
 
-        // ---------------------------------------------------------
-        // 🎯 NEW: WEEKEND FILTER (Ghost Fight Prevention)
-        // ---------------------------------------------------------
-        // Get the short weekday name ('Sat', 'Sun', 'Mon', etc.) in Eastern Time
-        const estDayStr = new Intl.DateTimeFormat('en-US', { 
-            timeZone: 'America/New_York', 
-            weekday: 'short' 
-        }).format(fightDate);
-
-        // If it is NOT Saturday or Sunday, skip it entirely
-        if (estDayStr !== 'Sat' && estDayStr !== 'Sun') {
-            continue; 
-        }
-        // ---------------------------------------------------------
+        // WEEKEND FILTER (Ghost Fight Prevention)
+        const estDayStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' }).format(fightDate);
+        if (estDayStr !== 'Sat' && estDayStr !== 'Sun') continue; 
 
         let bestBookmaker = null;
         for (const book of PREFERRED_BOOKS) {
@@ -95,22 +84,20 @@ export async function GET() {
         const f1Key = outcome1.name.toLowerCase().trim();
         const f2Key = outcome2.name.toLowerCase().trim();
 
-        if (f1Key.includes('tbd') || f2Key.includes('tbd') || f1Key.includes('tba') || f2Key.includes('tba')) {
-            continue;
-        }
-
+        if (f1Key.includes('tbd') || f2Key.includes('tbd') || f1Key.includes('tba') || f2Key.includes('tba')) continue;
         if (bookedFighters.has(f1Key) || bookedFighters.has(f2Key)) continue;
+
+        // 🎯 Dynamic Event Name logic
+        const dateStr = fightDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+        const dynamicEventName = event.sport_title && event.sport_title !== 'Mixed Martial Arts' 
+            ? event.sport_title 
+            : `UFC Fight Night (${dateStr})`;
 
         const match = existingFights.find(dbFight => {
             const dbF1 = dbFight.fighter_1_name.toLowerCase().trim();
             const dbF2 = dbFight.fighter_2_name.toLowerCase().trim();
-
-            const isDirect = (dbF1.includes(f1Key) || f1Key.includes(dbF1)) && 
-                             (dbF2.includes(f2Key) || f2Key.includes(dbF2));
-            
-            const isReverse = (dbF1.includes(f2Key) || f2Key.includes(dbF1)) && 
-                              (dbF2.includes(f1Key) || f1Key.includes(dbF2));
-
+            const isDirect = (dbF1.includes(f1Key) || f1Key.includes(dbF1)) && (dbF2.includes(f2Key) || f2Key.includes(dbF2));
+            const isReverse = (dbF1.includes(f2Key) || f2Key.includes(dbF1)) && (dbF2.includes(f1Key) || f1Key.includes(dbF2));
             return isDirect || isReverse;
         });
 
@@ -139,9 +126,7 @@ export async function GET() {
                 logs.push(`Updated Odds: ${match.fighter_1_name} vs ${match.fighter_2_name}`);
             }
         } else {
-            // ---------------------------------------------------------
             // 3. THE GATEKEEPER: Check Odds API against ESPN UFC List
-            // ---------------------------------------------------------
             const clean = (str) => str.toLowerCase().replace(/['".,-]/g, '').trim();
             const c1 = clean(f1Key);
             const c2 = clean(f2Key);
@@ -151,26 +136,27 @@ export async function GET() {
                 return c1 === cn || c2 === cn || c1.includes(cn) || c2.includes(cn);
             });
 
-            // If the fighter is on the ESPN list, automatically insert them into your database
-            if (isConfirmedUfc && new Date(event.commence_time) > new Date()) {
+            if (isConfirmedUfc && fightDate > new Date()) {
                 bookedFighters.add(f1Key);
                 bookedFighters.add(f2Key);
 
-                // --- NEW: THE TIMEZONE FIX ---
-                // Convert pure UTC to Eastern Time (EST/EDT) in a database-friendly string
-                const utcDate = new Date(event.commence_time);
-                const estString = utcDate.toLocaleString("sv-SE", { timeZone: "America/New_York" }).replace(" ", "T");
-
-                await supabase.from('fights').insert({
-                    event_name: `UFC Fight Night`, 
-                    start_time: estString, // <--- NOW USING EASTERN TIME
+                // 🎯 FIX: Using the raw API timestamp (safest for Postgres) and catching errors!
+                const { error: insertError } = await supabase.from('fights').insert({
+                    event_name: dynamicEventName, 
+                    start_time: event.commence_time, // <--- Reverted to safe ISO string
                     fighter_1_name: outcome1.name,
                     fighter_1_odds: outcome1.price,
                     fighter_2_name: outcome2.name,
                     fighter_2_odds: outcome2.price,
                     source: bestBookmaker.key
                 });
-                logs.push(`✅ CREATED UFC FIGHT: ${outcome1.name} vs ${outcome2.name}`);
+
+                if (insertError) {
+                    console.error("Supabase Insert Error:", insertError);
+                    logs.push(`❌ DB REJECTED ${outcome1.name}: ${insertError.message}`);
+                } else {
+                    logs.push(`✅ CREATED UFC FIGHT: ${outcome1.name} vs ${outcome2.name}`);
+                }
             }
         }
     }
@@ -179,11 +165,7 @@ export async function GET() {
 
     if (ghostFights.length > 0) {
         const ghostIds = ghostFights.map(f => f.id);
-        const { error: deleteError } = await supabase
-            .from('fights')
-            .delete()
-            .in('id', ghostIds);
-
+        const { error: deleteError } = await supabase.from('fights').delete().in('id', ghostIds);
         if (!deleteError) {
             logs.push(`🗑️ CLEANUP: Removed ${ghostFights.length} cancelled or junk fights.`);
         }
