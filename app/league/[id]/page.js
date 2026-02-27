@@ -10,6 +10,7 @@ import LeagueRail from '../../components/LeagueRail';
 import LogOutButton from '../../components/LogOutButton';
 import MobileNav from '../../components/MobileNav'; 
 import Toast from '../../components/Toast'; 
+import SocialShareSlip from '../../components/SocialShareSlip'; // 📸 NEW: Imported the Share Slip
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -201,7 +202,6 @@ export default function LeaguePage() {
       const historicalWinsMap = {};
       members.forEach(m => historicalWinsMap[m.user_id] = 0);
 
-      // 🎯 NEW: Track who won the MOST RECENT event to award the Belt!
       let latestWinners = [];
 
       pastEvents.forEach(eventFights => {
@@ -237,7 +237,6 @@ export default function LeaguePage() {
                   if (historicalWinsMap[w] !== undefined) historicalWinsMap[w] += 1;
                   else historicalWinsMap[w] = 1; 
               });
-              // Continuously updates so the last completed event sets the Reigning Champ
               latestWinners = winners; 
           }
       });
@@ -258,7 +257,7 @@ export default function LeaguePage() {
               pickCount: memberPicks.length,
               totalScore: parseFloat(totalScore.toFixed(1)),
               cardsWon: historicalWinsMap[member.user_id] || 0,
-              isReigningChamp: latestWinners.includes(member.user_id) // 🎯 Flag the champ
+              isReigningChamp: latestWinners.includes(member.user_id) 
           };
       });
 
@@ -469,7 +468,6 @@ export default function LeaguePage() {
       return stats || { is_winner: null, sig_strikes: 0, takedowns: 0, knockdowns: 0, sub_attempts: 0, control_time_seconds: 0, fantasy_points: 0 };
   };
 
-  // 🎯 Updated to accept isReigningChamp and display the belt in their Box Score header
   const renderTeamBoxScore = (email, playerName = null, totalScore = 0, showHeader = false, isReigningChamp = false) => {
       if (!email) return null; 
       const teamPicks = activeLeaguePicks.filter(p => p.user_id === email && String(p.league_id) === String(leagueId));
@@ -576,7 +574,14 @@ export default function LeaguePage() {
                     </div>
                 ))}
                 <div className="pt-4 mt-4 text-center">
-                    <p className="text-[10px] font-black uppercase text-teal-400 tracking-widest border border-teal-500/50 bg-teal-950/30 py-2 rounded-lg">Roster Confirmed</p>
+                    <p className="text-[10px] font-black uppercase text-teal-400 tracking-widest border border-teal-500/50 bg-teal-950/30 py-2 rounded-lg mb-2">Roster Confirmed</p>
+                    
+                    {/* 🎯 NEW: THE SOCIAL SHARE COMPONENT */}
+                    <SocialShareSlip 
+                        picks={existingPicks} 
+                        username={user?.user_metadata?.username || user?.email?.split('@')[0]}
+                        eventName={currentEventFights.length > 0 ? currentEventFights[0].event_name : 'UFC Event'}
+                    />
                 </div>
             </div>
         );
