@@ -6,8 +6,8 @@ const { createClient } = require('@supabase/supabase-js');
 console.log("🚀 Script started! If you see this, Node is reading the file.");
 
 // 🛑 REPLACE THESE TWO STRINGS WITH YOUR ACTUAL SUPABASE KEYS
-const SUPABASE_URL = 'https://drbegbkxlebmufbnundg.supabase.co';
-const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRyYmVnYmt4bGVibXVmYm51bmRnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTM2MTQxMCwiZXhwIjoyMDg0OTM3NDEwfQ.HRl3MuGLd88XAWXnsLKxvql2e452mfUtkuq1qjAvtbY';
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 async function getLatestEventUrl() {
@@ -56,9 +56,65 @@ async function scrapeFullCard() {
             await new Promise(r => setTimeout(r, 2000)); 
         }
 
+        // 🎯 NEW: After all fights are graded, recalculate the global XP levels!
+        await updateAllUsersLifetimePoints();
+
         console.log("🏆 Card update complete!");
     } catch (err) {
         console.error("❌ Fatal Event Error:", err.message);
+    }
+}
+
+// 🎯 NEW FUNCTION: The Idempotent XP Engine
+async function updateAllUsersLifetimePoints() {
+    try {
+        console.log("🔄 Recalculating Lifetime XP for all users...");
+        
+        // 1. Grab every pick ever made and every stat ever recorded
+        const { data: picks, error: picksError } = await supabase.from('picks').select('user_id, fight_id, selected_fighter');
+        const { data: stats, error: statsError } = await supabase.from('fighter_stats').select('fight_id, fighter_name, fantasy_points');
+
+        if (picksError || statsError) throw new Error("Database fetch error during XP calculation");
+
+        // Helper to match names like your scraper does
+        const getCoreName = (name) => {
+            if (!name) return "";
+            const parts = name.trim().split(' ');
+            return parts[parts.length - 1].replace(/[^a-zA-Z]/g, '').toLowerCase().substring(0, 4);
+        };
+
+        // 2. Build a rapid-lookup dictionary for stats
+        const statMap = {};
+        stats.forEach(s => {
+            const coreName = getCoreName(s.fighter_name);
+            statMap[`${s.fight_id}-${coreName}`] = s.fantasy_points || 0;
+        });
+
+        // 3. Loop through picks and sum up the XP per user
+        const userXP = {};
+        picks.forEach(pick => {
+            const corePick = getCoreName(pick.selected_fighter);
+            const pointsScored = statMap[`${pick.fight_id}-${corePick}`] || 0;
+            
+            if (!userXP[pick.user_id]) userXP[pick.user_id] = 0;
+            userXP[pick.user_id] += pointsScored;
+        });
+
+        // 4. Update the profiles table with the new XP totals
+        let updatedCount = 0;
+        for (const [email, totalPoints] of Object.entries(userXP)) {
+            // Note: Update by email since that's what is saved in your picks.user_id
+            const { error } = await supabase
+                .from('profiles')
+                .update({ lifetime_points: totalPoints })
+                .eq('email', email);
+            
+            if (!error) updatedCount++;
+        }
+
+        console.log(`✅ XP Recalculation Complete! Updated ${updatedCount} profiles.`);
+    } catch (err) {
+        console.error("❌ Failed to update lifetime points:", err.message);
     }
 }
 
@@ -224,7 +280,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
 
                 finalBonus = parseFloat((baseBonus * oddsMultiplier).toFixed(2));
                 
-                // 🎯 NEW: +10 Flat Points for betting favorites who get a finish!
                 if (winnerOdds < 0 && (isKO || isSub)) {
                     finalBonus += 10;
                 }
@@ -232,7 +287,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
                 results[winnerIndex].fantasy_points += finalBonus;
             }
 
-            // Equalizer
             if (results[winnerIndex].fantasy_points < results[loserIndex].fantasy_points) {
                 results[winnerIndex].fantasy_points = results[loserIndex].fantasy_points;
                 wasEqualized = true; 
@@ -243,20 +297,15 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             r.fantasy_points = parseFloat(Math.min(r.fantasy_points, 999.99).toFixed(2));
         });
 
-        // 1. Save fighter points to the stats table
         const { error } = await supabase.from('fighter_stats').upsert(results, { onConflict: 'fight_id, fighter_name' });
         if (error) throw new Error(`Supabase Stats Error: ${error.message}`);
         
-        // ---------------------------------------------------------
-        // 🎯 NEW: UPDATE FIGHTS TABLE (Winner, Method, Round)
-        // ---------------------------------------------------------
-        let finalMethodString = winMethodStr; // Keep this just for the console logs
+        let finalMethodString = winMethodStr; 
         if (isKO || isSub) {
             finalMethodString = `${winMethodStr} R${finishRound}`;
         }
 
         if (statuses.includes('W')) {
-            // Guarantee we save the exact spelling from your database so badges grade properly
             const winnerCore = getCoreName(fighters[winnerIndex]);
             let exactDbWinnerName = fighters[winnerIndex]; 
             
@@ -266,10 +315,8 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
                 exactDbWinnerName = dbFight.fighter_2_name;
             }
 
-            // Clean up method string (e.g. 'KO/TKO', 'SUB', 'DEC')
             const cleanMethod = winMethodStr ? winMethodStr.trim() : (isDec ? 'DEC' : 'UNKNOWN');
 
-            // Save winner, method, and integer round explicitly
             const { error: updateError } = await supabase.from('fights').update({ 
                 winner: exactDbWinnerName,
                 method: cleanMethod,
@@ -281,7 +328,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             }
         }
 
-        // 🎯 TERMINAL LOGGING
         let bonusLabel = finalBonus > 0 ? ` (+${finalBonus} True Odds Bonus)` : "";
         let eqLabel = wasEqualized ? ` ⚠️ [EQUALIZER APPLIED]` : "";
         
