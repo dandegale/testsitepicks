@@ -937,7 +937,8 @@ export default function LeaguePage() {
                                                             #{index + 1}
                                                         </div>
                                                         
-                                                        <div className="col-span-4 flex items-center gap-3 overflow-hidden">
+                                                        {/* 🎯 FIXED: min-w-0 instead of overflow-hidden */}
+                                                        <div className="col-span-4 flex items-center gap-3 min-w-0 py-1">
                                                             
                                                             {/* 🎯 NEW: LEVEL BADGE AVATAR COMPONENT */}
                                                             <div className="relative flex-shrink-0">
@@ -1027,7 +1028,8 @@ export default function LeaguePage() {
                                 {feedItems.map(item => (
                                     <div key={item.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between hover:border-gray-700 transition-colors">
                                         
-                                        <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
+                                        {/* 🎯 FIXED: min-w-0 instead of overflow-hidden */}
+                                        <div className="flex items-center gap-3 md:gap-4 min-w-0 py-1">
                                             
                                             {/* 🎯 NEW: FEED AVATAR BADGE */}
                                             <div className="relative flex-shrink-0">
