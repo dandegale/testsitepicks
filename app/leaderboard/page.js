@@ -46,10 +46,10 @@ export default function LeaderboardPage() {
     const { data: picks } = await supabase.from('picks').select('*');
     const { data: fights } = await supabase.from('fights').select('*');
     
-    // Fetch avatar_url
+    // 🎯 Include lifetime_points in the global fetch
     const { data: profiles } = await supabase
         .from('profiles')
-        .select('email, username, avatar_url');
+        .select('email, username, avatar_url, lifetime_points');
 
     if (picks && fights) {
       processLeaderboard(picks, fights, profiles || []);
@@ -86,12 +86,13 @@ export default function LeaderboardPage() {
             if (!scores[userId]) {
                 const userProfile = profiles.find(p => p.email === userId);
                 const displayName = userProfile?.username || pick.username || userId.split('@')[0];
-                
                 const avatarUrl = userProfile?.avatar_url || null;
+                const lifetimePoints = userProfile?.lifetime_points || 0; // 🎯 Catch the DB XP
 
                 scores[userId] = { 
                     name: displayName, 
                     avatarUrl: avatarUrl,
+                    lifetimePoints: lifetimePoints, // 🎯 Feed to leaderboard state
                     score: 0, 
                     wins: 0,
                     fullEmail: userId 
@@ -247,21 +248,28 @@ export default function LeaderboardPage() {
                                         </span>
                                     </td>
                                     <td className="p-4 md:p-6">
-                                        {/* 🎯 WRAPPED AVATAR AND USERNAME IN LINK TO PUBLIC PROFILE */}
                                         <div className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-3">
-                                            <Link href={`/u/${encodeURIComponent(player.name)}`} className="flex-shrink-0 hover:opacity-80 transition-opacity">
-                                                {player.avatarUrl ? (
-                                                    <img 
-                                                        src={player.avatarUrl} 
-                                                        alt={player.name} 
-                                                        className="w-8 h-8 rounded-full object-cover border border-gray-700"
-                                                    />
-                                                ) : (
-                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500'}`}>
-                                                        {player.name ? player.name.substring(0, 2).toUpperCase() : '?'}
-                                                    </div>
-                                                )}
-                                            </Link>
+                                            
+                                            {/* 🎯 NEW: WRAPPED AVATAR WITH LEVEL BADGE */}
+                                            <div className="relative flex-shrink-0">
+                                                <Link href={`/u/${encodeURIComponent(player.name)}`} className="block hover:opacity-80 transition-opacity">
+                                                    {player.avatarUrl ? (
+                                                        <img 
+                                                            src={player.avatarUrl} 
+                                                            alt={player.name} 
+                                                            className="w-10 h-10 rounded-full object-cover border border-gray-700"
+                                                        />
+                                                    ) : (
+                                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-black ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500'}`}>
+                                                            {player.name ? player.name.substring(0, 2).toUpperCase() : '?'}
+                                                        </div>
+                                                    )}
+                                                </Link>
+                                                {/* THE NEON LEVEL BADGE */}
+                                                <div className="absolute -bottom-1 -right-1 bg-gradient-to-br from-pink-600 to-teal-500 text-white w-5 h-5 flex items-center justify-center rounded-full text-[9px] font-black border border-black shadow-sm pointer-events-none">
+                                                    {calculateLevel(player.lifetimePoints)}
+                                                </div>
+                                            </div>
                                             
                                             <Link href={`/u/${encodeURIComponent(player.name)}`} className="hover:text-pink-400 transition-colors">
                                                 {player.name}
@@ -301,4 +309,21 @@ export default function LeaderboardPage() {
 
     </div>
   );
+}
+
+// ----------------------------------------------------------------------
+// 🎯 THE XP MATH ENGINE
+// ----------------------------------------------------------------------
+function calculateLevel(totalPoints) {
+    let level = 1;
+    let xpNeededForNext = 100;
+    let currentXP = totalPoints || 0;
+
+    while (currentXP >= xpNeededForNext) {
+        currentXP -= xpNeededForNext;
+        level++;
+        xpNeededForNext += 10;
+    }
+    
+    return level;
 }

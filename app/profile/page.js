@@ -1,11 +1,11 @@
 'use client';
 
 import { createClient } from '@supabase/supabase-js';
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import LogOutButton from '../components/LogOutButton'; 
-import Cropper from 'react-easy-crop'; // 🎯 NEW: Cropper Library
+import Cropper from 'react-easy-crop'; 
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -50,13 +50,15 @@ export default function Profile() {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   
+  // 🎯 NEW: XP State
+  const [lifetimePoints, setLifetimePoints] = useState(0);
+
   const fileInputRef = useRef(null);
   const bgInputRef = useRef(null); 
 
-  // 🎯 NEW: Cropping State
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [imageToCrop, setImageToCrop] = useState(null);
-  const [cropType, setCropType] = useState('backgrounds'); // 'backgrounds' or 'avatars'
+  const [cropType, setCropType] = useState('backgrounds'); 
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
@@ -87,6 +89,9 @@ export default function Profile() {
     setNewUsername(finalName); 
     setAvatarUrl(profile?.avatar_url || null);
     setBackgroundUrl(profile?.background_url || null); 
+    
+    // 🎯 Set Lifetime Points
+    setLifetimePoints(profile?.lifetime_points || 0);
     
     if (profile) {
         setShowOdds(profile.show_odds === true);
@@ -168,22 +173,16 @@ export default function Profile() {
     setHistory(historyData);
   };
 
-  // ----------------------------------------------------------------------
-  // 🎯 IMAGE UPLOAD & CROPPING LOGIC
-  // ----------------------------------------------------------------------
-
-  // 1. Read file and open modal
   const onFileChange = async (e, type) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
       let imageDataUrl = await readFile(file);
       setImageToCrop(imageDataUrl);
-      setCropType(type); // 'backgrounds' or 'avatars'
+      setCropType(type); 
       setCrop({ x: 0, y: 0 });
       setZoom(1);
       setCropModalOpen(true);
       
-      // Reset inputs so you can select the same file again if needed
       if (bgInputRef.current) bgInputRef.current.value = '';
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -193,31 +192,25 @@ export default function Profile() {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
 
-  // 2. Process crop and upload to Supabase
   const handleCropSave = async () => {
     try {
       if (cropType === 'backgrounds') setUploadingBg(true);
       else setUploading(true);
       
-      setCropModalOpen(false); // Close modal immediately for better UX
+      setCropModalOpen(false); 
 
-      // Generate cropped image Blob
       const croppedImageBlob = await getCroppedImg(imageToCrop, croppedAreaPixels);
       const fileName = `${user.id}-${cropType}-${Math.random()}.jpg`;
 
-      // Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage.from(cropType).upload(fileName, croppedImageBlob, { contentType: 'image/jpeg' });
       if (uploadError) throw uploadError;
 
-      // Get Public URL
       const { data: { publicUrl } } = supabase.storage.from(cropType).getPublicUrl(fileName);
       const dbField = cropType === 'backgrounds' ? 'background_url' : 'avatar_url';
 
-      // Update Database
       const { error: updateError } = await supabase.from('profiles').upsert({ id: user.id, [dbField]: publicUrl, updated_at: new Date() });
       if (updateError) throw updateError;
 
-      // Update State
       if (cropType === 'backgrounds') setBackgroundUrl(publicUrl);
       else setAvatarUrl(publicUrl);
 
@@ -230,10 +223,12 @@ export default function Profile() {
     }
   };
 
-
   const badgesWithStatus = AVAILABLE_BADGES.map(badge => ({ ...badge, earned: userBadges.includes(badge.id) }));
   const visibleBadges = badgesWithStatus.filter(badge => showLockedBadges || badge.earned);
   const earnedCount = badgesWithStatus.filter(b => b.earned).length;
+
+  // 🎯 Calculate Level dynamically using useMemo
+  const levelStats = useMemo(() => calculateLevel(lifetimePoints), [lifetimePoints]);
 
   if (loading) return (
     <div className="min-h-screen bg-[#050505] flex items-center justify-center relative overflow-hidden">
@@ -245,18 +240,16 @@ export default function Profile() {
   return (
     <main className="min-h-screen bg-[#050505] text-white pb-24 font-sans selection:bg-teal-500 selection:text-white relative overflow-hidden">
       
-      {/* 🎯 CROPPING MODAL OVERLAY */}
+      {/* CROPPING MODAL */}
       {cropModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 md:p-12">
               <div className="w-full max-w-4xl bg-gray-950 border border-teal-500/30 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(20,184,166,0.15)] flex flex-col h-[80vh] md:h-auto md:aspect-[4/3] max-h-screen animate-in fade-in zoom-in-95">
-                  
                   <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900/50">
                       <h3 className="font-black italic uppercase text-teal-400 tracking-widest">
                           Adjust {cropType === 'backgrounds' ? 'Cover Photo' : 'Avatar'}
                       </h3>
                       <button onClick={() => setCropModalOpen(false)} className="text-gray-500 hover:text-white transition-colors">✕</button>
                   </div>
-
                   <div className="relative flex-grow bg-black">
                       <Cropper
                           image={imageToCrop}
@@ -269,57 +262,46 @@ export default function Profile() {
                           onZoomChange={setZoom}
                       />
                   </div>
-
                   <div className="p-4 md:p-6 border-t border-gray-800 bg-gray-900/50 flex flex-col md:flex-row items-center justify-between gap-4">
                       <div className="flex items-center gap-4 w-full md:w-1/2">
                           <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Zoom</span>
                           <input 
-                              type="range" 
-                              min={1} max={3} step={0.1} 
-                              value={zoom} 
-                              onChange={(e) => setZoom(e.target.value)} 
+                              type="range" min={1} max={3} step={0.1} value={zoom} onChange={(e) => setZoom(e.target.value)} 
                               className="w-full accent-teal-500 bg-gray-800 h-1.5 rounded-lg appearance-none cursor-pointer"
                           />
                       </div>
-                      
                       <div className="flex items-center gap-3 w-full md:w-auto">
-                          <button onClick={() => setCropModalOpen(false)} className="flex-1 md:flex-none px-6 py-2.5 rounded-full text-xs font-black uppercase tracking-widest text-gray-400 hover:bg-gray-800 transition-colors">
-                              Cancel
-                          </button>
-                          <button onClick={handleCropSave} className="flex-1 md:flex-none px-6 py-2.5 rounded-full text-xs font-black uppercase tracking-widest bg-teal-500 text-black hover:bg-teal-400 transition-colors shadow-[0_0_15px_rgba(20,184,166,0.3)]">
-                              Save Image
-                          </button>
+                          <button onClick={() => setCropModalOpen(false)} className="flex-1 md:flex-none px-6 py-2.5 rounded-full text-xs font-black uppercase tracking-widest text-gray-400 hover:bg-gray-800 transition-colors">Cancel</button>
+                          <button onClick={handleCropSave} className="flex-1 md:flex-none px-6 py-2.5 rounded-full text-xs font-black uppercase tracking-widest bg-teal-500 text-black hover:bg-teal-400 transition-colors shadow-[0_0_15px_rgba(20,184,166,0.3)]">Save Image</button>
                       </div>
                   </div>
               </div>
           </div>
       )}
 
-      {/* 🌟 AMBIENT THEME GLOWS */}
+      {/* AMBIENT THEME GLOWS */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
           <div className="absolute top-[10%] left-[5%] w-[400px] h-[400px] bg-pink-600/10 rounded-full blur-[150px]"></div>
           <div className="absolute top-[40%] right-[5%] w-[500px] h-[500px] bg-teal-500/10 rounded-full blur-[150px]"></div>
           <div className="absolute bottom-[-10%] left-[20%] w-[600px] h-[600px] bg-pink-900/10 rounded-full blur-[180px]"></div>
       </div>
 
-      {/* 🚀 REDESIGNED CINEMATIC HERO */}
-      <div className="relative h-[40vh] min-h-[300px] w-full border-b border-pink-500/10 flex flex-col z-10">
+      {/* HERO SECTION */}
+      <div className="relative min-h-[45vh] w-full border-b border-pink-500/10 flex flex-col z-10 pb-8">
         <div 
             className="absolute inset-0 bg-gray-900 bg-cover bg-center transition-all duration-700"
             style={{ backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : 'none' }}
         >
-            <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/60 to-transparent"></div>
-            <div className="absolute inset-0 bg-gradient-to-r from-[#050505] via-transparent to-transparent opacity-80"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/80 to-transparent"></div>
+            <div className="absolute inset-0 bg-gradient-to-r from-[#050505] via-[#050505]/50 to-transparent opacity-90"></div>
         </div>
 
-        {/* 🎯 CHANGED TO onFileChange */}
         <input type="file" ref={bgInputRef} onChange={(e) => onFileChange(e, 'backgrounds')} accept="image/*" className="hidden" />
 
         <div className="relative z-10 w-full max-w-7xl mx-auto px-6 pt-6 flex justify-between items-center">
             <Link href="/" className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-white/50 hover:text-pink-400 transition-colors group">
                 <span className="group-hover:-translate-x-1 transition-transform">←</span> Dashboard
             </Link>
-            
             <div className="flex items-center gap-3">
                 <button 
                     onClick={() => bgInputRef.current?.click()}
@@ -332,11 +314,11 @@ export default function Profile() {
             </div>
         </div>
 
-        <div className="relative z-10 w-full max-w-7xl mx-auto px-6 mt-auto pb-8 flex flex-col md:flex-row items-center md:items-end gap-6">
+        <div className="relative z-10 w-full max-w-7xl mx-auto px-6 mt-auto flex flex-col md:flex-row items-center md:items-start gap-6 pt-16">
             <div className="relative group w-32 h-32 md:w-40 md:h-40 shrink-0">
                 <div 
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full h-full rounded-2xl overflow-hidden border-4 border-[#050505] shadow-[0_0_30px_rgba(20,184,166,0.15)] bg-gray-900 cursor-pointer group-hover:border-teal-400 transition-all relative transform md:translate-y-8"
+                    className="w-full h-full rounded-2xl overflow-hidden border-4 border-[#050505] shadow-[0_0_30px_rgba(20,184,166,0.15)] bg-gray-900 cursor-pointer group-hover:border-teal-400 transition-all relative transform md:translate-y-4"
                 >
                     {avatarUrl ? (
                         <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
@@ -349,13 +331,12 @@ export default function Profile() {
                         <span className="text-xs font-black uppercase text-teal-400 tracking-widest">{uploading ? '...' : 'Upload'}</span>
                     </div>
                 </div>
-                {/* 🎯 CHANGED TO onFileChange */}
                 <input type="file" ref={fileInputRef} onChange={(e) => onFileChange(e, 'avatars')} accept="image/*" className="hidden" />
             </div>
 
-            <div className="text-center md:text-left mb-2 md:mb-0">
+            <div className="text-center md:text-left flex-1 w-full max-w-md">
                 {isEditing ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
                         <input 
                             type="text" 
                             value={newUsername} 
@@ -366,35 +347,62 @@ export default function Profile() {
                         <button onClick={handleSaveProfile} className="bg-teal-500 h-12 w-12 rounded-xl text-black font-black hover:bg-teal-400 transition-colors">✓</button>
                     </div>
                 ) : (
-                    <div className="flex items-center justify-center md:justify-start gap-3 group cursor-pointer" onClick={() => setIsEditing(true)}>
+                    <div className="flex items-center justify-center md:justify-start gap-3 group cursor-pointer mb-2" onClick={() => setIsEditing(true)}>
                         <h1 className="text-4xl md:text-5xl font-black italic text-white uppercase tracking-tighter drop-shadow-lg">
                             {username}
                         </h1>
                         <span className="opacity-0 group-hover:opacity-100 text-teal-400 text-lg transition-opacity">✎</span>
                     </div>
                 )}
-                <div className="flex items-center justify-center md:justify-start gap-3 mt-2">
+                
+                <div className="flex items-center justify-center md:justify-start gap-3 mb-6">
                     <span className="bg-pink-950/30 text-pink-400 border border-pink-500/30 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest shadow-[0_0_10px_rgba(219,39,119,0.1)]">
                         Manager
                     </span>
                     <p className="text-white/40 text-[10px] font-bold uppercase tracking-[0.2em]">{user?.email}</p>
                 </div>
+
+                {/* 🎯 NEW: XP & LEVEL BAR */}
+                <div className="w-full bg-black/40 backdrop-blur-sm border border-gray-800/50 p-4 rounded-2xl shadow-xl">
+                    <div className="flex items-end justify-between mb-2">
+                        <div className="flex items-center gap-2.5">
+                            <div className="bg-gradient-to-br from-pink-600 to-teal-500 border border-teal-400/50 text-white w-7 h-7 flex items-center justify-center rounded-lg text-xs font-black shadow-[0_0_15px_rgba(20,184,166,0.3)]">
+                                {levelStats.level}
+                            </div>
+                            <span className="text-xs font-black text-gray-300 uppercase tracking-widest drop-shadow-md">Level {levelStats.level}</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-teal-400 font-mono tracking-wider">
+                            {levelStats.currentXP} <span className="text-gray-500">/ {levelStats.nextLevelXP} XP</span>
+                        </span>
+                    </div>
+                    
+                    <div className="w-full h-2.5 bg-gray-900 rounded-full overflow-hidden border border-gray-800 shadow-inner">
+                        <div 
+                            className="h-full bg-gradient-to-r from-pink-600 via-pink-500 to-teal-400 transition-all duration-1000 ease-out relative"
+                            style={{ width: `${levelStats.progressPercentage}%` }}
+                        >
+                            <div className="absolute right-0 top-0 bottom-0 w-3 bg-white/60 blur-[2px]"></div>
+                        </div>
+                    </div>
+                    <div className="text-right mt-1.5">
+                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Total Lifetime: {Math.floor(lifetimePoints)} PTS</span>
+                    </div>
+                </div>
+
             </div>
         </div>
       </div>
 
-      {/* 🚀 TWO-COLUMN GRID DASHBOARD */}
-      <div className="relative z-10 max-w-7xl mx-auto px-6 py-12 md:py-16 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+      {/* DASHBOARD GRID */}
+      <div className="relative z-10 max-w-7xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
         
-        {/* LEFT COLUMN: Tale of the Tape & Settings */}
+        {/* LEFT COLUMN */}
         <div className="lg:col-span-4 space-y-8">
-            
             <div className="bg-black/40 backdrop-blur-xl border border-teal-900/40 rounded-3xl p-6 shadow-2xl hover:border-teal-500/40 transition-colors">
                 <div className="flex items-center gap-3 mb-6">
                     <div className="w-2 h-8 bg-gradient-to-b from-teal-400 to-pink-500 rounded-full"></div>
                     <h2 className="text-sm font-black text-white italic uppercase tracking-widest">Tale of the Tape</h2>
                 </div>
-                
                 <div className="grid grid-cols-2 gap-3">
                     <StatGlass label="Record" value={`${stats.wins}-${stats.losses}`} color="text-white" />
                     <StatGlass label="Accuracy" value={`${stats.totalBets > 0 ? Math.round((stats.wins / (stats.wins + stats.losses)) * 100) : 0}%`} color="text-teal-400 glow-teal" />
@@ -411,7 +419,6 @@ export default function Profile() {
                         <p className="text-[9px] text-teal-500/60 font-bold uppercase tracking-widest mt-1">Control public data.</p>
                     </div>
                 </div>
-
                 <div className="space-y-2 relative z-10">
                     <ToggleRow label="Public Profile" state={privacy.isPublic} onToggle={() => togglePrivacySetting('isPublic')} color="bg-teal-500" />
                     <div className={`space-y-2 transition-all duration-300 ${privacy.isPublic ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
@@ -433,21 +440,15 @@ export default function Profile() {
             </div>
         </div>
 
-        {/* RIGHT COLUMN: Trophies & History */}
+        {/* RIGHT COLUMN */}
         <div className="lg:col-span-8 space-y-8">
-            
             <div className="bg-black/40 backdrop-blur-xl border border-teal-900/40 hover:border-teal-500/40 transition-colors rounded-3xl p-6 md:p-8 shadow-2xl">
                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                     <div>
                         <div className="flex items-center gap-3 mb-2">
-
-    <img 
-        src="/trophy.png" 
-        alt="Trophies" 
-        className="w-10 h-10 md:w-12 md:h-12 object-contain drop-shadow-[0_0_15px_rgba(234,179,8,0.6)] hover:scale-110 transition-transform" 
-    />
-    <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter">Trophy Room</h2>
-</div>
+                            <img src="/trophy.png" alt="Trophies" className="w-10 h-10 md:w-12 md:h-12 object-contain drop-shadow-[0_0_15px_rgba(234,179,8,0.6)] hover:scale-110 transition-transform" />
+                            <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter">Trophy Room</h2>
+                        </div>
                         <div className="flex items-center gap-3">
                             <div className="w-32 h-1.5 bg-gray-900 rounded-full overflow-hidden shadow-inner">
                                 <div className="h-full bg-gradient-to-r from-pink-600 to-teal-400" style={{ width: `${Math.round((earnedCount/AVAILABLE_BADGES.length)*100)}%` }}></div>
@@ -455,7 +456,6 @@ export default function Profile() {
                             <span className="text-[10px] font-black uppercase tracking-widest text-teal-500/70">{earnedCount} / {AVAILABLE_BADGES.length} Unlocked</span>
                         </div>
                     </div>
-                    
                     <button onClick={() => setShowLockedBadges(!showLockedBadges)} className="flex items-center gap-2 group bg-teal-950/20 hover:bg-teal-900/40 border border-teal-900/50 hover:border-teal-500/50 px-4 py-2 rounded-xl transition-colors">
                         <span className="text-[10px] font-black uppercase tracking-widest text-teal-500/70 group-hover:text-teal-400 transition-colors">Reveal Locked</span>
                         <div className={`relative w-6 h-3 rounded-full p-0.5 transition-colors ${showLockedBadges ? 'bg-teal-500' : 'bg-gray-800'}`}>
@@ -558,7 +558,31 @@ export default function Profile() {
 }
 
 // ----------------------------------------------------------------------
-// 🎯 NEW: UTILITY FUNCTIONS FOR CANVAS CROPPING
+// 🎯 LEVELING MATH ENGINE
+// ----------------------------------------------------------------------
+function calculateLevel(totalPoints) {
+    let level = 1;
+    let xpNeededForNext = 100;
+    let currentXP = totalPoints || 0;
+
+    while (currentXP >= xpNeededForNext) {
+        currentXP -= xpNeededForNext;
+        level++;
+        xpNeededForNext += 10;
+    }
+
+    const progressPercentage = Math.min(100, Math.max(0, (currentXP / xpNeededForNext) * 100));
+
+    return {
+        level,
+        currentXP: Math.floor(currentXP),
+        nextLevelXP: xpNeededForNext,
+        progressPercentage
+    };
+}
+
+// ----------------------------------------------------------------------
+// UTILITY FUNCTIONS FOR CANVAS CROPPING
 // ----------------------------------------------------------------------
 
 function readFile(file) {
@@ -585,11 +609,9 @@ async function getCroppedImg(imageSrc, pixelCrop) {
 
   if (!ctx) return null;
 
-  // Set canvas size to the exact crop size
   canvas.width = pixelCrop.width;
   canvas.height = pixelCrop.height;
 
-  // Draw the cropped portion onto the canvas
   ctx.drawImage(
     image,
     pixelCrop.x,
@@ -602,7 +624,6 @@ async function getCroppedImg(imageSrc, pixelCrop) {
     pixelCrop.height
   );
 
-  // Return as a Blob so it can be uploaded easily
   return new Promise((resolve, reject) => {
     canvas.toBlob((file) => {
       if (file) resolve(file);

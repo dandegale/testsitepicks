@@ -156,6 +156,7 @@ export default function LeaguePage() {
               id: `${pick.user_id}-${pick.fight_id}`,
               user: member?.displayName || "Unknown",
               avatar: member?.avatarUrl,
+              lifetimePoints: member?.lifetimePoints || 0, // 🎯 Grab XP for Feed Badge
               user_id: pick.user_id,
               fighter: pick.selected_fighter,
               odds: pick.odds_at_pick,
@@ -254,6 +255,7 @@ export default function LeaguePage() {
               user_id: member.user_id,
               displayName: member.displayName,
               avatarUrl: member.avatarUrl,
+              lifetimePoints: member.lifetimePoints, // 🎯 Grab XP for Leaderboard Badge
               pickCount: memberPicks.length,
               totalScore: parseFloat(totalScore.toFixed(1)),
               cardsWon: historicalWinsMap[member.user_id] || 0,
@@ -276,13 +278,11 @@ export default function LeaguePage() {
 
         const inviteCode = searchParams.get('invite');
 
-        // 🎯 THE BOUNCER: If unauthenticated but trying to join via invite link, redirect to login with backpack!
         if (!currentUser && inviteCode) {
             setToast({ message: "Create an account to join this league! 👊", type: "info" });
             const returnUrl = encodeURIComponent(`/league/${leagueId}?invite=${inviteCode}`);
-            // Note: Replace '/login' below with your actual auth page path if different (e.g. '/auth' or '/sign-up')
             router.push(`/login?redirectTo=${returnUrl}`); 
-            return; // Halt execution
+            return; 
         }
 
         const { data: leagueData } = await supabase.from('leagues').select('*').eq('id', leagueId).single();
@@ -308,13 +308,16 @@ export default function LeaguePage() {
 
         if (processedMembers.length > 0) {
             const memberIds = processedMembers.map(m => m.user_id);
-            const { data: profiles } = await supabase.from('profiles').select('email, username, avatar_url').in('email', memberIds);   
+            
+            // 🎯 We ensure lifetime_points are grabbed from the DB here!
+            const { data: profiles } = await supabase.from('profiles').select('email, username, avatar_url, lifetime_points').in('email', memberIds);   
 
             processedMembers = processedMembers.map(member => {
                 const profile = profiles?.find(p => p.email === member.user_id);
                 const displayName = (profile && profile.username) ? profile.username : member.user_id.split('@')[0]; 
                 const avatarUrl = profile?.avatar_url || null;
-                return { ...member, displayName, avatarUrl };
+                const lifetimePoints = profile?.lifetime_points || 0; // 🎯 Safely set to 0 if null
+                return { ...member, displayName, avatarUrl, lifetimePoints };
             });
         }
         setMembers(processedMembers);
@@ -585,8 +588,6 @@ export default function LeaguePage() {
                 ))}
                 <div className="pt-4 mt-4 text-center">
                     <p className="text-[10px] font-black uppercase text-teal-400 tracking-widest border border-teal-500/50 bg-teal-950/30 py-2 rounded-lg mb-2">Roster Confirmed</p>
-                    
-                    {/* 🎯 NEW: THE SOCIAL SHARE COMPONENT */}
                     <SocialShareSlip 
                         picks={existingPicks} 
                         username={user?.user_metadata?.username || user?.email?.split('@')[0]}
@@ -908,76 +909,7 @@ export default function LeaguePage() {
                                 )}
                             </div>
 
-                            <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg mb-6">
-                                <button onClick={() => setShowAllFighters(!showAllFighters)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none">
-                                    <div className="flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
-                                        <h3 className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] text-gray-400">Live Fighter Stats (Optimal Lineup)</h3>
-                                    </div>
-                                    <span className="text-teal-500 font-black text-[10px] uppercase tracking-widest bg-teal-950/30 px-3 py-1 rounded">{showAllFighters ? 'Hide ▲' : 'View ▼'}</span>
-                                </button>
-                                
-                                {showAllFighters && (
-                                    <div className="p-4 border-t border-gray-900 max-h-[600px] overflow-y-auto custom-scrollbar">
-                                        <div className="bg-black border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
-                                            <div className="w-full overflow-x-auto">
-                                                <table className="w-full text-left text-[9px] sm:text-[10px] md:text-xs">
-                                                    <thead className="bg-gray-950 text-gray-500 uppercase tracking-widest font-black text-[8px] sm:text-[9px]">
-                                                        <tr>
-                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Rnk</th>
-                                                            <th className="px-1 py-2 sm:p-2 md:p-3 truncate max-w-[60px] sm:max-w-none">Fighter</th>
-                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Result</th>
-                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">KD</th>
-                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SS</th>
-                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">TD</th>
-                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SUB</th>
-                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-center">CTRL</th>
-                                                            <th className="px-1 py-2 sm:p-2 md:p-3 text-right text-teal-400">PTS</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-gray-900">
-                                                        {allCardFightersRanked.map((stats, idx) => {
-                                                            const m = Math.floor((stats.control_time_seconds || 0) / 60);
-                                                            const s = (stats.control_time_seconds || 0) % 60;
-                                                            const ctrlStr = `${m}:${s.toString().padStart(2, '0')}`;
-                                                            const winMethod = stats.method ? `\n(${stats.method})` : '';
-
-                                                            return (
-                                                                <tr key={stats.id || idx} className="hover:bg-gray-900/50 transition-colors">
-                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 font-black text-gray-500 text-center">{idx + 1}</td>
-                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-white truncate max-w-[60px] sm:max-w-[100px] md:max-w-none" title={stats.fighter_name}>{stats.fighter_name}</td>
-                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-center font-black text-[8px] sm:text-[9px] md:text-[10px] leading-tight">
-                                                                        {stats.is_winner === true ? (
-                                                                            <span className="text-teal-400 whitespace-pre-wrap">W{winMethod}</span>
-                                                                        ) : stats.is_winner === false ? (
-                                                                            <span className="text-red-500 whitespace-pre-wrap">L{winMethod}</span>
-                                                                        ) : (
-                                                                            <span className="text-gray-600">-</span>
-                                                                        )}
-                                                                    </td>
-                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.knockdowns || 0}</td>
-                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
-                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
-                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>
-                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{ctrlStr}</td>
-                                                                    <td className="px-1 py-2 sm:p-2 md:p-3 text-right font-black text-teal-400">{(stats.fantasy_points || 0).toFixed(1)}</td>
-                                                                </tr>
-                                                            );
-                                                        })}
-                                                        {allCardFightersRanked.length === 0 && (
-                                                            <tr>
-                                                                <td colSpan="9" className="p-6 text-center text-gray-600 font-bold uppercase tracking-widest text-[10px]">No stats available for this event yet</td>
-                                                            </tr>
-                                                        )}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                             <div className="flex items-center gap-3 mb-6">
+                             <div className="flex items-center gap-3 mb-6 mt-8">
                                 <img src="/trophy.png" alt="Leaderboard" className="w-12 h-12 object-contain drop-shadow-[0_0_20px_rgba(234,179,8,0.6)]" />
                                 <h2 className="text-2xl font-black uppercase italic tracking-tighter text-white">
                                     DFS Standings
@@ -1006,19 +938,27 @@ export default function LeaguePage() {
                                                         </div>
                                                         
                                                         <div className="col-span-4 flex items-center gap-3 overflow-hidden">
-                                                            <Link 
-                                                                href={`/u/${encodeURIComponent(player.displayName)}`} 
-                                                                onClick={(e) => e.stopPropagation()} 
-                                                                className="flex-shrink-0 hover:opacity-80 transition-opacity"
-                                                            >
-                                                                {player.avatarUrl ? (
-                                                                    <img src={player.avatarUrl} alt={player.displayName} className="w-8 h-8 rounded-full object-cover border border-gray-700 shrink-0" />
-                                                                ) : (
-                                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-300 shrink-0">
-                                                                        {player.displayName.charAt(0).toUpperCase()}
-                                                                    </div>
-                                                                )}
-                                                            </Link>
+                                                            
+                                                            {/* 🎯 NEW: LEVEL BADGE AVATAR COMPONENT */}
+                                                            <div className="relative flex-shrink-0">
+                                                                <Link 
+                                                                    href={`/u/${encodeURIComponent(player.displayName)}`} 
+                                                                    onClick={(e) => e.stopPropagation()} 
+                                                                    className="block hover:opacity-80 transition-opacity"
+                                                                >
+                                                                    {player.avatarUrl ? (
+                                                                        <img src={player.avatarUrl} alt={player.displayName} className="w-8 h-8 rounded-full object-cover border border-gray-700" />
+                                                                    ) : (
+                                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-300">
+                                                                            {player.displayName.charAt(0).toUpperCase()}
+                                                                        </div>
+                                                                    )}
+                                                                </Link>
+                                                                <div className="absolute -bottom-1 -right-1 bg-gradient-to-br from-pink-600 to-teal-500 text-white w-4 h-4 flex items-center justify-center rounded-full text-[8px] font-black border border-black shadow-sm pointer-events-none">
+                                                                    {calculateLevel(player.lifetimePoints)}
+                                                                </div>
+                                                            </div>
+
                                                             <div className="min-w-0">
                                                                 <Link 
                                                                     href={`/u/${encodeURIComponent(player.displayName)}`} 
@@ -1028,11 +968,10 @@ export default function LeaguePage() {
                                                                     {player.displayName}
                                                                 </Link>
                                                                 
-                                                                {/* 🎯 REIGNING CHAMPION BELT */}
                                                                 {player.isReigningChamp && (
-                                                                    <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest flex items-center gap-1.5 mt-1">
-                                                                        <img src="/champion.png" className="w-5 h-5 object-contain drop-shadow-[0_0_10px_rgba(234,179,8,0.8)]" alt="Reigning Champ" />
-                                                                        Reigning Champ
+                                                                    <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest flex items-center gap-1.5 mt-0.5">
+                                                                        <img src="/champion.png" className="w-4 h-4 object-contain drop-shadow-[0_0_10px_rgba(234,179,8,0.8)]" alt="Reigning Champ" />
+                                                                        Champ
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -1089,15 +1028,22 @@ export default function LeaguePage() {
                                     <div key={item.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between hover:border-gray-700 transition-colors">
                                         
                                         <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
-                                            <Link href={`/u/${encodeURIComponent(item.user)}`} className="flex-shrink-0 hover:opacity-80 transition-opacity">
-                                                {item.avatar ? (
-                                                    <img src={item.avatar} alt={item.user} className="w-10 h-10 rounded-full object-cover border border-gray-700 shrink-0" />
-                                                ) : (
-                                                    <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center font-black text-gray-500 border border-gray-700 shrink-0">
-                                                        {item.user.charAt(0).toUpperCase()}
-                                                    </div>
-                                                )}
-                                            </Link>
+                                            
+                                            {/* 🎯 NEW: FEED AVATAR BADGE */}
+                                            <div className="relative flex-shrink-0">
+                                                <Link href={`/u/${encodeURIComponent(item.user)}`} className="block hover:opacity-80 transition-opacity">
+                                                    {item.avatar ? (
+                                                        <img src={item.avatar} alt={item.user} className="w-10 h-10 rounded-full object-cover border border-gray-700" />
+                                                    ) : (
+                                                        <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center font-black text-gray-500 border border-gray-700">
+                                                            {item.user.charAt(0).toUpperCase()}
+                                                        </div>
+                                                    )}
+                                                </Link>
+                                                <div className="absolute -bottom-1 -right-1 bg-gradient-to-br from-pink-600 to-teal-500 text-white w-4 h-4 flex items-center justify-center rounded-full text-[8px] font-black border border-black shadow-sm pointer-events-none">
+                                                    {calculateLevel(item.lifetimePoints)}
+                                                </div>
+                                            </div>
                                             
                                             <div className="min-w-0">
                                                 <div className="flex items-center gap-2">
@@ -1253,15 +1199,23 @@ export default function LeaguePage() {
                                         <div key={member.user_id} className="p-4 flex items-center justify-between hover:bg-gray-800/30 transition-colors">
                                             
                                             <div className="flex items-center gap-4">
-                                                <Link href={`/u/${encodeURIComponent(member.displayName)}`} className="flex-shrink-0 hover:opacity-80 transition-opacity">
-                                                    {member.avatarUrl ? (
-                                                        <img src={member.avatarUrl} alt={member.displayName} className="w-10 h-10 rounded-full object-cover border border-gray-700" />
-                                                    ) : (
-                                                        <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-xs font-black text-gray-400 border border-gray-700">
-                                                            {member.displayName ? member.displayName.charAt(0).toUpperCase() : '?'}
-                                                        </div>
-                                                    )}
-                                                </Link>
+                                                
+                                                {/* 🎯 NEW: MEMBER ROSTER AVATAR BADGE */}
+                                                <div className="relative flex-shrink-0">
+                                                    <Link href={`/u/${encodeURIComponent(member.displayName)}`} className="block hover:opacity-80 transition-opacity">
+                                                        {member.avatarUrl ? (
+                                                            <img src={member.avatarUrl} alt={member.displayName} className="w-10 h-10 rounded-full object-cover border border-gray-700" />
+                                                        ) : (
+                                                            <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-xs font-black text-gray-400 border border-gray-700">
+                                                                {member.displayName ? member.displayName.charAt(0).toUpperCase() : '?'}
+                                                            </div>
+                                                        )}
+                                                    </Link>
+                                                    <div className="absolute -bottom-1 -right-1 bg-gradient-to-br from-pink-600 to-teal-500 text-white w-4 h-4 flex items-center justify-center rounded-full text-[8px] font-black border border-black shadow-sm pointer-events-none">
+                                                        {calculateLevel(member.lifetimePoints)}
+                                                    </div>
+                                                </div>
+
                                                 <div>
                                                     <Link href={`/u/${encodeURIComponent(member.displayName)}`} className="text-sm font-bold text-white hover:text-pink-400 transition-colors">
                                                         {member.displayName}
@@ -1436,4 +1390,21 @@ export default function LeaguePage() {
 
     </div>
   );
+}
+
+// ----------------------------------------------------------------------
+// 🎯 THE XP MATH ENGINE
+// ----------------------------------------------------------------------
+function calculateLevel(totalPoints) {
+    let level = 1;
+    let xpNeededForNext = 100;
+    let currentXP = totalPoints || 0;
+
+    while (currentXP >= xpNeededForNext) {
+        currentXP -= xpNeededForNext;
+        level++;
+        xpNeededForNext += 10;
+    }
+    
+    return level;
 }
