@@ -10,7 +10,7 @@ import LeagueRail from '../../components/LeagueRail';
 import LogOutButton from '../../components/LogOutButton';
 import MobileNav from '../../components/MobileNav'; 
 import Toast from '../../components/Toast'; 
-import SocialShareSlip from '../../components/SocialShareSlip'; // 📸 NEW: Imported the Share Slip
+import SocialShareSlip from '../../components/SocialShareSlip';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -274,11 +274,21 @@ export default function LeaguePage() {
             if (profile && profile.show_odds === true) setShowOdds(true);
         }
 
+        const inviteCode = searchParams.get('invite');
+
+        // 🎯 THE BOUNCER: If unauthenticated but trying to join via invite link, redirect to login with backpack!
+        if (!currentUser && inviteCode) {
+            setToast({ message: "Create an account to join this league! 👊", type: "info" });
+            const returnUrl = encodeURIComponent(`/league/${leagueId}?invite=${inviteCode}`);
+            // Note: Replace '/login' below with your actual auth page path if different (e.g. '/auth' or '/sign-up')
+            router.push(`/login?redirectTo=${returnUrl}`); 
+            return; // Halt execution
+        }
+
         const { data: leagueData } = await supabase.from('leagues').select('*').eq('id', leagueId).single();
         setLeague(leagueData);
         setLocalLeagueImage(leagueData?.image_url || '');
 
-        const inviteCode = searchParams.get('invite');
         if (currentUser && leagueData && inviteCode === leagueData.invite_code) {
             const { data: existingMember } = await supabase.from('league_members').select('*').eq('league_id', leagueId).eq('user_id', currentUser.email).single();
             if (!existingMember) {
