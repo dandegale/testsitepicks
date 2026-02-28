@@ -65,7 +65,7 @@ async function scrapeFullCard() {
     }
 }
 
-// 🎯 NEW FUNCTION: The Idempotent XP Engine
+// 🎯 NEW FUNCTION: The Idempotent XP Engine (Exploit-Proof)
 async function updateAllUsersLifetimePoints() {
     try {
         console.log("🔄 Recalculating Lifetime XP for all users...");
@@ -90,20 +90,35 @@ async function updateAllUsersLifetimePoints() {
             statMap[`${s.fight_id}-${coreName}`] = s.fantasy_points || 0;
         });
 
-        // 3. Loop through picks and sum up the XP per user
-        const userXP = {};
+        // 3. 🎯 ANTI-EXPLOIT: Track the HIGHEST score per unique fight per user
+        const userFightScores = {};
+        
         picks.forEach(pick => {
             const corePick = getCoreName(pick.selected_fighter);
             const pointsScored = statMap[`${pick.fight_id}-${corePick}`] || 0;
             
-            if (!userXP[pick.user_id]) userXP[pick.user_id] = 0;
-            userXP[pick.user_id] += pointsScored;
+            // Initialize the user if they don't exist yet
+            if (!userFightScores[pick.user_id]) {
+                userFightScores[pick.user_id] = {};
+            }
+            
+            // If they picked in multiple leagues, only keep their BEST score for this specific fight
+            const currentBestForThisFight = userFightScores[pick.user_id][pick.fight_id] || 0;
+            if (pointsScored > currentBestForThisFight) {
+                userFightScores[pick.user_id][pick.fight_id] = pointsScored;
+            }
         });
 
-        // 4. Update the profiles table with the new XP totals
+        // 4. Sum up their unique fight scores to get their True Lifetime XP
+        const userXP = {};
+        for (const [userId, fights] of Object.entries(userFightScores)) {
+            // Add up all the values in their unique fights dictionary
+            userXP[userId] = Object.values(fights).reduce((sum, score) => sum + score, 0);
+        }
+
+        // 5. Update the profiles table with the new XP totals
         let updatedCount = 0;
         for (const [email, totalPoints] of Object.entries(userXP)) {
-            // Note: Update by email since that's what is saved in your picks.user_id
             const { error } = await supabase
                 .from('profiles')
                 .update({ lifetime_points: totalPoints })
