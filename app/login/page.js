@@ -32,35 +32,45 @@ export default function LoginPage() {
 
     try {
       if (mode === 'signup') {
-        if (!username.trim()) throw new Error("Please create a username.");
+        const cleanUsername = username.trim();
+        if (!cleanUsername) throw new Error("Please create a username.");
 
-        // 1. Create the user in the Auth table
+        // 🎯 1. PRE-FLIGHT CHECK: Does this username already exist?
+        // Using 'ilike' makes it case-insensitive (e.g., 'Mike' blocks 'mike')
+        const { data: existingUser, error: searchError } = await supabase
+          .from('profiles')
+          .select('username')
+          .ilike('username', cleanUsername)
+          .maybeSingle();
+
+        if (searchError) throw new Error("Error verifying username availability.");
+        if (existingUser) throw new Error("This username is already taken. Please choose another.");
+
+        // 2. Create the user in the Auth table
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { username: username } },
+          options: { data: { username: cleanUsername } },
         });
 
         if (error) throw error;
 
-        // 🎯 2. THE FIX: Immediately push the username to the public profiles table
+        // 3. Immediately push the username to the public profiles table
         if (data?.user) {
           const { error: profileError } = await supabase
             .from('profiles')
             .upsert({ 
               id: data.user.id, 
-              username: username,
+              username: cleanUsername,
               updated_at: new Date()
             });
             
           if (profileError) {
               console.error("Failed to save profile:", profileError.message);
-              // We don't throw here so the user still gets logged in, 
-              // but you might want to handle this based on your RLS settings.
           }
         }
 
-        // 3. Handle routing
+        // 4. Handle routing
         if (data.user && !data.session) {
           setSuccessMsg("Account created! Check your email to confirm.");
         } else {
@@ -189,7 +199,6 @@ export default function LoginPage() {
                         </div>
                     </div>
                     
-                    {/* 🎯 NEW: Centered link placed immediately beneath the input field */}
                     {mode === 'login' && (
                         <div className="text-center pt-3 pb-1">
                             <Link 

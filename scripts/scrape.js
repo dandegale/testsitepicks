@@ -65,14 +65,21 @@ async function scrapeFullCard() {
     }
 }
 
-// 🎯 NEW FUNCTION: The Idempotent XP Engine (Exploit-Proof)
+// 🎯 NEW FUNCTION: The Idempotent XP Engine (Exploit-Proof & League-Only)
 async function updateAllUsersLifetimePoints() {
     try {
         console.log("🔄 Recalculating Lifetime XP for all users...");
         
         // 1. Grab every pick ever made and every stat ever recorded
-        const { data: picks, error: picksError } = await supabase.from('picks').select('user_id, fight_id, selected_fighter');
-        const { data: stats, error: statsError } = await supabase.from('fighter_stats').select('fight_id, fighter_name, fantasy_points');
+        // 🎯 THE FIX: Added .not('league_id', 'is', null) to ONLY count picks made inside a league!
+        const { data: picks, error: picksError } = await supabase
+            .from('picks')
+            .select('user_id, fight_id, selected_fighter')
+            .not('league_id', 'is', null);
+
+        const { data: stats, error: statsError } = await supabase
+            .from('fighter_stats')
+            .select('fight_id, fighter_name, fantasy_points');
 
         if (picksError || statsError) throw new Error("Database fetch error during XP calculation");
 
