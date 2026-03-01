@@ -50,11 +50,12 @@ export async function awardEventBadges(targetDate) {
 
   if (!picks || picks.length === 0) return { success: true, message: 'No picks found for this event.' };
 
-  // 4. Group picks by user EMAIL (user_id)
+  // 4. Group picks by user EMAIL (user_id) - 💥 DEDUPLICATION FIX
   const userPicks = {};
   picks.forEach(pick => {
-    if (!userPicks[pick.user_id]) userPicks[pick.user_id] = [];
-    userPicks[pick.user_id].push(pick);
+    if (!userPicks[pick.user_id]) userPicks[pick.user_id] = {};
+    // Overwrites duplicate fight_ids. They only get 1 vote per real-world fight!
+    userPicks[pick.user_id][pick.fight_id] = pick;
   });
 
   // 🎯 THE FIX: Fetch existing badges so we don't try to award them twice
@@ -86,8 +87,10 @@ export async function awardEventBadges(targetDate) {
   };
 
   // 5. THE MATRIX: Evaluate each user's performance
-  for (const [userEmail, uPicks] of Object.entries(userPicks)) {
+  for (const [userEmail, uPicksObject] of Object.entries(userPicks)) {
     
+    const uPicks = Object.values(uPicksObject); // Convert deduplicated object back into an array
+
     let koWins = 0;
     let subWins = 0;
     let decWins = 0;
@@ -134,7 +137,8 @@ export async function awardEventBadges(targetDate) {
         grantBadge(userEmail, 'b4'); // Decision Merchant
     }
 
-    if (isPerfectCard && uPicks.length === totalEventFights && totalEventFights >= 5) {
+    // 💥 THE BOSS FIX: Count totalWins instead of picks to protect against No Contests
+    if (isPerfectCard && totalWins === totalEventFights && totalEventFights >= 5) {
         grantBadge(userEmail, 'b5'); // The Boss
     }
 
@@ -142,7 +146,8 @@ export async function awardEventBadges(targetDate) {
         grantBadge(userEmail, 'b13'); // Whale Hunter
     }
 
-    if (winningUnderdogFightIds.size >= 2 && pickedUnderdogWins === winningUnderdogFightIds.size) {
+    // 💥 THE UNDERDOG FIX: They just need to correctly pick 2 underdogs!
+    if (pickedUnderdogWins >= 2) {
         grantBadge(userEmail, 'b14'); // The Underdog
     }
   }
@@ -193,7 +198,6 @@ export async function evaluateUserStreaks(userEmail) {
   // 🔍 CATCHING THE SILENT BAILOUT
   if (gradedPicks.length === 0) {
       console.log(`⚠️ WARNING: Found picks, but NO graded fights for ${userEmail}.`);
-      console.log(`   ➔ Raw Supabase Data Snippet:`, JSON.stringify(picksData[0])); // Reveal the hidden data issue
       return { success: true, message: 'No graded fights found for user.' };
   }
 
@@ -201,14 +205,26 @@ export async function evaluateUserStreaks(userEmail) {
   gradedPicks.sort((a, b) => {
     const timeDiff = new Date(a.fights.start_time) - new Date(b.fights.start_time);
     if (timeDiff !== 0) return timeDiff;
-    return a.fight_id - b.fight_id; // Consistent secondary sort
+    return String(a.fight_id).localeCompare(String(b.fight_id)); 
+  });
+
+  // 💥 THE DEDUPLICATION FILTER (Stop multi-league double counting!)
+  const uniqueGradedPicks = [];
+  const seenFightIds = new Set();
+  
+  gradedPicks.forEach(pick => {
+      if (!seenFightIds.has(pick.fight_id)) {
+          uniqueGradedPicks.push(pick);
+          seenFightIds.add(pick.fight_id);
+      }
   });
 
   let currentWinStreak = 0;
   let maxWinStreak = 0; 
   const winningPicks = [];
 
-  gradedPicks.forEach(pick => {
+  // Loop over UNIQUE picks now
+  uniqueGradedPicks.forEach(pick => {
     // 🎯 STRING SAFETY FIX: Trim invisible spaces and convert to lowercase
     const pickName = (pick.selected_fighter || "").trim().toLowerCase();
     const winnerName = (pick.fights.winner || "").trim().toLowerCase();
@@ -223,7 +239,7 @@ export async function evaluateUserStreaks(userEmail) {
   });
 
   // 🔍 DEBUG LOG: This will tell you EXACTLY what the computer sees!
-  console.log(`   ➔ ${userEmail} | Total Graded Picks: ${gradedPicks.length} | Max Calculated Streak: ${maxWinStreak}`);
+  console.log(`   ➔ ${userEmail} | Unique Real-World Fights Picked: ${uniqueGradedPicks.length} | True Max Streak: ${maxWinStreak}`);
 
   // 🎯 Fetch existing badges so we don't try to award them twice
   const { data: existingBadgesData } = await supabase
