@@ -10,6 +10,14 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+// --- XP MATH: CONVERT LIFETIME POINTS TO A LEVEL ---
+// Adjust the '100' here if you want to change how many points it takes to level up!
+const calculateLevel = (lifetimePoints) => {
+  const points = lifetimePoints || 0;
+  // Example: Every 100 points = 1 Level. (0-99 = Lvl 1, 100-199 = Lvl 2, etc.)
+  return Math.max(1, Math.floor(points / 100) + 1);
+};
+
 // --- FULL MASTER BADGE DATA WITH IMAGES ---
 const AVAILABLE_BADGES = [
   { id: 'b1', title: 'BMF', imagePath: '/badges/bmf.png', description: '5+ chosen fighters win by knockout on a single card.', glow: 'shadow-[0_0_15px_rgba(234,179,8,0.4)]' },
@@ -48,6 +56,9 @@ export default function PublicProfile() {
   const [stats, setStats] = useState({ totalBets: 0, wins: 0, losses: 0, pending: 0, netProfit: 0 });
   const [history, setHistory] = useState([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
+  // 🎯 Calculate level dynamically on render
+  const userLevel = profile ? calculateLevel(profile.lifetime_points) : 1;
 
   useEffect(() => {
     fetchPublicData();
@@ -191,10 +202,10 @@ export default function PublicProfile() {
                     )}
                 </div>
                 
-                {/* 🎯 THE LEVEL OVERLAY BADGE */}
+                {/* 🎯 THE DYNAMIC LEVEL OVERLAY BADGE */}
                 <div className="absolute -bottom-2 -right-2 md:-right-4 md:bottom-2 bg-gradient-to-br from-teal-500 to-teal-700 border-4 border-[#050505] text-white w-12 h-12 md:w-14 md:h-14 rounded-full flex flex-col items-center justify-center shadow-[0_0_20px_rgba(20,184,166,0.6)] z-20 transform md:translate-y-8 transition-transform hover:scale-110">
                     <span className="text-[8px] uppercase tracking-widest font-black leading-none mt-1 text-black/60">LVL</span>
-                    <span className="text-lg md:text-xl font-black italic leading-none drop-shadow-md">{profile.level || 1}</span>
+                    <span className="text-lg md:text-xl font-black italic leading-none drop-shadow-md">{userLevel}</span>
                 </div>
             </div>
 
@@ -215,9 +226,9 @@ export default function PublicProfile() {
                     <span className="bg-gradient-to-r from-teal-500 to-teal-400 text-black border border-teal-400/50 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest shadow-[0_0_10px_rgba(20,184,166,0.3)]">
                         Fighter Profile
                     </span>
-                    {/* 🎯 SECONDARY LEVEL TAG */}
+                    {/* 🎯 SECONDARY DYNAMIC LEVEL TAG */}
                     <span className="bg-black/60 backdrop-blur-md text-white border border-white/10 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
-                        Level {profile.level || 1}
+                        Level {userLevel}
                     </span>
                 </div>
             </div>

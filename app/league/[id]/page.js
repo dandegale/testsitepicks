@@ -74,16 +74,17 @@ export default function LeaguePage() {
       return getCore(pickName) === getCore(statName);
   };
 
+  // 🎯 THE FIX: Extended from 12 hours to 48 hours
   const { currentEventFights, visibleFights, groupedFights, isEventConcluded } = useMemo(() => {
       if (!allFights || allFights.length === 0) return { currentEventFights: [], visibleFights: [], groupedFights: {}, isEventConcluded: false };
 
       const now = new Date().getTime();
-      const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+      const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000; 
       
       const validFights = allFights.filter(f => {
           if (!f || !f.start_time) return false;
           const fTime = new Date(f.start_time).getTime();
-          return (fTime > (now - TWELVE_HOURS)) || (f.winner === null);
+          return (fTime > (now - FORTY_EIGHT_HOURS)) || (f.winner === null);
       });
 
       let sorted = [...validFights].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
