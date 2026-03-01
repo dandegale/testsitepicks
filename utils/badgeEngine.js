@@ -13,7 +13,7 @@ export async function awardEventBadges(targetDate) {
   const { data: fights } = await supabase
     .from('fights')
     .select('*')
-    .like('start_time', `${targetDate}%`) // 👇 CHANGED: Searches by date string
+    .like('start_time', `${targetDate}%`) 
     .not('winner', 'is', null);
 
   if (!fights || fights.length === 0) return { success: true, message: 'No graded fights found.' };
@@ -57,7 +57,29 @@ export async function awardEventBadges(targetDate) {
     userPicks[pick.user_id].push(pick);
   });
 
+  // 🎯 THE FIX: Fetch existing badges so we don't try to award them twice
+  const userEmails = Object.keys(userPicks);
+  const { data: existingBadgesData } = await supabase
+    .from('user_badges')
+    .select('user_id, badge_id')
+    .in('user_id', userEmails);
+
+  // Store existing badges in a quick-lookup Set (e.g., "dandegale@gmail.com-b1")
+  const existingBadgesSet = new Set();
+  if (existingBadgesData) {
+      existingBadgesData.forEach(b => existingBadgesSet.add(`${b.user_id}-${b.badge_id}`));
+  }
+
   const newlyEarnedBadges = [];
+
+  // Helper function to safely add a badge only if they don't already have it
+  const grantBadge = (email, badgeId) => {
+      const lookupKey = `${email}-${badgeId}`;
+      if (!existingBadgesSet.has(lookupKey)) {
+          newlyEarnedBadges.push({ user_id: email, badge_id: badgeId });
+          existingBadgesSet.add(lookupKey); // Add to set immediately to prevent duplicates in same run
+      }
+  };
 
   // 5. THE MATRIX: Evaluate each user's performance
   for (const [userEmail, uPicks] of Object.entries(userPicks)) {
@@ -100,24 +122,24 @@ export async function awardEventBadges(targetDate) {
     });
 
     // --- BADGE LOGIC CONDITIONS ---
-    if (koWins >= 5) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b1' }); // BMF
-    if (subWins >= 5) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b2' }); // Sub Artist
-    if (hasRound1KO) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b3' }); // Flashbang
+    if (koWins >= 5) grantBadge(userEmail, 'b1'); // BMF
+    if (subWins >= 5) grantBadge(userEmail, 'b2'); // Sub Artist
+    if (hasRound1KO) grantBadge(userEmail, 'b3'); // Flashbang
     
     if (totalWins >= 3 && decWins === totalWins) {
-        newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b4' }); // Decision Merchant
+        grantBadge(userEmail, 'b4'); // Decision Merchant
     }
 
     if (isPerfectCard && uPicks.length === totalEventFights && totalEventFights >= 5) {
-        newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b5' }); // The Boss
+        grantBadge(userEmail, 'b5'); // The Boss
     }
 
     if (hasBiggestUnderdog) {
-        newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b13' }); // Whale Hunter
+        grantBadge(userEmail, 'b13'); // Whale Hunter
     }
 
     if (winningUnderdogFightIds.size >= 2 && pickedUnderdogWins === winningUnderdogFightIds.size) {
-        newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b14' }); // The Underdog
+        grantBadge(userEmail, 'b14'); // The Underdog
     }
   }
 
@@ -125,15 +147,18 @@ export async function awardEventBadges(targetDate) {
   if (newlyEarnedBadges.length > 0) {
     console.log(`🏆 Found ${newlyEarnedBadges.length} Event Badges to award! Saving to DB...`);
     
+    // 🎯 THE FIX: Changed from .upsert to a standard .insert
     const { error } = await supabase
         .from('user_badges')
-        .upsert(newlyEarnedBadges, { onConflict: 'user_id, badge_id' });
+        .insert(newlyEarnedBadges);
 
     if (error) {
         console.error("❌ Error saving badges:", error);
         return { success: false, error };
     }
-  } 
+  } else {
+      console.log(`🏆 No new event badges earned today.`);
+  }
   
   return { success: true, count: newlyEarnedBadges.length };
 }
@@ -171,12 +196,26 @@ export async function evaluateUserStreaks(userEmail) {
     }
   });
 
+  // 🎯 THE FIX: Fetch existing badges so we don't try to award them twice
+  const { data: existingBadgesData } = await supabase
+      .from('user_badges')
+      .select('badge_id')
+      .eq('user_id', userEmail);
+
+  const existingBadgesSet = new Set(existingBadgesData?.map(b => b.badge_id) || []);
   const newlyEarnedBadges = [];
 
-  if (maxWinStreak >= 3) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b9' });  
-  if (maxWinStreak >= 5) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b10' }); 
-  if (maxWinStreak >= 10) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b11' }); 
-  if (maxWinStreak >= 25) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b12' }); 
+  const grantBadge = (badgeId) => {
+      if (!existingBadgesSet.has(badgeId)) {
+          newlyEarnedBadges.push({ user_id: userEmail, badge_id: badgeId });
+          existingBadgesSet.add(badgeId);
+      }
+  };
+
+  if (maxWinStreak >= 3) grantBadge('b9');  
+  if (maxWinStreak >= 5) grantBadge('b10'); 
+  if (maxWinStreak >= 10) grantBadge('b11'); 
+  if (maxWinStreak >= 25) grantBadge('b12'); 
 
   if (winningPicks.length >= 10) {
     const last10Wins = winningPicks.slice(-10); 
@@ -185,17 +224,18 @@ export async function evaluateUserStreaks(userEmail) {
       return !isNaN(odds) && odds <= -250; 
     });
 
-    if (isChalkEater) newlyEarnedBadges.push({ user_id: userEmail, badge_id: 'b15' }); 
+    if (isChalkEater) grantBadge('b15'); 
   }
 
   if (newlyEarnedBadges.length > 0) {
-    const { error: upsertError } = await supabase
+    // 🎯 THE FIX: Changed from .upsert to a standard .insert
+    const { error: insertError } = await supabase
       .from('user_badges')
-      .upsert(newlyEarnedBadges, { onConflict: 'user_id, badge_id' });
+      .insert(newlyEarnedBadges);
 
-    if (upsertError) {
-      console.error(`❌ Error saving streak badges for ${userEmail}:`, upsertError);
-      return { success: false, error: upsertError };
+    if (insertError) {
+      console.error(`❌ Error saving streak badges for ${userEmail}:`, insertError);
+      return { success: false, error: insertError };
     } else {
       console.log(`✅ Granted ${newlyEarnedBadges.length} streak/history badges to ${userEmail}!`);
     }
