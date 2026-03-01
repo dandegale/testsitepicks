@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-// 🎯 NEW: Helper function to manually shift the API time back exactly 5 hours
+// 🎯 Helper function to manually shift the API time back exactly 5 hours
 function shiftToEST(utcDateString) {
     const date = new Date(utcDateString);
     date.setHours(date.getHours() - 5);
@@ -30,7 +30,15 @@ export async function GET() {
     let fighterEventMap = {}; 
 
     try {
-        const espnRes = await fetch('https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard');
+        const today = new Date();
+        const future = new Date();
+        future.setDate(today.getDate() + 60); // Look 60 days into the future
+
+        const formatDt = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+        
+        const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard?limit=50&dates=${formatDt(today)}-${formatDt(future)}`;
+
+        const espnRes = await fetch(espnUrl);
         const espnData = await espnRes.json();
         
         if (espnData && espnData.events) {
@@ -81,10 +89,6 @@ export async function GET() {
         const fightDate = new Date(event.commence_time);
         if (fightDate > futureLimit) continue;
 
-        // WEEKEND FILTER 
-        const estDayStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' }).format(fightDate);
-        if (estDayStr !== 'Sat' && estDayStr !== 'Sun') continue; 
-
         let bestBookmaker = null;
         for (const book of PREFERRED_BOOKS) {
             bestBookmaker = event.bookmakers.find(b => b.key === book);
@@ -125,7 +129,6 @@ export async function GET() {
             return isDirect || isReverse;
         });
 
-        // 🎯 NEW: Create the -5 hours shifted timestamp
         const adjustedEstTime = shiftToEST(event.commence_time);
 
         if (match) {
@@ -145,7 +148,7 @@ export async function GET() {
                     .from('fights')
                     .update({
                         event_name: dynamicEventName, 
-                        start_time: adjustedEstTime, // Updates the time to the -5 hour shift
+                        start_time: adjustedEstTime,
                         fighter_1_odds: newFighter1Odds,
                         fighter_2_odds: newFighter2Odds,
                         source: bestBookmaker.key
@@ -155,19 +158,22 @@ export async function GET() {
                 logs.push(`Updated Odds/Event/Time: ${match.fighter_1_name} vs ${match.fighter_2_name}`);
             }
         } else {
-            // THE GATEKEEPER
+            // THE GATEKEEPER - TEMPORARILY DISABLED FOR DEBUGGING
+            /*
             const isConfirmedUfc = ufcNames.some(name => {
                 const cn = clean(name);
                 return c1 === cn || c2 === cn || c1.includes(cn) || c2.includes(cn);
             });
+            */
 
-            if (isConfirmedUfc && fightDate > new Date()) {
+            // Check modified to bypass ESPN confirmation, only checking if the fight is in the future
+            if (fightDate > new Date()) {
                 bookedFighters.add(f1Key);
                 bookedFighters.add(f2Key);
 
                 const { error: insertError } = await supabase.from('fights').insert({
                     event_name: dynamicEventName, 
-                    start_time: adjustedEstTime, // 🎯 INSERTS WITH THE -5 HOUR SHIFT!
+                    start_time: adjustedEstTime,
                     fighter_1_name: outcome1.name,
                     fighter_1_odds: outcome1.price,
                     fighter_2_name: outcome2.name,
@@ -179,7 +185,7 @@ export async function GET() {
                     console.error("Supabase Insert Error:", insertError);
                     logs.push(`❌ DB REJECTED ${outcome1.name}: ${insertError.message}`);
                 } else {
-                    logs.push(`✅ CREATED UFC FIGHT: ${outcome1.name} vs ${outcome2.name}`);
+                    logs.push(`✅ CREATED MMA FIGHT (Bypassed Filter): ${outcome1.name} vs ${outcome2.name}`);
                 }
             }
         }
