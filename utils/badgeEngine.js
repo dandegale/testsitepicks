@@ -72,11 +72,15 @@ export async function awardEventBadges(targetDate) {
 
   const newlyEarnedBadges = [];
 
-  // Helper function to safely add a badge only if they don't already have it
+  // 💥 THE NUCLEAR FIX: Safely add a badge with a manually generated random UUID
   const grantBadge = (email, badgeId) => {
       const lookupKey = `${email}-${badgeId}`;
       if (!existingBadgesSet.has(lookupKey)) {
-          newlyEarnedBadges.push({ user_id: email, badge_id: badgeId });
+          newlyEarnedBadges.push({ 
+              id: crypto.randomUUID(), // Force a unique ID directly from Node
+              user_id: email, 
+              badge_id: badgeId 
+          });
           existingBadgesSet.add(lookupKey); // Add to set immediately to prevent duplicates in same run
       }
   };
@@ -147,7 +151,6 @@ export async function awardEventBadges(targetDate) {
   if (newlyEarnedBadges.length > 0) {
     console.log(`🏆 Found ${newlyEarnedBadges.length} Event Badges to award! Saving to DB...`);
     
-    // 🎯 THE FIX: Changed from .upsert to a standard .insert
     const { error } = await supabase
         .from('user_badges')
         .insert(newlyEarnedBadges);
@@ -175,28 +178,54 @@ export async function evaluateUserStreaks(userEmail) {
     .select('*, fights(*)')
     .eq('user_id', userEmail);
 
-  if (error || !picksData || picksData.length === 0) return { success: true, message: 'No picks found.' };
+  if (error) {
+      console.log(`🚨 DB ERROR for ${userEmail}:`, error.message);
+      return { success: true, message: 'DB Error.' };
+  }
+
+  if (!picksData || picksData.length === 0) {
+      console.log(`⚠️ No picks found in DB for ${userEmail}`);
+      return { success: true, message: 'No picks found.' };
+  }
 
   const gradedPicks = picksData.filter(p => p.fights && p.fights.winner !== null);
-  if (gradedPicks.length === 0) return { success: true, message: 'No graded fights found for user.' };
+  
+  // 🔍 CATCHING THE SILENT BAILOUT
+  if (gradedPicks.length === 0) {
+      console.log(`⚠️ WARNING: Found picks, but NO graded fights for ${userEmail}.`);
+      console.log(`   ➔ Raw Supabase Data Snippet:`, JSON.stringify(picksData[0])); // Reveal the hidden data issue
+      return { success: true, message: 'No graded fights found for user.' };
+  }
 
-  gradedPicks.sort((a, b) => new Date(a.fights.start_time) - new Date(b.fights.start_time));
+  // 🎯 ANTI-SHUFFLE FIX: Sort by start time, but if timestamps are identical, sort by fight ID!
+  gradedPicks.sort((a, b) => {
+    const timeDiff = new Date(a.fights.start_time) - new Date(b.fights.start_time);
+    if (timeDiff !== 0) return timeDiff;
+    return a.fight_id - b.fight_id; // Consistent secondary sort
+  });
 
   let currentWinStreak = 0;
   let maxWinStreak = 0; 
   const winningPicks = [];
 
   gradedPicks.forEach(pick => {
-    if (pick.selected_fighter === pick.fights.winner) {
+    // 🎯 STRING SAFETY FIX: Trim invisible spaces and convert to lowercase
+    const pickName = (pick.selected_fighter || "").trim().toLowerCase();
+    const winnerName = (pick.fights.winner || "").trim().toLowerCase();
+
+    if (pickName === winnerName && pickName !== "") {
       currentWinStreak++;
       winningPicks.push(pick); 
       if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak;
     } else {
-      currentWinStreak = 0;
+      currentWinStreak = 0; // Streak broken!
     }
   });
 
-  // 🎯 THE FIX: Fetch existing badges so we don't try to award them twice
+  // 🔍 DEBUG LOG: This will tell you EXACTLY what the computer sees!
+  console.log(`   ➔ ${userEmail} | Total Graded Picks: ${gradedPicks.length} | Max Calculated Streak: ${maxWinStreak}`);
+
+  // 🎯 Fetch existing badges so we don't try to award them twice
   const { data: existingBadgesData } = await supabase
       .from('user_badges')
       .select('badge_id')
@@ -205,9 +234,14 @@ export async function evaluateUserStreaks(userEmail) {
   const existingBadgesSet = new Set(existingBadgesData?.map(b => b.badge_id) || []);
   const newlyEarnedBadges = [];
 
+  // 💥 THE NUCLEAR FIX
   const grantBadge = (badgeId) => {
       if (!existingBadgesSet.has(badgeId)) {
-          newlyEarnedBadges.push({ user_id: userEmail, badge_id: badgeId });
+          newlyEarnedBadges.push({ 
+              id: crypto.randomUUID(), 
+              user_id: userEmail, 
+              badge_id: badgeId 
+          });
           existingBadgesSet.add(badgeId);
       }
   };
@@ -228,7 +262,6 @@ export async function evaluateUserStreaks(userEmail) {
   }
 
   if (newlyEarnedBadges.length > 0) {
-    // 🎯 THE FIX: Changed from .upsert to a standard .insert
     const { error: insertError } = await supabase
       .from('user_badges')
       .insert(newlyEarnedBadges);
