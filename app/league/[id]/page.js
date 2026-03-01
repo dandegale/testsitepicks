@@ -1314,36 +1314,41 @@ export default function LeaguePage() {
         </div>
       </main>
 
-      {!hasLockedRoster && pendingPicks.length > 0 && (
+      {/* 🎯 FIX: Show the FAB if they have pending picks OR if they have a locked roster */}
+      {(pendingPicks.length > 0 || hasLockedRoster) && (
           <div className="lg:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
             <button 
               onClick={() => setShowMobileSlip(true)}
-              className={`w-full text-white p-4 rounded-xl shadow-2xl flex justify-between items-center border active:scale-95 transition-all ${pendingPicks.length === 5 ? 'bg-pink-600 border-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.4)]' : 'bg-gray-900 border-gray-700'}`}
+              className={`w-full text-white p-4 rounded-xl shadow-2xl flex justify-between items-center border active:scale-95 transition-all ${pendingPicks.length === 5 || hasLockedRoster ? 'bg-pink-600 border-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.4)]' : 'bg-gray-900 border-gray-700'}`}
             >
               <div className="flex items-center gap-3">
-                <span className={`px-3 py-1 rounded-lg text-xs font-black ${pendingPicks.length === 5 ? 'bg-black/20 text-white' : 'bg-gray-800 text-pink-500'}`}>
-                  {pendingPicks.length} / 5
+                <span className={`px-3 py-1 rounded-lg text-xs font-black ${pendingPicks.length === 5 || hasLockedRoster ? 'bg-black/20 text-white' : 'bg-gray-800 text-pink-500'}`}>
+                  {hasLockedRoster ? '5 / 5' : `${pendingPicks.length} / 5`}
                 </span>
                 <span className="text-sm font-black uppercase italic tracking-tighter">Your Roster</span>
               </div>
               <span className="text-xs font-bold uppercase tracking-widest">
-                  {pendingPicks.length === 5 ? 'Lock In →' : 'Expand ↑'}
+                  {hasLockedRoster ? 'View Slip ↑' : (pendingPicks.length === 5 ? 'Lock In →' : 'Expand ↑')}
               </span>
             </button>
           </div>
       )}
 
-      {showMobileSlip && !hasLockedRoster && (
+      {/* 🎯 FIX: Removed the !hasLockedRoster condition so the drawer can open when locked */}
+      {showMobileSlip && (
           <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm lg:hidden flex items-end">
-            <div className="w-full bg-gray-950 rounded-t-3xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300">
-               <div className="p-6 border-b border-gray-800 flex justify-between items-center">
+            <div className="w-full bg-gray-950 rounded-t-3xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300 max-h-[90vh]">
+               <div className="p-6 border-b border-gray-800 flex justify-between items-center shrink-0">
                   <div>
                     <h3 className="font-black italic text-xl text-white uppercase tracking-tighter">Fantasy Roster</h3>
-                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Select exactly 5 fighters</p>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">
+                        {hasLockedRoster ? 'Your picks are secured' : 'Select exactly 5 fighters'}
+                    </p>
                   </div>
-                  <button onClick={() => setShowMobileSlip(false)} className="text-gray-500 hover:text-white p-2 text-xs font-bold uppercase tracking-widest">✕ Close</button>
+                  <button onClick={() => setShowMobileSlip(false)} className="text-gray-500 hover:text-white p-2 text-xs font-bold uppercase tracking-widest bg-gray-900 rounded-lg">✕ Close</button>
                </div>
-               <div className="p-6">
+               {/* 🎯 FIX: Added overflow-y-auto so the drawer scrolls if the content (like the share graphic) is too tall */}
+               <div className="p-6 overflow-y-auto custom-scrollbar pb-12">
                   {renderRosterSlots()}
                </div>
             </div>

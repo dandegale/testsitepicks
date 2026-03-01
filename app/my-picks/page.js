@@ -20,6 +20,9 @@ export default function MyPicksPage() {
   
   const [showMobileLeagues, setShowMobileLeagues] = useState(false);
   const [stats, setStats] = useState({ wins: 0, losses: 0, winPercentage: 0 });
+  
+  // NEW: State for our filter ('ALL', 'GLOBAL', or specific league.id)
+  const [activeFilter, setActiveFilter] = useState('ALL');
 
   useEffect(() => {
     fetchData();
@@ -94,25 +97,86 @@ export default function MyPicksPage() {
     setLoading(false);
   };
 
-  // --- FIXED MATH: ADD STAKE (+10) TO RETURN ---
   const getPotentialGain = (odds) => {
     const numericOdds = parseInt(odds, 10);
-    
-    // Default fallback if odds are missing: 
-    // Return Stake (10) + Assumed Even Money Profit (10) = 20
     if (!odds || isNaN(numericOdds) || numericOdds === 0) return 20;
 
     let profit = 0;
-    
-    // 1. Calculate Profit
     if (numericOdds > 0) {
         profit = (numericOdds / 100) * 10;
     } else {
         profit = (100 / Math.abs(numericOdds)) * 10;
     }
-
-    // 2. Add Stake (10) to get Total Return
     return parseFloat((profit + 10).toFixed(1));
+  };
+
+  // NEW: Helper function to render a single pick card to keep our code clean
+  const renderPickCard = (pick) => {
+      const fight = pick.fight || {};
+      const opponent = fight.fighter_1_name === pick.selected_fighter 
+          ? fight.fighter_2_name 
+          : fight.fighter_1_name;
+
+      const isLive = fight.start_time && new Date(fight.start_time) < new Date();
+      const potentialGain = getPotentialGain(pick.odds_at_pick);
+      const leagueName = pick.league?.name || 'Unknown League';
+      const isGlobal = pick.league?.isGlobal;
+
+      return (
+          <div key={pick.id} className="bg-gray-950 border border-gray-800 rounded-xl p-6 hover:border-pink-600/50 transition-all group relative overflow-hidden flex flex-col">
+              {/* TOP BADGES */}
+              <div className="flex justify-between items-start mb-6">
+                  <span className={`text-[9px] font-black uppercase px-2 py-1 rounded border ${isGlobal ? 'bg-teal-900/20 text-teal-400 border-teal-900' : 'bg-gray-800 text-gray-300 border-gray-700'}`}>
+                      {leagueName}
+                  </span>
+
+                  {isLive && (
+                      <span className="bg-red-600 text-white text-[9px] font-black uppercase px-2 py-1 rounded animate-pulse ml-auto mr-2">
+                          Live
+                      </span>
+                  )}
+              </div>
+
+              {/* MAIN STATS */}
+              <div className="flex justify-between items-end mb-6">
+                  <div>
+                      <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1">
+                          Selection
+                      </div>
+                      <div className="text-2xl font-black italic text-white uppercase group-hover:text-pink-500 transition-colors leading-none">
+                          {pick.selected_fighter}
+                      </div>
+                      <div className="text-[10px] text-gray-600 font-bold mt-2">
+                          Odds: {pick.odds_at_pick > 0 ? `+${pick.odds_at_pick}` : pick.odds_at_pick}
+                      </div>
+                  </div>
+
+                  <div className="text-right">
+                      <div className="text-[9px] text-gray-500 font-bold uppercase tracking-wider mb-1">Potential Gain</div>
+                      <span className="text-xl font-mono font-black text-teal-400">
+                          +{potentialGain} <span className="text-[10px] text-teal-600">PTS</span>
+                      </span>
+                  </div>
+              </div>
+
+              {/* FOOTER */}
+              <div className="flex items-center gap-4 border-t border-gray-900 pt-4 mt-auto">
+                  <div className="text-right flex-1">
+                      <span className="text-[9px] text-gray-600 font-bold uppercase block">Opponent</span>
+                      <span className="text-sm font-bold text-gray-400 uppercase">
+                          {opponent || 'TBD'}
+                      </span>
+                  </div>
+                  <div className="w-px h-8 bg-gray-900"></div>
+                  <div className="flex-1">
+                      <span className="text-[9px] text-gray-600 font-bold uppercase block">Event</span>
+                      <span className="text-[10px] font-bold text-gray-400 uppercase truncate block">
+                          {fight.event_name || 'UFC Fight Night'}
+                      </span>
+                  </div>
+              </div>
+          </div>
+      );
   };
 
   if (loading) {
@@ -139,6 +203,15 @@ export default function MyPicksPage() {
       </div>
     );
   }
+
+  // NEW: Filter logic to separate the picks out before rendering
+  const globalPicks = activePicks.filter(p => p.league?.isGlobal);
+  const leaguePicks = activePicks.filter(p => !p.league?.isGlobal);
+
+  const displayedGlobal = (activeFilter === 'ALL' || activeFilter === 'GLOBAL') ? globalPicks : [];
+  const displayedLeague = activeFilter === 'ALL' 
+      ? leaguePicks 
+      : (activeFilter !== 'GLOBAL' ? leaguePicks.filter(p => p.league?.id === activeFilter) : []);
 
   return (
     <div className="flex min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
@@ -233,8 +306,8 @@ export default function MyPicksPage() {
         </header>
 
         {/* --- MAIN CONTENT --- */}
-        <div className="p-6 md:p-12">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 border-b border-gray-800 pb-6 gap-4">
+        <div className="p-6 md:p-12 max-w-7xl mx-auto w-full">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 border-b border-gray-800 pb-6 gap-4">
                 <div>
                     <h1 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter mb-2">
                         MY <span className="text-pink-600">PICKS</span>
@@ -246,6 +319,33 @@ export default function MyPicksPage() {
                 </Link>
             </div>
 
+            {/* NEW: FILTER BAR */}
+            {activePicks.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto pb-4 mb-8 scrollbar-hide">
+                    <button 
+                        onClick={() => setActiveFilter('ALL')}
+                        className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all whitespace-nowrap ${activeFilter === 'ALL' ? 'bg-pink-600 text-white' : 'bg-gray-900 text-gray-500 hover:bg-gray-800 hover:text-white border border-gray-800'}`}
+                    >
+                        All Picks
+                    </button>
+                    <button 
+                        onClick={() => setActiveFilter('GLOBAL')}
+                        className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all whitespace-nowrap ${activeFilter === 'GLOBAL' ? 'bg-teal-700 text-white' : 'bg-gray-900 text-gray-500 hover:bg-gray-800 hover:text-white border border-gray-800'}`}
+                    >
+                        Global
+                    </button>
+                    {myLeagues.map(league => (
+                        <button 
+                            key={league.id}
+                            onClick={() => setActiveFilter(league.id)}
+                            className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all whitespace-nowrap ${activeFilter === league.id ? 'bg-gray-200 text-black' : 'bg-gray-900 text-gray-500 hover:bg-gray-800 hover:text-white border border-gray-800'}`}
+                        >
+                            {league.name}
+                        </button>
+                    ))}
+                </div>
+            )}
+
             {activePicks.length === 0 ? (
                 <div className="p-12 border-2 border-dashed border-gray-900 rounded-2xl text-center bg-gray-950/50">
                     <h3 className="text-2xl font-black text-gray-700 uppercase italic mb-4">No Active Picks</h3>
@@ -255,81 +355,48 @@ export default function MyPicksPage() {
                     </Link>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {activePicks.map((pick) => {
-                        const fight = pick.fight || {};
-                        const opponent = fight.fighter_1_name === pick.selected_fighter 
-                            ? fight.fighter_2_name 
-                            : fight.fighter_1_name;
-
-                        const isLive = fight.start_time && new Date(fight.start_time) < new Date();
-                        const potentialGain = getPotentialGain(pick.odds_at_pick);
-                        const leagueName = pick.league?.name || 'Unknown League';
-                        const isGlobal = pick.league?.isGlobal;
-
-                        return (
-                            <div key={pick.id} className="bg-gray-950 border border-gray-800 rounded-xl p-6 hover:border-pink-600/50 transition-all group relative overflow-hidden flex flex-col">
-                                
-                                {/* TOP BADGES */}
-                                <div className="flex justify-between items-start mb-6">
-                                    <span className={`text-[9px] font-black uppercase px-2 py-1 rounded border ${isGlobal ? 'bg-teal-900/20 text-teal-400 border-teal-900' : 'bg-gray-800 text-gray-300 border-gray-700'}`}>
-                                        {leagueName}
-                                    </span>
-
-                                    {isLive && (
-                                        <span className="bg-red-600 text-white text-[9px] font-black uppercase px-2 py-1 rounded animate-pulse ml-auto mr-2">
-                                            Live
-                                        </span>
-                                    )}
-                                </div>
-
-                                {/* MAIN STATS */}
-                                <div className="flex justify-between items-end mb-6">
-                                    <div>
-                                        <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1">
-                                            Selection
-                                        </div>
-                                        <div className="text-2xl font-black italic text-white uppercase group-hover:text-pink-500 transition-colors leading-none">
-                                            {pick.selected_fighter}
-                                        </div>
-                                        <div className="text-[10px] text-gray-600 font-bold mt-2">
-                                            Odds: {pick.odds_at_pick > 0 ? `+${pick.odds_at_pick}` : pick.odds_at_pick}
-                                        </div>
-                                    </div>
-
-                                    <div className="text-right">
-                                        <div className="text-[9px] text-gray-500 font-bold uppercase tracking-wider mb-1">Potential Gain</div>
-                                        <span className="text-xl font-mono font-black text-teal-400">
-                                            +{potentialGain} <span className="text-[10px] text-teal-600">PTS</span>
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* FOOTER */}
-                                <div className="flex items-center gap-4 border-t border-gray-900 pt-4 mt-auto">
-                                    <div className="text-right flex-1">
-                                        <span className="text-[9px] text-gray-600 font-bold uppercase block">Opponent</span>
-                                        <span className="text-sm font-bold text-gray-400 uppercase">
-                                            {opponent || 'TBD'}
-                                        </span>
-                                    </div>
-                                    <div className="w-px h-8 bg-gray-900"></div>
-                                    <div className="flex-1">
-                                        <span className="text-[9px] text-gray-600 font-bold uppercase block">Event</span>
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase truncate block">
-                                            {fight.event_name || 'UFC Fight Night'}
-                                        </span>
-                                    </div>
-                                </div>
+                <div className="space-y-12">
+                    {/* GLOBAL PICKS SECTION */}
+                    {displayedGlobal.length > 0 && (
+                        <div>
+                            {(activeFilter === 'ALL' || activeFilter === 'GLOBAL') && (
+                                <h2 className="text-xl font-black italic text-teal-500 uppercase tracking-tighter mb-4 flex items-center gap-3">
+                                    Global Picks
+                                    <div className="h-px bg-gray-800 flex-1"></div>
+                                </h2>
+                            )}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {displayedGlobal.map(pick => renderPickCard(pick))}
                             </div>
-                        );
-                    })}
+                        </div>
+                    )}
+
+                    {/* LEAGUE PICKS SECTION */}
+                    {displayedLeague.length > 0 && (
+                        <div>
+                             {(activeFilter === 'ALL' || activeFilter !== 'GLOBAL') && (
+                                <h2 className="text-xl font-black italic text-white uppercase tracking-tighter mb-4 flex items-center gap-3">
+                                    {activeFilter === 'ALL' ? 'League Picks' : myLeagues.find(l => l.id === activeFilter)?.name}
+                                    <div className="h-px bg-gray-800 flex-1"></div>
+                                </h2>
+                            )}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {displayedLeague.map(pick => renderPickCard(pick))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* EMPTY STATE FOR SPECIFIC FILTER */}
+                    {displayedGlobal.length === 0 && displayedLeague.length === 0 && (
+                        <div className="p-8 border border-dashed border-gray-800 rounded-xl text-center">
+                            <p className="text-gray-500 text-sm font-bold uppercase tracking-widest">No active picks found for this filter.</p>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
       </main>
 
-      {/* Pass toggle handler to mobile nav */}
       <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
     </div>
   );

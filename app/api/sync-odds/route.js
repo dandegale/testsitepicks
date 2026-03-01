@@ -30,13 +30,13 @@ export async function GET() {
     let fighterEventMap = {}; 
 
     try {
+        // 🎯 THE FIX 1: Force ESPN to look 60 days into the future!
         const today = new Date();
         const future = new Date();
-        future.setDate(today.getDate() + 60); // Look 60 days into the future
+        future.setDate(today.getDate() + 60);
 
         const formatDt = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-        
-        const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard?limit=50&dates=${formatDt(today)}-${formatDt(future)}`;
+        const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard?dates=${formatDt(today)}-${formatDt(future)}`;
 
         const espnRes = await fetch(espnUrl);
         const espnData = await espnRes.json();
@@ -88,6 +88,9 @@ export async function GET() {
     for (const event of apiData) {
         const fightDate = new Date(event.commence_time);
         if (fightDate > futureLimit) continue;
+
+        // 🎯 THE FIX 2: Removed the strict "Sat/Sun" Weekend Filter. 
+        // The ESPN Gatekeeper below will stop random regional MMA automatically.
 
         let bestBookmaker = null;
         for (const book of PREFERRED_BOOKS) {
@@ -158,16 +161,13 @@ export async function GET() {
                 logs.push(`Updated Odds/Event/Time: ${match.fighter_1_name} vs ${match.fighter_2_name}`);
             }
         } else {
-            // THE GATEKEEPER - TEMPORARILY DISABLED FOR DEBUGGING
-            /*
+            // THE GATEKEEPER
             const isConfirmedUfc = ufcNames.some(name => {
                 const cn = clean(name);
                 return c1 === cn || c2 === cn || c1.includes(cn) || c2.includes(cn);
             });
-            */
 
-            // Check modified to bypass ESPN confirmation, only checking if the fight is in the future
-            if (fightDate > new Date()) {
+            if (isConfirmedUfc && fightDate > new Date()) {
                 bookedFighters.add(f1Key);
                 bookedFighters.add(f2Key);
 
@@ -185,7 +185,7 @@ export async function GET() {
                     console.error("Supabase Insert Error:", insertError);
                     logs.push(`❌ DB REJECTED ${outcome1.name}: ${insertError.message}`);
                 } else {
-                    logs.push(`✅ CREATED MMA FIGHT (Bypassed Filter): ${outcome1.name} vs ${outcome2.name}`);
+                    logs.push(`✅ CREATED UFC FIGHT: ${outcome1.name} vs ${outcome2.name}`);
                 }
             }
         }
