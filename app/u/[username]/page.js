@@ -126,7 +126,6 @@ export default function PublicProfile() {
     setHistory(historyData);
   };
 
-  // 🎯 ONLY Grab the earned badges to render on the public page
   const earnedBadgesToDisplay = AVAILABLE_BADGES.filter(badge => userBadges.includes(badge.id));
   const earnedCount = earnedBadgesToDisplay.length;
 
@@ -191,6 +190,12 @@ export default function PublicProfile() {
                         </div>
                     )}
                 </div>
+                
+                {/* 🎯 THE LEVEL OVERLAY BADGE */}
+                <div className="absolute -bottom-2 -right-2 md:-right-4 md:bottom-2 bg-gradient-to-br from-teal-500 to-teal-700 border-4 border-[#050505] text-white w-12 h-12 md:w-14 md:h-14 rounded-full flex flex-col items-center justify-center shadow-[0_0_20px_rgba(20,184,166,0.6)] z-20 transform md:translate-y-8 transition-transform hover:scale-110">
+                    <span className="text-[8px] uppercase tracking-widest font-black leading-none mt-1 text-black/60">LVL</span>
+                    <span className="text-lg md:text-xl font-black italic leading-none drop-shadow-md">{profile.level || 1}</span>
+                </div>
             </div>
 
             <div className="text-center md:text-left mb-2 md:mb-0">
@@ -209,6 +214,10 @@ export default function PublicProfile() {
                 <div className="flex items-center justify-center md:justify-start gap-3 mt-3">
                     <span className="bg-gradient-to-r from-teal-500 to-teal-400 text-black border border-teal-400/50 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest shadow-[0_0_10px_rgba(20,184,166,0.3)]">
                         Fighter Profile
+                    </span>
+                    {/* 🎯 SECONDARY LEVEL TAG */}
+                    <span className="bg-black/60 backdrop-blur-md text-white border border-white/10 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
+                        Level {profile.level || 1}
                     </span>
                 </div>
             </div>
