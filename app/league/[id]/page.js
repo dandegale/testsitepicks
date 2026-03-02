@@ -30,6 +30,9 @@ export default function LeaguePage() {
   const [showMobileLeagues, setShowMobileLeagues] = useState(false);
   const [showMobileSlip, setShowMobileSlip] = useState(false);
   
+  // 🏆 NEW: Championship Celebration State
+  const [showChampCelebration, setShowChampCelebration] = useState(false);
+  
   const [expandedUserRoster, setExpandedUserRoster] = useState(null); 
   const [showAllFighters, setShowAllFighters] = useState(false); 
   const [showGlobalBoxScore, setShowGlobalBoxScore] = useState(false);
@@ -63,6 +66,24 @@ export default function LeaguePage() {
   useEffect(() => {
     fetchLeagueData();
   }, [leagueId]);
+
+  // 🏆 NEW: Check if current user is champ and trigger celebration
+  useEffect(() => {
+      if (!user || leaderboard.length === 0) return;
+
+      const myLeaderboardEntry = leaderboard.find(p => p.user_id === user.email);
+      
+      if (myLeaderboardEntry?.isReigningChamp) {
+          // Creates a unique key based on the league and their total wins 
+          // so it triggers again next time they win a new weekend!
+          const winKey = `celebrated_win_${leagueId}_${myLeaderboardEntry.cardsWon}`;
+          
+          if (!localStorage.getItem(winKey)) {
+              setShowChampCelebration(true);
+              localStorage.setItem(winKey, 'true');
+          }
+      }
+  }, [leaderboard, user, leagueId]);
 
   const isFighterMatch = (pickName, statName) => {
       if (!pickName || !statName) return false;
@@ -1394,6 +1415,46 @@ export default function LeaguePage() {
           type={toast.type} 
           onClose={() => setToast(null)} 
         />
+      )}
+
+      {/* 🏆 CHAMPIONSHIP CELEBRATION MODAL 🏆 */}
+      {showChampCelebration && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-500">
+              <div className="relative w-full max-w-md flex flex-col items-center text-center animate-in zoom-in-50 duration-700 delay-100">
+                  
+                  {/* Glowing background effect */}
+                  <div className="absolute inset-0 bg-yellow-500/20 blur-[100px] rounded-full z-0 pointer-events-none"></div>
+
+                  <div className="relative z-10 space-y-6 flex flex-col items-center">
+                      <p className="text-pink-500 font-black tracking-[0.3em] uppercase text-sm animate-pulse">
+                          And New...
+                      </p>
+                      
+                      <h2 className="text-4xl md:text-5xl font-black italic text-white uppercase tracking-tighter drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">
+                          Weekend Champion
+                      </h2>
+
+                      <div className="relative mt-8 mb-4">
+                          <img
+                              src="/champion.png"
+                              alt="Championship Belt"
+                              className="w-64 h-auto object-contain drop-shadow-[0_0_50px_rgba(234,179,8,0.8)] animate-[bounce_3s_ease-in-out_infinite]"
+                          />
+                      </div>
+
+                      <p className="text-gray-400 text-sm font-bold uppercase tracking-widest max-w-[250px] leading-relaxed">
+                          You dominated the leaderboards and secured the bag for your roster.
+                      </p>
+
+                      <button
+                          onClick={() => setShowChampCelebration(false)}
+                          className="mt-8 px-8 py-4 bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 text-black font-black uppercase tracking-widest text-xs rounded-xl shadow-[0_0_30px_rgba(234,179,8,0.4)] transition-all hover:scale-105 active:scale-95"
+                      >
+                          Claim My Title
+                      </button>
+                  </div>
+              </div>
+          </div>
       )}
 
     </div>
