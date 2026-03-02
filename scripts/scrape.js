@@ -5,7 +5,6 @@ const { createClient } = require('@supabase/supabase-js');
 
 console.log("🚀 Script started! If you see this, Node is reading the file.");
 
-// 🛑 REPLACE THESE TWO STRINGS WITH YOUR ACTUAL SUPABASE KEYS
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -51,13 +50,17 @@ async function scrapeFullCard() {
 
         console.log(`🥊 Found ${fightUrls.length} fights. Commencing balanced scrape...`);
 
+        // 1. Scrape Results & Stats
         for (const url of fightUrls) {
             await scrapeAndScoreFight(url, dbFights);
             await new Promise(r => setTimeout(r, 2000)); 
         }
 
-        // 🎯 NEW: After all fights are graded, recalculate the global XP levels!
+        // 2. Update League Leaderboard XP
         await updateAllUsersLifetimePoints();
+
+        // 3. 🎯 PROCESS COIN PAYOUTS
+        await processEconomyPayouts();
 
         console.log("🏆 Card update complete!");
     } catch (err) {
@@ -65,13 +68,105 @@ async function scrapeFullCard() {
     }
 }
 
-// 🎯 NEW FUNCTION: The Idempotent XP Engine (Exploit-Proof & League-Only)
+// 🎯 NEW FUNCTION: The Global Coin Payout Engine
+async function processEconomyPayouts() {
+    try {
+        console.log("💰 Processing Global Economy Payouts...");
+
+        // 1. Get all recent fights that have a declared winner
+        const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: recentFights, error: fightError } = await supabase
+            .from('fights')
+            .select('id, winner')
+            .not('winner', 'is', null)
+            .gte('start_time', fourteenDaysAgo);
+
+        if (fightError || !recentFights) throw new Error("Could not fetch recent fights.");
+
+        // We only care about global picks (league_id is null) that haven't been paid out yet
+        // 🛑 IMPORTANT: You will need to add a boolean column named 'paid_out' to your 'picks' table!
+        const { data: unpaidPicks, error: picksError } = await supabase
+            .from('picks')
+            .select('id, user_id, fight_id, selected_fighter, odds_at_pick')
+            .is('league_id', null)
+            .is('paid_out', false);
+
+        if (picksError) {
+            // Failsafe: if the column doesn't exist yet, it will error here
+            console.error("❌ Error fetching picks. Did you add the 'paid_out' boolean column to your 'picks' table?");
+            return;
+        }
+
+        if (!unpaidPicks || unpaidPicks.length === 0) {
+            console.log("✅ No pending payouts found.");
+            return;
+        }
+
+        const userEarnings = {};
+        const picksToMarkPaid = [];
+
+        // 2. Calculate Payouts
+        unpaidPicks.forEach(pick => {
+            const fight = recentFights.find(f => f.id === pick.fight_id);
+            if (fight && fight.winner && fight.winner === pick.selected_fighter) {
+                // They won! Calculate their payout based on Vegas Odds
+                const numericOdds = parseInt(pick.odds_at_pick, 10);
+                if (!isNaN(numericOdds) && numericOdds !== 0) {
+                    let profit = 0;
+                    if (numericOdds > 0) {
+                        profit = (numericOdds / 100) * 10;
+                    } else {
+                        profit = (100 / Math.abs(numericOdds)) * 10;
+                    }
+                    const totalPayout = parseFloat((profit + 10).toFixed(1));
+
+                    if (!userEarnings[pick.user_id]) userEarnings[pick.user_id] = 0;
+                    userEarnings[pick.user_id] += totalPayout;
+                }
+            }
+            
+            // Whether they won or lost, mark the pick as settled so we don't check it again
+            if (fight && fight.winner) {
+                picksToMarkPaid.push(pick.id);
+            }
+        });
+
+        // 3. Deposit Coins into Profiles
+        let depositCount = 0;
+        for (const [email, earnings] of Object.entries(userEarnings)) {
+            // First, get their current balance
+            const { data: profile } = await supabase.from('profiles').select('coins').eq('email', email).single();
+            if (profile) {
+                const newBalance = (profile.coins || 0) + earnings;
+                const { error } = await supabase.from('profiles').update({ coins: newBalance }).eq('email', email);
+                if (!error) {
+                    console.log(`   💸 Paid ${earnings} coins to ${email}`);
+                    depositCount++;
+                }
+            }
+        }
+
+        // 4. Mark Picks as Settled
+        if (picksToMarkPaid.length > 0) {
+            const { error } = await supabase
+                .from('picks')
+                .update({ paid_out: true })
+                .in('id', picksToMarkPaid);
+            
+            if (error) console.error("❌ Failed to mark picks as paid.", error.message);
+        }
+
+        console.log(`✅ Economy Payout Complete! Processed ${depositCount} winning bettors.`);
+    } catch (err) {
+        console.error("❌ Failed during economy payout:", err.message);
+    }
+}
+
+// 🎯 The Idempotent XP Engine (Exploit-Proof & League-Only)
 async function updateAllUsersLifetimePoints() {
     try {
         console.log("🔄 Recalculating Lifetime XP for all users...");
         
-        // 1. Grab every pick ever made and every stat ever recorded
-        // 🎯 THE FIX: Added .not('league_id', 'is', null) to ONLY count picks made inside a league!
         const { data: picks, error: picksError } = await supabase
             .from('picks')
             .select('user_id, fight_id, selected_fighter')
@@ -83,47 +178,39 @@ async function updateAllUsersLifetimePoints() {
 
         if (picksError || statsError) throw new Error("Database fetch error during XP calculation");
 
-        // Helper to match names like your scraper does
         const getCoreName = (name) => {
             if (!name) return "";
             const parts = name.trim().split(' ');
             return parts[parts.length - 1].replace(/[^a-zA-Z]/g, '').toLowerCase().substring(0, 4);
         };
 
-        // 2. Build a rapid-lookup dictionary for stats
         const statMap = {};
         stats.forEach(s => {
             const coreName = getCoreName(s.fighter_name);
             statMap[`${s.fight_id}-${coreName}`] = s.fantasy_points || 0;
         });
 
-        // 3. 🎯 ANTI-EXPLOIT: Track the HIGHEST score per unique fight per user
         const userFightScores = {};
         
         picks.forEach(pick => {
             const corePick = getCoreName(pick.selected_fighter);
             const pointsScored = statMap[`${pick.fight_id}-${corePick}`] || 0;
             
-            // Initialize the user if they don't exist yet
             if (!userFightScores[pick.user_id]) {
                 userFightScores[pick.user_id] = {};
             }
             
-            // If they picked in multiple leagues, only keep their BEST score for this specific fight
             const currentBestForThisFight = userFightScores[pick.user_id][pick.fight_id] || 0;
             if (pointsScored > currentBestForThisFight) {
                 userFightScores[pick.user_id][pick.fight_id] = pointsScored;
             }
         });
 
-        // 4. Sum up their unique fight scores to get their True Lifetime XP
         const userXP = {};
         for (const [userId, fights] of Object.entries(userFightScores)) {
-            // Add up all the values in their unique fights dictionary
             userXP[userId] = Object.values(fights).reduce((sum, score) => sum + score, 0);
         }
 
-        // 5. Update the profiles table with the new XP totals
         let updatedCount = 0;
         for (const [email, totalPoints] of Object.entries(userXP)) {
             const { error } = await supabase
@@ -217,7 +304,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         const isUnder30s = finishRound === 1 && finishTimeSeconds <= 30;
         const isLast10sR5 = finishRound === 5 && finishTimeSeconds >= 290; 
 
-        // 🎯 BASE GRANULAR BONUS MATH
         let baseBonus = 0;
         
         if (isLast10sR5 && (isKO || isSub)) {
@@ -274,7 +360,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             };
         });
 
-        // 🎯 THE TRUE ODDS MULTIPLIER ENGINE
         const winnerIndex = results.findIndex(r => r.is_winner);
         let finalBonus = 0;
         let wasEqualized = false; 
@@ -355,11 +440,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         
         console.log(`✅ Synced: ${fighters[0]} vs ${fighters[1]} (${statuses.includes('W') ? fighters[winnerIndex] + ' won by ' + finalMethodString + bonusLabel + eqLabel : 'Draw/NC'})`);
         
-        if (isKO || isSub) {
-            console.log(`   ➔ Detected: ${isKO ? 'KO' : 'SUB'} in Round ${finishRound} at ${finishTimeSeconds}s`);
-            if (isLast10sR5) console.log(`   🚨 BUZZER BEATER JACKPOT TRIGGERED! 🚨`);
-        }
-
     } catch (err) {
         console.error(`❌ Error:`, err.message);
     }
