@@ -29,25 +29,41 @@ const getRarityStyle = (rarity) => {
     }
 };
 
+// 🎯 FIXED: GLOBAL AUDIO ENGINE
+let audioCtx = null;
+
 const playTickSound = () => {
     try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        const ctx = new AudioContext();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(300, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.05);
-        gain.gain.setValueAtTime(0.1, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+        if (!audioCtx) {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+        }
+        
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, audioCtx.currentTime); 
+        osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.05);
+        
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+        
         osc.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(audioCtx.destination);
+        
         osc.start();
-        osc.stop(ctx.currentTime + 0.05);
-    } catch (e) {}
+        osc.stop(audioCtx.currentTime + 0.05);
+    } catch (e) {
+        console.error("Audio engine failed to start:", e);
+    }
 };
 
-// 🎯 SLEEK CUSTOM SVGs (Replacing Emojis)
+// 🎯 SLEEK CUSTOM SVGs
 const CoinIcon = () => (
     <svg className="w-4 h-4 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -218,6 +234,7 @@ export default function StorePage() {
 
         setTimeout(() => {
             if (tapeRef.current) {
+                // Audio will start perfectly on the spin now
                 triggerSpinAudio();
 
                 const randomOffset = Math.floor(Math.random() * 60) - 30; 
@@ -297,7 +314,6 @@ export default function StorePage() {
                             </p>
                         </div>
 
-                        {/* CASE GRID */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {STORE_CASES.map(crate => (
                                 <div 
@@ -327,10 +343,8 @@ export default function StorePage() {
                             ))}
                         </div>
 
-                        {/* 🎯 BULLETPROOF CSS GRID ACCORDION */}
                         {myInventory.length > 0 && (
                             <div className="mt-12 bg-[#0a0a0a] border border-gray-800 rounded-2xl overflow-hidden transition-all duration-300 shadow-xl">
-                                {/* Accordion Header */}
                                 <button 
                                     onClick={() => setIsInventoryOpen(!isInventoryOpen)}
                                     className="w-full flex items-center justify-between p-5 md:p-6 hover:bg-white/[0.02] transition-colors"
@@ -355,7 +369,6 @@ export default function StorePage() {
                                     </div>
                                 </button>
 
-                                {/* Accordion Body (Perfect slide animation) */}
                                 <div className={`grid transition-all duration-300 ease-in-out ${isInventoryOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                                     <div className="overflow-hidden">
                                         <div className="p-6 border-t border-gray-800 bg-black/50">
