@@ -1,7 +1,7 @@
 'use client';
 
 import { createClient } from '@supabase/supabase-js';
-import { useEffect, useState, useMemo, useRef, Suspense } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import FightDashboard from '../../components/FightDashboard';
@@ -17,23 +17,10 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// 🎯 FIX: We isolate the invite check into its own component so we can wrap it in Suspense!
-function InviteChecker({ onInviteFound }) {
-    const searchParams = useSearchParams();
-    
-    useEffect(() => {
-        const inviteCode = searchParams.get('invite');
-        if (inviteCode) {
-            onInviteFound(inviteCode);
-        }
-    }, [searchParams, onInviteFound]);
-
-    return null; // This component doesn't render anything visually
-}
-
 export default function LeaguePage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams(); 
   const leagueId = params.id;
 
   const [loading, setLoading] = useState(true);
@@ -42,8 +29,8 @@ export default function LeaguePage() {
   
   const [showMobileLeagues, setShowMobileLeagues] = useState(false);
   const [showMobileSlip, setShowMobileSlip] = useState(false);
-  
-  // 🏆 CHAMPIONSHIP CELEBRATION STATE
+
+  // 🏆 NEW: Championship Celebration State
   const [showChampCelebration, setShowChampCelebration] = useState(false);
   
   const [expandedUserRoster, setExpandedUserRoster] = useState(null); 
@@ -76,15 +63,11 @@ export default function LeaguePage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [localLeagueImage, setLocalLeagueImage] = useState('');
 
-  // We temporarily store the invite code here if the InviteChecker finds one
-  const [inviteCode, setInviteCode] = useState(null);
-
-  // 1. Initial Data Fetch
   useEffect(() => {
     fetchLeagueData();
-  }, [leagueId, inviteCode]); // Added inviteCode as a dependency
+  }, [leagueId]);
 
-  // 2. 🏆 CHAMPIONSHIP CHECKER
+  // 🏆 NEW: Check if current user is champ and trigger celebration
   useEffect(() => {
       if (!user || leaderboard.length === 0) return;
 
@@ -98,7 +81,7 @@ export default function LeaguePage() {
                   localStorage.setItem(winKey, 'true');
               }
           } catch (e) {
-              console.warn("Local storage blocked, skipping celebration guard.");
+              console.warn("Local storage disabled, skipping celebration guard.");
           }
       }
   }, [leaderboard, user, leagueId]);
@@ -315,6 +298,8 @@ export default function LeaguePage() {
             if (profile && profile.show_odds === true) setShowOdds(true);
         }
 
+        const inviteCode = searchParams.get('invite');
+
         if (!currentUser && inviteCode) {
             setToast({ message: "Create an account to join this league! 👊", type: "info" });
             const returnUrl = encodeURIComponent(`/league/${leagueId}?invite=${inviteCode}`);
@@ -346,13 +331,14 @@ export default function LeaguePage() {
         if (processedMembers.length > 0) {
             const memberIds = processedMembers.map(m => m.user_id);
             
+            // 🎯 We ensure lifetime_points are grabbed from the DB here!
             const { data: profiles } = await supabase.from('profiles').select('email, username, avatar_url, lifetime_points').in('email', memberIds);   
 
             processedMembers = processedMembers.map(member => {
                 const profile = profiles?.find(p => p.email === member.user_id);
                 const displayName = (profile && profile.username) ? profile.username : member.user_id.split('@')[0]; 
                 const avatarUrl = profile?.avatar_url || null;
-                const lifetimePoints = profile?.lifetime_points || 0; 
+                const lifetimePoints = profile?.lifetime_points || 0; // 🎯 Safely set to 0 if null
                 return { ...member, displayName, avatarUrl, lifetimePoints };
             });
         }
@@ -693,12 +679,6 @@ export default function LeaguePage() {
 
   return (
     <div className="flex min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
-      
-      {/* 🎯 FIX 4: Wrap the invisible InviteChecker in a Suspense boundary right at the top level */}
-      <Suspense fallback={null}>
-          <InviteChecker onInviteFound={(code) => setInviteCode(code)} />
-      </Suspense>
-
       <div className="hidden lg:block">
         <LeagueRail initialLeagues={myLeagues} />
       </div>
@@ -979,7 +959,10 @@ export default function LeaguePage() {
                                                             #{index + 1}
                                                         </div>
                                                         
+                                                        {/* 🎯 FIXED: min-w-0 instead of overflow-hidden */}
                                                         <div className="col-span-4 flex items-center gap-3 min-w-0 py-1">
+                                                            
+                                                            {/* 🎯 NEW: LEVEL BADGE AVATAR COMPONENT */}
                                                             <div className="relative flex-shrink-0">
                                                                 <Link 
                                                                     href={`/u/${encodeURIComponent(player.displayName)}`} 
@@ -1067,8 +1050,10 @@ export default function LeaguePage() {
                                 {feedItems.map(item => (
                                     <div key={item.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between hover:border-gray-700 transition-colors">
                                         
+                                        {/* 🎯 FIXED: min-w-0 instead of overflow-hidden */}
                                         <div className="flex items-center gap-3 md:gap-4 min-w-0 py-1">
                                             
+                                            {/* 🎯 NEW: FEED AVATAR BADGE */}
                                             <div className="relative flex-shrink-0">
                                                 <Link href={`/u/${encodeURIComponent(item.user)}`} className="block hover:opacity-80 transition-opacity">
                                                     {item.avatar ? (
@@ -1238,6 +1223,8 @@ export default function LeaguePage() {
                                         <div key={member.user_id} className="p-4 flex items-center justify-between hover:bg-gray-800/30 transition-colors">
                                             
                                             <div className="flex items-center gap-4">
+                                                
+                                                {/* 🎯 NEW: MEMBER ROSTER AVATAR BADGE */}
                                                 <div className="relative flex-shrink-0">
                                                     <Link href={`/u/${encodeURIComponent(member.displayName)}`} className="block hover:opacity-80 transition-opacity">
                                                         {member.avatarUrl ? (
@@ -1348,6 +1335,7 @@ export default function LeaguePage() {
         </div>
       </main>
 
+      {/* 🎯 FIX: Show the FAB if they have pending picks OR if they have a locked roster */}
       {(pendingPicks.length > 0 || hasLockedRoster) && (
           <div className="lg:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
             <button 
@@ -1367,6 +1355,7 @@ export default function LeaguePage() {
           </div>
       )}
 
+      {/* 🎯 FIX: Removed the !hasLockedRoster condition so the drawer can open when locked */}
       {showMobileSlip && (
           <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm lg:hidden flex items-end">
             <div className="w-full bg-gray-950 rounded-t-3xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300 max-h-[90vh]">
@@ -1379,6 +1368,7 @@ export default function LeaguePage() {
                   </div>
                   <button onClick={() => setShowMobileSlip(false)} className="text-gray-500 hover:text-white p-2 text-xs font-bold uppercase tracking-widest bg-gray-900 rounded-lg">✕ Close</button>
                </div>
+               {/* 🎯 FIX: Added overflow-y-auto so the drawer scrolls if the content (like the share graphic) is too tall */}
                <div className="p-6 overflow-y-auto custom-scrollbar pb-12">
                   {renderRosterSlots()}
                </div>
@@ -1432,6 +1422,7 @@ export default function LeaguePage() {
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-500">
               <div className="relative w-full max-w-md flex flex-col items-center text-center animate-in zoom-in-50 duration-700 delay-100">
                   
+                  {/* Glowing background effect */}
                   <div className="absolute inset-0 bg-yellow-500/20 blur-[100px] rounded-full z-0 pointer-events-none"></div>
 
                   <div className="relative z-10 space-y-6 flex flex-col items-center">
@@ -1470,6 +1461,9 @@ export default function LeaguePage() {
   );
 }
 
+// ----------------------------------------------------------------------
+// 🎯 THE XP MATH ENGINE
+// ----------------------------------------------------------------------
 function calculateLevel(totalPoints) {
     let level = 1;
     let xpNeededForNext = 100;
