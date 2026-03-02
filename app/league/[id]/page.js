@@ -29,7 +29,7 @@ export default function LeaguePage() {
   
   const [showMobileLeagues, setShowMobileLeagues] = useState(false);
   const [showMobileSlip, setShowMobileSlip] = useState(false);
-
+  
   // 🏆 NEW: Championship Celebration State
   const [showChampCelebration, setShowChampCelebration] = useState(false);
   
@@ -66,25 +66,6 @@ export default function LeaguePage() {
   useEffect(() => {
     fetchLeagueData();
   }, [leagueId]);
-
-  // 🏆 NEW: Check if current user is champ and trigger celebration
-  useEffect(() => {
-      if (!user || leaderboard.length === 0) return;
-
-      const myLeaderboardEntry = leaderboard.find(p => p.user_id === user.email);
-      
-      if (myLeaderboardEntry?.isReigningChamp) {
-          try {
-              const winKey = `celebrated_win_${leagueId}_${myLeaderboardEntry.cardsWon}`;
-              if (!localStorage.getItem(winKey)) {
-                  setShowChampCelebration(true);
-                  localStorage.setItem(winKey, 'true');
-              }
-          } catch (e) {
-              console.warn("Local storage disabled, skipping celebration guard.");
-          }
-      }
-  }, [leaderboard, user, leagueId]);
 
   const isFighterMatch = (pickName, statName) => {
       if (!pickName || !statName) return false;
@@ -288,6 +269,25 @@ export default function LeaguePage() {
       return scores.sort((a, b) => b.totalScore - a.totalScore || b.cardsWon - a.cardsWon);
   }, [members, activeLeaguePicks, allLeaguePicks, fighterStats, allFights, leagueId]);
 
+  // 🏆 THE FIX: Placed the Celebration Check AFTER the leaderboard variable is declared!
+  useEffect(() => {
+      if (!user || leaderboard.length === 0) return;
+
+      const myLeaderboardEntry = leaderboard.find(p => p.user_id === user.email);
+      
+      if (myLeaderboardEntry?.isReigningChamp) {
+          try {
+              const winKey = `celebrated_win_${leagueId}_${myLeaderboardEntry.cardsWon}`;
+              if (!localStorage.getItem(winKey)) {
+                  setShowChampCelebration(true);
+                  localStorage.setItem(winKey, 'true');
+              }
+          } catch (e) {
+              console.warn("Local storage disabled, skipping celebration guard.");
+          }
+      }
+  }, [leaderboard, user, leagueId]);
+
   const fetchLeagueData = async () => {
     try {
         const { data: { user: currentUser } } = await supabase.auth.getUser();
@@ -331,14 +331,13 @@ export default function LeaguePage() {
         if (processedMembers.length > 0) {
             const memberIds = processedMembers.map(m => m.user_id);
             
-            // 🎯 We ensure lifetime_points are grabbed from the DB here!
             const { data: profiles } = await supabase.from('profiles').select('email, username, avatar_url, lifetime_points').in('email', memberIds);   
 
             processedMembers = processedMembers.map(member => {
                 const profile = profiles?.find(p => p.email === member.user_id);
                 const displayName = (profile && profile.username) ? profile.username : member.user_id.split('@')[0]; 
                 const avatarUrl = profile?.avatar_url || null;
-                const lifetimePoints = profile?.lifetime_points || 0; // 🎯 Safely set to 0 if null
+                const lifetimePoints = profile?.lifetime_points || 0; 
                 return { ...member, displayName, avatarUrl, lifetimePoints };
             });
         }
