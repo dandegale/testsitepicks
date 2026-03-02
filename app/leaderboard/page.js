@@ -7,10 +7,23 @@ import LeagueRail from '../components/LeagueRail';
 import LogOutButton from '../components/LogOutButton';
 import MobileNav from '../components/MobileNav'; 
 
+// 🎯 IMPORT STORE CASES FOR RARITY LOOKUP
+import { STORE_CASES } from '@/lib/cases';
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
+
+// 🎯 HELPER TO COLORIZE LEADERBOARD TITLES
+const getRarityTextStyle = (rarity) => {
+    switch (rarity) {
+        case 'Legendary': return 'text-yellow-500 drop-shadow-[0_0_5px_rgba(234,179,8,0.8)]';
+        case 'Epic': return 'text-pink-500 drop-shadow-[0_0_5px_rgba(219,39,119,0.8)]';
+        case 'Rare': return 'text-teal-400 drop-shadow-[0_0_5px_rgba(20,184,166,0.8)]';
+        default: return 'text-gray-500'; 
+    }
+};
 
 export default function LeaderboardPage() {
   const [loading, setLoading] = useState(true);
@@ -46,10 +59,10 @@ export default function LeaderboardPage() {
     const { data: picks } = await supabase.from('picks').select('*');
     const { data: fights } = await supabase.from('fights').select('*');
     
-    // 🎯 Include lifetime_points in the global fetch
+    // 🎯 Include lifetime_points AND equipped_title
     const { data: profiles } = await supabase
         .from('profiles')
-        .select('email, username, avatar_url, lifetime_points');
+        .select('email, username, avatar_url, lifetime_points, equipped_title');
 
     if (picks && fights) {
       processLeaderboard(picks, fights, profiles || []);
@@ -87,12 +100,14 @@ export default function LeaderboardPage() {
                 const userProfile = profiles.find(p => p.email === userId);
                 const displayName = userProfile?.username || pick.username || userId.split('@')[0];
                 const avatarUrl = userProfile?.avatar_url || null;
-                const lifetimePoints = userProfile?.lifetime_points || 0; // 🎯 Catch the DB XP
+                const lifetimePoints = userProfile?.lifetime_points || 0;
+                const equippedTitle = userProfile?.equipped_title || null; // 🎯 Catch the Title
 
                 scores[userId] = { 
                     name: displayName, 
                     avatarUrl: avatarUrl,
-                    lifetimePoints: lifetimePoints, // 🎯 Feed to leaderboard state
+                    lifetimePoints: lifetimePoints,
+                    equippedTitle: equippedTitle, // 🎯 Feed to leaderboard state
                     score: 0, 
                     wins: 0,
                     fullEmail: userId 
@@ -240,6 +255,18 @@ export default function LeaderboardPage() {
                                 rowStyle = "bg-orange-950/10 border-l-2 border-orange-700 hover:bg-orange-900/20 transition-colors";
                             }
 
+                            // 🎯 Determine Rarity of the player's title dynamically
+                            let titleRarity = 'Common';
+                            if (player.equippedTitle) {
+                                for (const crate of STORE_CASES) {
+                                    const item = crate.visualItems.find(i => i.name === player.equippedTitle);
+                                    if (item) {
+                                        titleRarity = item.rarity;
+                                        break;
+                                    }
+                                }
+                            }
+
                             return (
                                 <tr key={index} className={rowStyle}>
                                     <td className="p-4 md:p-6 text-center">
@@ -248,9 +275,9 @@ export default function LeaderboardPage() {
                                         </span>
                                     </td>
                                     <td className="p-4 md:p-6">
-                                        <div className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-3">
+                                        {/* 🎯 WRAPPED TO ACCOMMODATE TITLE UNDERNEATH */}
+                                        <div className="flex items-center gap-3">
                                             
-                                            {/* 🎯 NEW: WRAPPED AVATAR WITH LEVEL BADGE */}
                                             <div className="relative flex-shrink-0">
                                                 <Link href={`/u/${encodeURIComponent(player.name)}`} className="block hover:opacity-80 transition-opacity">
                                                     {player.avatarUrl ? (
@@ -265,19 +292,29 @@ export default function LeaderboardPage() {
                                                         </div>
                                                     )}
                                                 </Link>
-                                                {/* THE NEON LEVEL BADGE */}
                                                 <div className="absolute -bottom-1 -right-1 bg-gradient-to-br from-pink-600 to-teal-500 text-white w-5 h-5 flex items-center justify-center rounded-full text-[9px] font-black border border-black shadow-sm pointer-events-none">
                                                     {calculateLevel(player.lifetimePoints)}
                                                 </div>
                                             </div>
                                             
-                                            <Link href={`/u/${encodeURIComponent(player.name)}`} className="hover:text-pink-400 transition-colors">
-                                                {player.name}
-                                            </Link>
-
-                                            {player.fullEmail === user?.email && (
-                                                <span className="bg-pink-600 text-[8px] px-1.5 py-0.5 rounded text-white ml-2 cursor-default">YOU</span>
-                                            )}
+                                            <div className="flex flex-col justify-center">
+                                                <div className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-2">
+                                                    <Link href={`/u/${encodeURIComponent(player.name)}`} className="hover:text-pink-400 transition-colors">
+                                                        {player.name}
+                                                    </Link>
+                                                    {player.fullEmail === user?.email && (
+                                                        <span className="bg-pink-600 text-[8px] px-1.5 py-0.5 rounded text-white cursor-default">YOU</span>
+                                                    )}
+                                                </div>
+                                                
+                                                {/* 🎯 THE EQUIPPED TITLE INJECTED HERE */}
+                                                {player.equippedTitle && (
+                                                    <span className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${getRarityTextStyle(titleRarity)}`}>
+                                                        "{player.equippedTitle}"
+                                                    </span>
+                                                )}
+                                            </div>
+                                            
                                         </div>
                                     </td>
                                     <td className="p-4 md:p-6 text-center text-gray-400 font-mono font-bold">
