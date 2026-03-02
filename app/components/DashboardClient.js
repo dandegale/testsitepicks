@@ -88,8 +88,6 @@ export default function DashboardClient({
           return fTime > (now - TWELVE_HOURS);
       });
 
-      // 1. Sort ascending (This weekend's event first, next month's event last)
-      // Added tie-breaker for identical API timestamps
       validFights.sort((a, b) => {
           const timeA = new Date(a.start_time).getTime();
           const timeB = new Date(b.start_time).getTime();
@@ -103,7 +101,6 @@ export default function DashboardClient({
       let groupReferenceTime = validFights.length > 0 ? new Date(validFights[0].start_time).getTime() : 0;
       const THREE_DAYS_MS = 72 * 60 * 60 * 1000;
 
-      // 2. Group the fights by event window
       validFights.forEach((fight) => {
           const fightTime = new Date(fight.start_time).getTime();
           if (fightTime - groupReferenceTime < THREE_DAYS_MS) {
@@ -116,18 +113,15 @@ export default function DashboardClient({
       });
       if (currentBucket.length > 0) tempGroups.push(currentBucket);
 
-      // 3. Process each card individually
       tempGroups.forEach(bucket => {
           if (bucket.length === 0) return;
           
-          // Because it's sorted ascending, the LAST item in the bucket is the Main Event
           const mainEventFight = bucket[bucket.length - 1];
           const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
               month: 'short', day: 'numeric', timeZone: 'America/New_York' 
           });
           const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
           
-          // 4. Reverse ONLY the individual bucket so the Main Event is at the top of its specific card
           finalGroupedFights[title] = [...bucket].reverse();
       });
 
@@ -281,9 +275,14 @@ export default function DashboardClient({
                         <span className="text-xl">🏆</span>
                         <span className="text-sm font-bold text-gray-300">Global Leaderboard</span>
                     </Link>
-                     <Link href="/profile" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all">
+                     <Link href="/profile" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all mb-2">
                         <span className="text-xl">👤</span>
                         <span className="text-sm font-bold text-gray-300">My Profile</span>
+                    </Link>
+                    {/* 🎯 NEW: Mobile Store Link */}
+                     <Link href="/store" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-pink-500/30 hover:bg-gray-800 transition-all group">
+                        <span className="text-xl group-hover:scale-110 transition-transform">💎</span>
+                        <span className="text-sm font-bold text-pink-500">Item Store</span>
                     </Link>
                 </div>
             </div>
@@ -301,8 +300,13 @@ export default function DashboardClient({
                     <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
                     <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
                         <Link href="/my-picks" className="hover:text-white transition-colors">My Picks</Link>
-                        <span className="text-pink-600 cursor-default">Global Feed</span>
+                        <span className="text-gray-300 cursor-default">Global Feed</span>
                         <Link href="/leaderboard" className="hover:text-white transition-colors">Leaderboards</Link>
+                        
+                        {/* 🎯 NEW: Desktop Store Link */}
+                        <Link href="/store" className="hover:text-pink-400 text-pink-600 transition-colors flex items-center gap-1">
+                            <span>STORE</span>
+                        </Link>
                     </nav>
                 </div>
                 <div className="flex items-center gap-3 md:gap-6">
