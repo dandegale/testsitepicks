@@ -12,10 +12,23 @@ import MobileNav from '../../components/MobileNav';
 import Toast from '../../components/Toast'; 
 import SocialShareSlip from '../../components/SocialShareSlip';
 
+// 🎯 IMPORT STORE CASES FOR RARITY LOOKUP
+import { STORE_CASES } from '@/lib/cases';
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
+
+// 🎯 HELPER TO COLORIZE LEADERBOARD TITLES
+const getRarityTextStyle = (rarity) => {
+    switch (rarity) {
+        case 'Legendary': return 'text-yellow-500 drop-shadow-[0_0_5px_rgba(234,179,8,0.8)]';
+        case 'Epic': return 'text-pink-500 drop-shadow-[0_0_5px_rgba(219,39,119,0.8)]';
+        case 'Rare': return 'text-teal-400 drop-shadow-[0_0_5px_rgba(20,184,166,0.8)]';
+        default: return 'text-gray-500'; 
+    }
+};
 
 export default function LeaguePage() {
   const params = useParams();
@@ -159,7 +172,7 @@ export default function LeaguePage() {
               id: `${pick.user_id}-${pick.fight_id}`,
               user: member?.displayName || "Unknown",
               avatar: member?.avatarUrl,
-              lifetimePoints: member?.lifetimePoints || 0, // 🎯 Grab XP for Feed Badge
+              lifetimePoints: member?.lifetimePoints || 0,
               user_id: pick.user_id,
               fighter: pick.selected_fighter,
               odds: pick.odds_at_pick,
@@ -258,7 +271,8 @@ export default function LeaguePage() {
               user_id: member.user_id,
               displayName: member.displayName,
               avatarUrl: member.avatarUrl,
-              lifetimePoints: member.lifetimePoints, // 🎯 Grab XP for Leaderboard Badge
+              lifetimePoints: member.lifetimePoints, 
+              equippedTitle: member.equippedTitle, // 🎯 Feed Title down to table
               pickCount: memberPicks.length,
               totalScore: parseFloat(totalScore.toFixed(1)),
               cardsWon: historicalWinsMap[member.user_id] || 0,
@@ -269,7 +283,6 @@ export default function LeaguePage() {
       return scores.sort((a, b) => b.totalScore - a.totalScore || b.cardsWon - a.cardsWon);
   }, [members, activeLeaguePicks, allLeaguePicks, fighterStats, allFights, leagueId]);
 
-  // 🏆 THE FIX: Placed the Celebration Check AFTER the leaderboard variable is declared!
   useEffect(() => {
       if (!user || leaderboard.length === 0) return;
 
@@ -331,14 +344,20 @@ export default function LeaguePage() {
         if (processedMembers.length > 0) {
             const memberIds = processedMembers.map(m => m.user_id);
             
-            const { data: profiles } = await supabase.from('profiles').select('email, username, avatar_url, lifetime_points').in('email', memberIds);   
+            // 🎯 GRAB equipped_title for members
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('email, username, avatar_url, lifetime_points, equipped_title')
+                .in('email', memberIds);   
 
             processedMembers = processedMembers.map(member => {
                 const profile = profiles?.find(p => p.email === member.user_id);
                 const displayName = (profile && profile.username) ? profile.username : member.user_id.split('@')[0]; 
                 const avatarUrl = profile?.avatar_url || null;
                 const lifetimePoints = profile?.lifetime_points || 0; 
-                return { ...member, displayName, avatarUrl, lifetimePoints };
+                const equippedTitle = profile?.equipped_title || null; // 🎯 Assign title
+                
+                return { ...member, displayName, avatarUrl, lifetimePoints, equippedTitle };
             });
         }
         setMembers(processedMembers);
@@ -948,82 +967,104 @@ export default function LeaguePage() {
                                             <div className="col-span-2 text-right">Fantasy PTS</div>
                                         </div>
                                         <div className="divide-y divide-gray-800">
-                                            {leaderboard.map((player, index) => (
-                                                <div key={player.user_id}>
-                                                    <div 
-                                                        onClick={() => setExpandedUserRoster(expandedUserRoster === player.user_id ? null : player.user_id)}
-                                                        className={`grid grid-cols-12 gap-4 p-4 items-center cursor-pointer hover:bg-gray-800/50 transition-colors ${user?.email === player.user_id ? 'bg-pink-900/10' : ''}`}
-                                                    >
-                                                        <div className="col-span-2 text-center font-black text-lg italic text-gray-600">
-                                                            #{index + 1}
-                                                        </div>
-                                                        
-                                                        {/* 🎯 FIXED: min-w-0 instead of overflow-hidden */}
-                                                        <div className="col-span-4 flex items-center gap-3 min-w-0 py-1">
+                                            {leaderboard.map((player, index) => {
+                                                
+                                                // 🎯 Calculate Title Rarity specifically for this player
+                                                let titleRarity = 'Common';
+                                                if (player.equippedTitle) {
+                                                    for (const crate of STORE_CASES) {
+                                                        const item = crate.visualItems?.find(i => i.name === player.equippedTitle);
+                                                        if (item) {
+                                                            titleRarity = item.rarity;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+
+                                                return (
+                                                    <div key={player.user_id}>
+                                                        <div 
+                                                            onClick={() => setExpandedUserRoster(expandedUserRoster === player.user_id ? null : player.user_id)}
+                                                            className={`grid grid-cols-12 gap-4 p-4 items-center cursor-pointer hover:bg-gray-800/50 transition-colors ${user?.email === player.user_id ? 'bg-pink-900/10' : ''}`}
+                                                        >
+                                                            <div className="col-span-2 text-center font-black text-lg italic text-gray-600">
+                                                                #{index + 1}
+                                                            </div>
                                                             
-                                                            {/* 🎯 NEW: LEVEL BADGE AVATAR COMPONENT */}
-                                                            <div className="relative flex-shrink-0">
-                                                                <Link 
-                                                                    href={`/u/${encodeURIComponent(player.displayName)}`} 
-                                                                    onClick={(e) => e.stopPropagation()} 
-                                                                    className="block hover:opacity-80 transition-opacity"
-                                                                >
-                                                                    {player.avatarUrl ? (
-                                                                        <img src={player.avatarUrl} alt={player.displayName} className="w-8 h-8 rounded-full object-cover border border-gray-700" />
-                                                                    ) : (
-                                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-300">
-                                                                            {player.displayName.charAt(0).toUpperCase()}
-                                                                        </div>
+                                                            <div className="col-span-4 flex items-center gap-3 min-w-0 py-1">
+                                                                
+                                                                <div className="relative flex-shrink-0">
+                                                                    <Link 
+                                                                        href={`/u/${encodeURIComponent(player.displayName)}`} 
+                                                                        onClick={(e) => e.stopPropagation()} 
+                                                                        className="block hover:opacity-80 transition-opacity"
+                                                                    >
+                                                                        {player.avatarUrl ? (
+                                                                            <img src={player.avatarUrl} alt={player.displayName} className="w-8 h-8 rounded-full object-cover border border-gray-700" />
+                                                                        ) : (
+                                                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-300">
+                                                                                {player.displayName.charAt(0).toUpperCase()}
+                                                                            </div>
+                                                                        )}
+                                                                    </Link>
+                                                                    <div className="absolute -bottom-1 -right-1 bg-gradient-to-br from-pink-600 to-teal-500 text-white w-4 h-4 flex items-center justify-center rounded-full text-[8px] font-black border border-black shadow-sm pointer-events-none">
+                                                                        {calculateLevel(player.lifetimePoints)}
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="flex flex-col justify-center min-w-0">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <Link 
+                                                                            href={`/u/${encodeURIComponent(player.displayName)}`} 
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            className={`font-bold text-sm block truncate hover:text-pink-400 transition-colors ${user?.email === player.user_id ? 'text-pink-500' : 'text-white'}`}
+                                                                        >
+                                                                            {player.displayName}
+                                                                        </Link>
+                                                                        
+                                                                        {player.isReigningChamp && (
+                                                                            <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest flex items-center gap-1.5 mt-0.5">
+                                                                                <img src="/champion.png" className="w-4 h-4 object-contain drop-shadow-[0_0_10px_rgba(234,179,8,0.8)]" alt="Reigning Champ" />
+                                                                                Champ
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+
+                                                                    {/* 🎯 THE EQUIPPED TITLE INJECTED HERE */}
+                                                                    {player.equippedTitle && (
+                                                                        <span className={`text-[9px] font-black uppercase tracking-widest mt-0.5 truncate ${getRarityTextStyle(titleRarity)}`}>
+                                                                            "{player.equippedTitle}"
+                                                                        </span>
                                                                     )}
-                                                                </Link>
-                                                                <div className="absolute -bottom-1 -right-1 bg-gradient-to-br from-pink-600 to-teal-500 text-white w-4 h-4 flex items-center justify-center rounded-full text-[8px] font-black border border-black shadow-sm pointer-events-none">
-                                                                    {calculateLevel(player.lifetimePoints)}
                                                                 </div>
                                                             </div>
+                                                            
+                                                            <div className="col-span-2 flex items-center justify-center gap-2">
+                                                                <img src="/trophy.png" alt="Trophies" className="w-8 h-8 object-contain brightness-110 drop-shadow-[0_0_15px_rgba(234,179,8,0.4)]" />
+                                                                <span className="text-white font-black text-sm">{player.cardsWon}</span>
+                                                            </div>
 
-                                                            <div className="min-w-0">
-                                                                <Link 
-                                                                    href={`/u/${encodeURIComponent(player.displayName)}`} 
-                                                                    onClick={(e) => e.stopPropagation()}
-                                                                    className={`font-bold text-sm block truncate hover:text-pink-400 transition-colors ${user?.email === player.user_id ? 'text-pink-500' : 'text-white'}`}
-                                                                >
-                                                                    {player.displayName}
-                                                                </Link>
-                                                                
-                                                                {player.isReigningChamp && (
-                                                                    <span className="text-[9px] text-yellow-500 font-black uppercase tracking-widest flex items-center gap-1.5 mt-0.5">
-                                                                        <img src="/champion.png" className="w-4 h-4 object-contain drop-shadow-[0_0_10px_rgba(234,179,8,0.8)]" alt="Reigning Champ" />
-                                                                        Champ
-                                                                    </span>
-                                                                )}
+                                                            <div className="col-span-2 text-center">
+                                                                <span className={`text-[10px] font-black ${player.pickCount === 5 ? 'text-teal-400' : 'text-gray-500'}`}>
+                                                                    {player.pickCount} / 5
+                                                                </span>
+                                                            </div>
+                                                            <div className="col-span-2 flex items-center justify-end gap-3">
+                                                                <span className="text-base font-black italic text-pink-500">
+                                                                    {player.totalScore}
+                                                                </span>
+                                                                <span className="text-[10px] text-gray-500">{expandedUserRoster === player.user_id ? '▲' : '▼'}</span>
                                                             </div>
                                                         </div>
-                                                        
-                                                        <div className="col-span-2 flex items-center justify-center gap-2">
-                                                            <img src="/trophy.png" alt="Trophies" className="w-8 h-8 object-contain brightness-110 drop-shadow-[0_0_15px_rgba(234,179,8,0.4)]" />
-                                                            <span className="text-white font-black text-sm">{player.cardsWon}</span>
-                                                        </div>
 
-                                                        <div className="col-span-2 text-center">
-                                                            <span className={`text-[10px] font-black ${player.pickCount === 5 ? 'text-teal-400' : 'text-gray-500'}`}>
-                                                                {player.pickCount} / 5
-                                                            </span>
-                                                        </div>
-                                                        <div className="col-span-2 flex items-center justify-end gap-3">
-                                                            <span className="text-base font-black italic text-pink-500">
-                                                                {player.totalScore}
-                                                            </span>
-                                                            <span className="text-[10px] text-gray-500">{expandedUserRoster === player.user_id ? '▲' : '▼'}</span>
-                                                        </div>
+                                                        {expandedUserRoster === player.user_id && (
+                                                            <div className="bg-black border-y border-gray-800 animate-in slide-in-from-top-2 duration-200">
+                                                                {renderTeamBoxScore(player.user_id, player.displayName, player.totalScore, false, player.isReigningChamp)}
+                                                            </div>
+                                                        )}
                                                     </div>
-
-                                                    {expandedUserRoster === player.user_id && (
-                                                        <div className="bg-black border-y border-gray-800 animate-in slide-in-from-top-2 duration-200">
-                                                            {renderTeamBoxScore(player.user_id, player.displayName, player.totalScore, false, player.isReigningChamp)}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ))}
+                                                );
+                                            })}
                                             {leaderboard.length === 0 && (
                                                 <div className="p-8 text-center text-gray-500 text-xs font-bold uppercase tracking-widest">
                                                     No ranked members yet.
@@ -1049,10 +1090,8 @@ export default function LeaguePage() {
                                 {feedItems.map(item => (
                                     <div key={item.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center justify-between hover:border-gray-700 transition-colors">
                                         
-                                        {/* 🎯 FIXED: min-w-0 instead of overflow-hidden */}
                                         <div className="flex items-center gap-3 md:gap-4 min-w-0 py-1">
                                             
-                                            {/* 🎯 NEW: FEED AVATAR BADGE */}
                                             <div className="relative flex-shrink-0">
                                                 <Link href={`/u/${encodeURIComponent(item.user)}`} className="block hover:opacity-80 transition-opacity">
                                                     {item.avatar ? (
@@ -1223,7 +1262,6 @@ export default function LeaguePage() {
                                             
                                             <div className="flex items-center gap-4">
                                                 
-                                                {/* 🎯 NEW: MEMBER ROSTER AVATAR BADGE */}
                                                 <div className="relative flex-shrink-0">
                                                     <Link href={`/u/${encodeURIComponent(member.displayName)}`} className="block hover:opacity-80 transition-opacity">
                                                         {member.avatarUrl ? (
@@ -1334,7 +1372,6 @@ export default function LeaguePage() {
         </div>
       </main>
 
-      {/* 🎯 FIX: Show the FAB if they have pending picks OR if they have a locked roster */}
       {(pendingPicks.length > 0 || hasLockedRoster) && (
           <div className="lg:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
             <button 
@@ -1354,7 +1391,6 @@ export default function LeaguePage() {
           </div>
       )}
 
-      {/* 🎯 FIX: Removed the !hasLockedRoster condition so the drawer can open when locked */}
       {showMobileSlip && (
           <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm lg:hidden flex items-end">
             <div className="w-full bg-gray-950 rounded-t-3xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300 max-h-[90vh]">
@@ -1367,7 +1403,6 @@ export default function LeaguePage() {
                   </div>
                   <button onClick={() => setShowMobileSlip(false)} className="text-gray-500 hover:text-white p-2 text-xs font-bold uppercase tracking-widest bg-gray-900 rounded-lg">✕ Close</button>
                </div>
-               {/* 🎯 FIX: Added overflow-y-auto so the drawer scrolls if the content (like the share graphic) is too tall */}
                <div className="p-6 overflow-y-auto custom-scrollbar pb-12">
                   {renderRosterSlots()}
                </div>
