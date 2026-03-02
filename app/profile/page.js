@@ -12,6 +12,25 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+// 🎯 STORE RARITY STYLES
+const getRarityColor = (rarity) => {
+    switch (rarity) {
+        case 'Legendary': return '#eab308'; 
+        case 'Epic': return '#db2777';      
+        case 'Rare': return '#14b8a6';      
+        default: return '#6b7280';          
+    }
+};
+
+const getRarityStyle = (rarity) => {
+    switch (rarity) {
+        case 'Legendary': return { card: 'bg-gray-950 border-gray-800', text: 'text-yellow-500', badge: 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30 shadow-[0_0_15px_rgba(234,179,8,0.2)]' };
+        case 'Epic': return { card: 'bg-gray-950 border-gray-800', text: 'text-pink-500', badge: 'bg-pink-600/20 text-pink-500 border-pink-500/30 shadow-[0_0_15px_rgba(219,39,119,0.2)]' };
+        case 'Rare': return { card: 'bg-gray-950 border-gray-800', text: 'text-teal-400', badge: 'bg-teal-500/20 text-teal-400 border-teal-500/30 shadow-[0_0_15px_rgba(20,184,166,0.2)]' };
+        default: return { card: 'bg-gray-950 border-gray-800', text: 'text-gray-400', badge: 'bg-gray-900 text-gray-400 border-gray-800' };
+    }
+};
+
 // --- FULL MASTER BADGE DATA ---
 const AVAILABLE_BADGES = [
   { id: 'b1', title: 'BMF', imagePath: '/badges/bmf.png', description: '5+ chosen fighters win by knockout on a single card.', earned: false, glow: 'shadow-[0_0_15px_rgba(234,179,8,0.4)]' },
@@ -50,8 +69,13 @@ export default function Profile() {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   
-  // 🎯 NEW: XP State
+  // XP State
   const [lifetimePoints, setLifetimePoints] = useState(0);
+
+  // 🎯 TITLE INVENTORY STATE
+  const [equippedTitle, setEquippedTitle] = useState(null);
+  const [ownedTitles, setOwnedTitles] = useState([]);
+  const [titleModalOpen, setTitleModalOpen] = useState(false);
 
   const fileInputRef = useRef(null);
   const bgInputRef = useRef(null); 
@@ -89,9 +113,8 @@ export default function Profile() {
     setNewUsername(finalName); 
     setAvatarUrl(profile?.avatar_url || null);
     setBackgroundUrl(profile?.background_url || null); 
-    
-    // 🎯 Set Lifetime Points
     setLifetimePoints(profile?.lifetime_points || 0);
+    setEquippedTitle(profile?.equipped_title || null); // Load equipped title
     
     if (profile) {
         setShowOdds(profile.show_odds === true);
@@ -100,6 +123,16 @@ export default function Profile() {
             showEarnings: profile.show_earnings !== false, showHistory: profile.show_history === true, 
             pinnedBadgeId: profile.pinned_badge_id || null
         });
+    }
+
+    // Fetch Inventory of Titles
+    const { data: storeItems } = await supabase.from('store_items').select('*');
+    const { data: inv } = await supabase.from('user_inventory').select('item_id').eq('user_email', user.email);
+    
+    if (inv && storeItems) {
+        const ownedIds = inv.map(i => i.item_id);
+        const owned = storeItems.filter(s => ownedIds.includes(s.id));
+        setOwnedTitles(owned);
     }
 
     const { data: badgesData } = await supabase.from('user_badges').select('badge_id').eq('user_id', user.email);
@@ -127,6 +160,13 @@ export default function Profile() {
         setIsEditing(false);
     }
     setSaving(false);
+  };
+
+  // 🎯 CHANGE TITLE HANDLER
+  const handleEquipTitle = async (titleName) => {
+    setEquippedTitle(titleName);
+    await supabase.from('profiles').update({ equipped_title: titleName }).eq('id', user.id);
+    setTitleModalOpen(false);
   };
 
   const toggleOdds = async () => {
@@ -227,8 +267,10 @@ export default function Profile() {
   const visibleBadges = badgesWithStatus.filter(badge => showLockedBadges || badge.earned);
   const earnedCount = badgesWithStatus.filter(b => b.earned).length;
 
-  // 🎯 Calculate Level dynamically using useMemo
   const levelStats = useMemo(() => calculateLevel(lifetimePoints), [lifetimePoints]);
+
+  // Find the object of the currently equipped title to get its rarity
+  const equippedTitleObj = ownedTitles.find(t => t.name === equippedTitle);
 
   if (loading) return (
     <div className="min-h-screen bg-[#050505] flex items-center justify-center relative overflow-hidden">
@@ -240,6 +282,58 @@ export default function Profile() {
   return (
     <main className="min-h-screen bg-[#050505] text-white pb-24 font-sans selection:bg-teal-500 selection:text-white relative overflow-hidden">
       
+      {/* 🎯 TITLE SELECTION MODAL */}
+      {titleModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+              <div className="relative w-full max-w-4xl flex flex-col animate-in zoom-in-95 duration-300 bg-gray-950 border border-gray-800 rounded-3xl p-6 md:p-10 shadow-2xl max-h-[85vh] overflow-y-auto">
+                  
+                  <div className="flex justify-between items-start mb-8">
+                      <div>
+                          <h2 className="text-3xl font-black italic uppercase tracking-tighter text-white leading-none mb-1">Your Titles</h2>
+                          <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Select a walkout tag to display on your profile.</p>
+                      </div>
+                      <button onClick={() => setTitleModalOpen(false)} className="text-gray-500 hover:text-white transition-colors bg-gray-900 w-8 h-8 rounded-full flex items-center justify-center">✕</button>
+                  </div>
+
+                  {ownedTitles.length === 0 ? (
+                      <div className="py-16 text-center border border-gray-800 border-dashed rounded-2xl bg-black/40">
+                          <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest mb-4">You haven't unlocked any titles yet.</p>
+                          <Link href="/store" className="bg-teal-600 hover:bg-teal-500 text-black px-6 py-2.5 rounded-xl font-black uppercase text-xs tracking-widest transition-colors shadow-[0_0_15px_rgba(20,184,166,0.3)]">
+                              Visit Store
+                          </Link>
+                      </div>
+                  ) : (
+                      <>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                              {ownedTitles.map(item => {
+                                  const style = getRarityStyle(item.rarity);
+                                  const isEquipped = equippedTitle === item.name;
+                                  return (
+                                      <div key={item.id} onClick={() => handleEquipTitle(item.name)} className={`cursor-pointer hover:-translate-y-1 transition-transform border flex flex-col items-center justify-center p-4 rounded-xl h-24 relative overflow-hidden ${style.card} ${isEquipped ? 'ring-2 ring-white shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'opacity-80 hover:opacity-100'}`}>
+                                          <div className="absolute bottom-0 left-0 right-0 h-1" style={{ backgroundColor: getRarityColor(item.rarity) }}></div>
+                                          {isEquipped && <div className="absolute top-0 left-0 right-0 bg-white text-black text-[8px] font-black uppercase text-center tracking-widest py-0.5">Equipped</div>}
+                                          <span className={`text-xs font-black italic uppercase text-center leading-tight tracking-tighter ${style.text}`}>"{item.name}"</span>
+                                      </div>
+                                  );
+                              })}
+                          </div>
+                          <div className="flex justify-between items-center border-t border-gray-800 pt-6">
+                              <button 
+                                  onClick={() => handleEquipTitle(null)}
+                                  className="text-[10px] text-gray-500 hover:text-pink-500 font-black uppercase tracking-widest transition-colors"
+                              >
+                                  Remove Title
+                              </button>
+                              <Link href="/store" className="text-[10px] text-teal-500 hover:text-teal-400 font-black uppercase tracking-widest transition-colors">
+                                  Unlock More →
+                              </Link>
+                          </div>
+                      </>
+                  )}
+              </div>
+          </div>
+      )}
+
       {/* CROPPING MODAL */}
       {cropModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 md:p-12">
@@ -355,14 +449,25 @@ export default function Profile() {
                     </div>
                 )}
                 
+                {/* 🎯 UPDATED: CLICKABLE EQUIPPED TITLE BADGE */}
                 <div className="flex items-center justify-center md:justify-start gap-3 mb-6">
-                    <span className="bg-pink-950/30 text-pink-400 border border-pink-500/30 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest shadow-[0_0_10px_rgba(219,39,119,0.1)]">
-                        Manager
-                    </span>
+                    <div 
+                        onClick={() => setTitleModalOpen(true)}
+                        className={`cursor-pointer group flex items-center gap-2 px-3 py-1 rounded-full border transition-all ${
+                            equippedTitleObj 
+                                ? getRarityStyle(equippedTitleObj.rarity).badge 
+                                : 'bg-gray-950 text-gray-500 border-gray-800 hover:border-gray-600'
+                        }`}
+                    >
+                        <span className="text-[9px] font-black uppercase tracking-widest">
+                            {equippedTitle ? `"${equippedTitle}"` : '+ Equip Title'}
+                        </span>
+                        <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px]">✎</span>
+                    </div>
+                    
                     <p className="text-white/40 text-[10px] font-bold uppercase tracking-[0.2em]">{user?.email}</p>
                 </div>
 
-                {/* 🎯 NEW: XP & LEVEL BAR */}
                 <div className="w-full bg-black/40 backdrop-blur-sm border border-gray-800/50 p-4 rounded-2xl shadow-xl">
                     <div className="flex items-end justify-between mb-2">
                         <div className="flex items-center gap-2.5">
@@ -446,7 +551,7 @@ export default function Profile() {
                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                     <div>
                         <div className="flex items-center gap-3 mb-2">
-                            <img src="/trophy.png" alt="Trophies" className="w-10 h-10 md:w-12 md:h-12 object-contain drop-shadow-[0_0_15px_rgba(234,179,8,0.6)] hover:scale-110 transition-transform" />
+                            <img src="/trophy.png" alt="Trophies" className="w-10 h-10 md:w-12 h-12 object-contain drop-shadow-[0_0_15px_rgba(234,179,8,0.6)] hover:scale-110 transition-transform" />
                             <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter">Trophy Room</h2>
                         </div>
                         <div className="flex items-center gap-3">

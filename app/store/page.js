@@ -29,7 +29,6 @@ const getRarityStyle = (rarity) => {
     }
 };
 
-// 🎯 FIXED: GLOBAL AUDIO ENGINE
 let audioCtx = null;
 
 const playTickSound = () => {
@@ -63,7 +62,6 @@ const playTickSound = () => {
     }
 };
 
-// 🎯 SLEEK CUSTOM SVGs
 const CoinIcon = () => (
     <svg className="w-4 h-4 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -163,18 +161,10 @@ export default function StorePage() {
         }
     }, [selectedCase]);
 
-    const handleAddCoins = async () => {
-        if (!user) return alert("Log in first!");
-        const newTotal = coins + 1000;
-        setCoins(newTotal);
-        await supabase.from('profiles').update({ coins: newTotal }).eq('email', user.email);
-    };
-
     const triggerSpinAudio = () => {
         let delay = 30; 
         let elapsed = 0;
         const tick = () => {
-            if (!isSpinning && elapsed > 0) return; 
             playTickSound();
             elapsed += delay;
             delay = delay * 1.09; 
@@ -234,7 +224,6 @@ export default function StorePage() {
 
         setTimeout(() => {
             if (tapeRef.current) {
-                // Audio will start perfectly on the spin now
                 triggerSpinAudio();
 
                 const randomOffset = Math.floor(Math.random() * 60) - 30; 
@@ -390,10 +379,6 @@ export default function StorePage() {
                                 </div>
                             </div>
                         )}
-                        
-                        <div className="flex justify-end pt-8">
-                            <button onClick={handleAddCoins} className="text-[10px] text-gray-700 font-mono hover:text-gray-500 transition-colors">[Dev: Add 1000 Coins]</button>
-                        </div>
                     </div>
 
                 ) : (

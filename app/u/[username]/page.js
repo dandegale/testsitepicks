@@ -5,17 +5,28 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
+// 🎯 NEW: Import STORE_CASES so we can look up the rarity of their equipped title
+import { STORE_CASES } from '@/lib/cases';
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
 // --- XP MATH: CONVERT LIFETIME POINTS TO A LEVEL ---
-// Adjust the '100' here if you want to change how many points it takes to level up!
 const calculateLevel = (lifetimePoints) => {
   const points = lifetimePoints || 0;
-  // Example: Every 100 points = 1 Level. (0-99 = Lvl 1, 100-199 = Lvl 2, etc.)
   return Math.max(1, Math.floor(points / 100) + 1);
+};
+
+// 🎯 TITLE RARITY STYLES (Same as private profile)
+const getRarityStyle = (rarity) => {
+    switch (rarity) {
+        case 'Legendary': return 'bg-gray-950 text-yellow-500 border-yellow-500/30 shadow-[0_0_15px_rgba(234,179,8,0.2)]';
+        case 'Epic': return 'bg-gray-950 text-pink-500 border-pink-500/30 shadow-[0_0_15px_rgba(219,39,119,0.2)]';
+        case 'Rare': return 'bg-gray-950 text-teal-400 border-teal-500/30 shadow-[0_0_15px_rgba(20,184,166,0.2)]';
+        default: return 'bg-gray-950 text-gray-400 border-gray-800'; // Common
+    }
 };
 
 // --- FULL MASTER BADGE DATA WITH IMAGES ---
@@ -57,7 +68,10 @@ export default function PublicProfile() {
   const [history, setHistory] = useState([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  // 🎯 Calculate level dynamically on render
+  // 🎯 Find Rarity of Equipped Title
+  const [equippedTitleRarity, setEquippedTitleRarity] = useState('Common');
+
+  // Calculate level dynamically on render
   const userLevel = profile ? calculateLevel(profile.lifetime_points) : 1;
 
   useEffect(() => {
@@ -79,6 +93,19 @@ export default function PublicProfile() {
 
     setProfile(profileData);
 
+    // 🎯 If they have a title, look up its rarity from our STORE_CASES data
+    if (profileData.equipped_title) {
+        let foundRarity = 'Common';
+        for (const crate of STORE_CASES) {
+            const item = crate.visualItems.find(i => i.name === profileData.equipped_title);
+            if (item) {
+                foundRarity = item.rarity;
+                break;
+            }
+        }
+        setEquippedTitleRarity(foundRarity);
+    }
+
     if (profileData.is_public === false) {
         setLoading(false);
         return;
@@ -86,7 +113,6 @@ export default function PublicProfile() {
 
     const userEmail = profileData.email;
     if (!userEmail) {
-        console.warn("No email found on this profile to link stats.");
         setLoading(false);
         return;
     }
@@ -222,11 +248,18 @@ export default function PublicProfile() {
                     )}
                 </div>
                 
+                {/* 🎯 DYNAMICALLY RENDERED EQUIPPED TITLE */}
                 <div className="flex items-center justify-center md:justify-start gap-3 mt-3">
-                    <span className="bg-gradient-to-r from-teal-500 to-teal-400 text-black border border-teal-400/50 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest shadow-[0_0_10px_rgba(20,184,166,0.3)]">
-                        Fighter Profile
-                    </span>
-                    {/* 🎯 SECONDARY DYNAMIC LEVEL TAG */}
+                    {profile.equipped_title ? (
+                        <span className={`px-3 py-1 rounded-full border text-[9px] font-black uppercase tracking-widest ${getRarityStyle(equippedTitleRarity)}`}>
+                            "{profile.equipped_title}"
+                        </span>
+                    ) : (
+                        <span className="bg-gradient-to-r from-teal-500 to-teal-400 text-black border border-teal-400/50 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest shadow-[0_0_10px_rgba(20,184,166,0.3)]">
+                            Fighter Profile
+                        </span>
+                    )}
+
                     <span className="bg-black/60 backdrop-blur-md text-white border border-white/10 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
                         Level {userLevel}
                     </span>
@@ -288,14 +321,13 @@ export default function PublicProfile() {
                     <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                         <div>
                            <div className="flex items-center gap-3 mb-2">
-
-    <img 
-        src="/trophy.png" 
-        alt="Trophies" 
-        className="w-10 h-10 md:w-12 md:h-12 object-contain drop-shadow-[0_0_15px_rgba(234,179,8,0.6)] hover:scale-110 transition-transform" 
-    />
-    <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter">Trophy Room</h2>
-</div>
+                                <img 
+                                    src="/trophy.png" 
+                                    alt="Trophies" 
+                                    className="w-10 h-10 md:w-12 md:h-12 object-contain drop-shadow-[0_0_15px_rgba(234,179,8,0.6)] hover:scale-110 transition-transform" 
+                                />
+                                <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter">Trophy Room</h2>
+                            </div>
                             <div className="flex items-center gap-3">
                                 <div className="w-32 h-1.5 bg-gray-900 rounded-full overflow-hidden shadow-inner">
                                     <div className="h-full bg-gradient-to-r from-pink-600 to-teal-400" style={{ width: `${Math.round((earnedCount/AVAILABLE_BADGES.length)*100)}%` }}></div>
