@@ -12,6 +12,7 @@
     "@ducanh2912/next-pwa": "^10.2.9",
     "@supabase/supabase-js": "^2.97.0",
     "axios": "^1.13.5",
+    "canvas-confetti": "^1.9.4",
     "cheerio": "^1.2.0",
     "dotenv": "^17.3.1",
     "framer-motion": "^12.29.2",

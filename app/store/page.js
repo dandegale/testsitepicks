@@ -6,6 +6,9 @@ import Image from 'next/image';
 import { createClient } from '@supabase/supabase-js';
 import { STORE_CASES } from '@/lib/cases';
 
+// 💥 THE VFX ENGINE
+import confetti from 'canvas-confetti';
+
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -29,6 +32,7 @@ const getRarityStyle = (rarity) => {
     }
 };
 
+// 🎯 GLOBAL AUDIO ENGINE
 let audioCtx = null;
 
 const playTickSound = () => {
@@ -60,6 +64,40 @@ const playTickSound = () => {
     } catch (e) {
         console.error("Audio engine failed to start:", e);
     }
+};
+
+// 💥 PARTICLE EFFECT FUNCTIONS
+const triggerLegendaryConfetti = () => {
+    const duration = 3000;
+    const animationEnd = Date.now() + duration;
+    const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 200 };
+
+    const randomInRange = (min, max) => Math.random() * (max - min) + min;
+
+    const interval = setInterval(function() {
+        const timeLeft = animationEnd - Date.now();
+
+        if (timeLeft <= 0) {
+            return clearInterval(interval);
+        }
+
+        const particleCount = 50 * (timeLeft / duration);
+        // Golden shower from multiple angles
+        confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }, colors: ['#eab308', '#fef08a', '#ca8a04', '#ffffff'] }));
+        confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }, colors: ['#eab308', '#fef08a', '#ca8a04', '#ffffff'] }));
+    }, 250);
+};
+
+const triggerEpicConfetti = () => {
+    // Single massive pink shotgun blast from the center
+    confetti({
+        particleCount: 150,
+        spread: 100,
+        origin: { y: 0.6 },
+        colors: ['#db2777', '#f472b6', '#9d174d', '#ffffff'],
+        zIndex: 200,
+        startVelocity: 45
+    });
 };
 
 const CoinIcon = () => (
@@ -233,10 +271,19 @@ export default function StorePage() {
                 tapeRef.current.style.transform = `translateX(${stopPosition}px)`;
             }
 
+            // 🎯 THE EXACT MOMENT THE SPINNER STOPS
             setTimeout(() => {
                 setSpinComplete(true);
+                
+                // 💥 FIRE THE VFX
+                if (actualWonItem.rarity === 'Legendary') {
+                    triggerLegendaryConfetti();
+                } else if (actualWonItem.rarity === 'Epic') {
+                    triggerEpicConfetti();
+                }
             }, 7000);
 
+            // Pop the winner modal
             setTimeout(() => {
                 setWonItem(actualWonItem);
                 setCoins(newBalance); 
