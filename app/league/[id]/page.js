@@ -1,9 +1,8 @@
 'use client';
 
 import { createClient } from '@supabase/supabase-js';
-import { useEffect, useState, useMemo, useRef } from 'react';
-// 🎯 FIX 1: Removed useSearchParams to prevent Vercel crashes
-import { useParams, useRouter } from 'next/navigation';
+import { useEffect, useState, useMemo, useRef, Suspense } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import FightDashboard from '../../components/FightDashboard';
 import ChatBox from '../../components/ChatBox';
@@ -18,6 +17,20 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+// 🎯 FIX: We isolate the invite check into its own component so we can wrap it in Suspense!
+function InviteChecker({ onInviteFound }) {
+    const searchParams = useSearchParams();
+    
+    useEffect(() => {
+        const inviteCode = searchParams.get('invite');
+        if (inviteCode) {
+            onInviteFound(inviteCode);
+        }
+    }, [searchParams, onInviteFound]);
+
+    return null; // This component doesn't render anything visually
+}
+
 export default function LeaguePage() {
   const params = useParams();
   const router = useRouter();
@@ -30,6 +43,7 @@ export default function LeaguePage() {
   const [showMobileLeagues, setShowMobileLeagues] = useState(false);
   const [showMobileSlip, setShowMobileSlip] = useState(false);
   
+  // 🏆 CHAMPIONSHIP CELEBRATION STATE
   const [showChampCelebration, setShowChampCelebration] = useState(false);
   
   const [expandedUserRoster, setExpandedUserRoster] = useState(null); 
@@ -62,17 +76,21 @@ export default function LeaguePage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [localLeagueImage, setLocalLeagueImage] = useState('');
 
+  // We temporarily store the invite code here if the InviteChecker finds one
+  const [inviteCode, setInviteCode] = useState(null);
+
+  // 1. Initial Data Fetch
   useEffect(() => {
     fetchLeagueData();
-  }, [leagueId]);
+  }, [leagueId, inviteCode]); // Added inviteCode as a dependency
 
+  // 2. 🏆 CHAMPIONSHIP CHECKER
   useEffect(() => {
       if (!user || leaderboard.length === 0) return;
 
-      const myLeaderboardEntry = leaderboard.find(p => p.user_id === user?.email);
+      const myLeaderboardEntry = leaderboard.find(p => p.user_id === user.email);
       
       if (myLeaderboardEntry?.isReigningChamp) {
-          // 🎯 FIX 2: Added try/catch to protect against strict browser local storage errors
           try {
               const winKey = `celebrated_win_${leagueId}_${myLeaderboardEntry.cardsWon}`;
               if (!localStorage.getItem(winKey)) {
@@ -80,7 +98,7 @@ export default function LeaguePage() {
                   localStorage.setItem(winKey, 'true');
               }
           } catch (e) {
-              console.warn('Local storage disabled/unavailable');
+              console.warn("Local storage blocked, skipping celebration guard.");
           }
       }
   }, [leaderboard, user, leagueId]);
@@ -177,7 +195,7 @@ export default function LeaguePage() {
               id: `${pick.user_id}-${pick.fight_id}`,
               user: member?.displayName || "Unknown",
               avatar: member?.avatarUrl,
-              lifetimePoints: member?.lifetimePoints || 0,
+              lifetimePoints: member?.lifetimePoints || 0, // 🎯 Grab XP for Feed Badge
               user_id: pick.user_id,
               fighter: pick.selected_fighter,
               odds: pick.odds_at_pick,
@@ -276,7 +294,7 @@ export default function LeaguePage() {
               user_id: member.user_id,
               displayName: member.displayName,
               avatarUrl: member.avatarUrl,
-              lifetimePoints: member.lifetimePoints,
+              lifetimePoints: member.lifetimePoints, // 🎯 Grab XP for Leaderboard Badge
               pickCount: memberPicks.length,
               totalScore: parseFloat(totalScore.toFixed(1)),
               cardsWon: historicalWinsMap[member.user_id] || 0,
@@ -295,13 +313,6 @@ export default function LeaguePage() {
         if (currentUser) {
             const { data: profile } = await supabase.from('profiles').select('show_odds').eq('id', currentUser.id).single();
             if (profile && profile.show_odds === true) setShowOdds(true);
-        }
-
-        // 🎯 FIX 3: Read URL parameters natively to bypass Vercel Suspense issues
-        let inviteCode = null;
-        if (typeof window !== 'undefined') {
-            const urlParams = new URLSearchParams(window.location.search);
-            inviteCode = urlParams.get('invite');
         }
 
         if (!currentUser && inviteCode) {
@@ -339,7 +350,7 @@ export default function LeaguePage() {
 
             processedMembers = processedMembers.map(member => {
                 const profile = profiles?.find(p => p.email === member.user_id);
-                const displayName = (profile && profile.username) ? profile.username : member.user_id?.split('@')[0] || 'Unknown'; 
+                const displayName = (profile && profile.username) ? profile.username : member.user_id.split('@')[0]; 
                 const avatarUrl = profile?.avatar_url || null;
                 const lifetimePoints = profile?.lifetime_points || 0; 
                 return { ...member, displayName, avatarUrl, lifetimePoints };
@@ -476,7 +487,7 @@ export default function LeaguePage() {
     if (!user) return alert("Log in to lock picks!");
     
     setIsSubmitting(true);
-    const username = user.user_metadata?.username || user.email?.split('@')[0];
+    const username = user.user_metadata?.username || user.email.split('@')[0];
     
     const picksToInsert = pendingPicks.map(p => ({
         user_id: user.email,
@@ -682,6 +693,12 @@ export default function LeaguePage() {
 
   return (
     <div className="flex min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
+      
+      {/* 🎯 FIX 4: Wrap the invisible InviteChecker in a Suspense boundary right at the top level */}
+      <Suspense fallback={null}>
+          <InviteChecker onInviteFound={(code) => setInviteCode(code)} />
+      </Suspense>
+
       <div className="hidden lg:block">
         <LeagueRail initialLeagues={myLeagues} />
       </div>
