@@ -13,7 +13,9 @@ export default function CreateLeagueModal({ isOpen, onClose, onRefresh }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // 🎯 NEW: File Upload States
+  // 🎯 NEW: Privacy State (Defaults to Private)
+  const [isPublic, setIsPublic] = useState(false);
+
   const fileInputRef = useRef(null);
   const [uploadingImage, setUploadingImage] = useState(false);
 
@@ -25,7 +27,6 @@ export default function CreateLeagueModal({ isOpen, onClose, onRefresh }) {
     getUser();
   }, []);
 
-  // 🎯 NEW: Supabase Storage Image Uploader
   const handleImageUpload = async (e) => {
     try {
         const file = e.target.files[0];
@@ -41,7 +42,6 @@ export default function CreateLeagueModal({ isOpen, onClose, onRefresh }) {
         setUploadingImage(true);
 
         const fileExt = file.name.split('.').pop();
-        // Use a random string for the ID since the league doesn't exist yet
         const tempId = Math.random().toString(36).substring(2, 10);
         const fileName = `temp-${tempId}-${Date.now()}.${fileExt}`;
         const filePath = `avatars/${fileName}`; 
@@ -80,7 +80,8 @@ export default function CreateLeagueModal({ isOpen, onClose, onRefresh }) {
         name, 
         image_url: imageUrl, 
         created_by: user.id, 
-        invite_code: code 
+        invite_code: code,
+        is_public: isPublic // 🎯 NEW: Save the privacy setting to the database
       }])
       .select()
       .single();
@@ -176,7 +177,6 @@ export default function CreateLeagueModal({ isOpen, onClose, onRefresh }) {
                 />
             </div>
             
-            {/* 🎯 THE NEW IMAGE UPLOAD UI */}
             <div>
                 <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">League Logo</label>
                 <div className="flex items-center gap-4">
@@ -216,6 +216,25 @@ export default function CreateLeagueModal({ isOpen, onClose, onRefresh }) {
                             )}
                         </button>
                     </div>
+                </div>
+            </div>
+
+            {/* 🎯 NEW: PRIVACY TOGGLE UI */}
+            <div className="bg-gray-900/50 p-4 rounded-xl border border-gray-800">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h4 className="text-[10px] font-black text-white uppercase tracking-widest">League Privacy</h4>
+                        <p className="text-[9px] text-gray-500 uppercase font-bold mt-0.5">
+                            {isPublic ? 'Public: Anyone can find and join.' : 'Private: Invite link required.'}
+                        </p>
+                    </div>
+                    <button 
+                        type="button"
+                        onClick={() => setIsPublic(!isPublic)}
+                        className={`relative w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none ${isPublic ? 'bg-pink-600' : 'bg-gray-700'}`}
+                    >
+                        <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-300 ${isPublic ? 'translate-x-6' : 'translate-x-0'}`} />
+                    </button>
                 </div>
             </div>
 

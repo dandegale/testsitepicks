@@ -7,7 +7,6 @@ import { useRouter } from 'next/navigation';
 import LogOutButton from './LogOutButton';
 import ChatBox from './ChatBox'; 
 import FightDashboard from './FightDashboard';
-import GlobalActivityFeed from './GlobalActivityFeed'; 
 import LeagueRail from './LeagueRail'; 
 import BettingSlip from './BettingSlip'; 
 import MobileNav from './MobileNav'; 
@@ -43,7 +42,8 @@ const CountdownDisplay = ({ targetDate }) => {
 };
 
 export default function DashboardClient({ 
-  fights, groupedFights, allPicks, myPicks, userEmail, myLeagues, totalWins, totalLosses, nextEventName, mainEvent 
+  // 🎯 NEW PROP: publicLeagues replaces allPicks
+  fights, groupedFights, publicLeagues, myPicks, userEmail, myLeagues, totalWins, totalLosses, nextEventName, mainEvent 
 }) {
   const router = useRouter();
   const [isFocusMode, setIsFocusMode] = useState(false);
@@ -60,6 +60,9 @@ export default function DashboardClient({
   
   const [clientLeagues, setClientLeagues] = useState(myLeagues || []);
   const [careerStats, setCareerStats] = useState({ wins: 0, losses: 0 });
+
+  // 🎯 NEW: Join Public League Logic
+  const [joiningLeagueId, setJoiningLeagueId] = useState(null);
 
   const liveWinPercentage = (careerStats.wins + careerStats.losses) > 0 
       ? (careerStats.wins / (careerStats.wins + careerStats.losses)) * 100 
@@ -210,6 +213,32 @@ export default function DashboardClient({
     else { setPendingPicks([]); setIsSubmitting(false); setIsFocusMode(false); setShowMobileSlip(false); window.location.reload(); }
   };
 
+  // 🎯 NEW: Quick Join Handler for Public Leagues
+  const handleJoinPublicLeague = async (leagueId, leagueName) => {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user || !user.email) {
+          return alert("You must log in or create an account to join a league.");
+      }
+
+      setJoiningLeagueId(leagueId);
+
+      const { error: joinError } = await supabase
+          .from('league_members')
+          .insert([{ league_id: leagueId, user_id: user.email }]);
+
+      if (joinError) {
+          if (joinError.code === '23505') {
+              alert(`You are already in "${leagueName}"!`);
+              router.push(`/league/${leagueId}`);
+          } else {
+              alert("Error joining: " + joinError.message);
+          }
+          setJoiningLeagueId(null);
+      } else {
+          router.push(`/league/${leagueId}`);
+      }
+  };
+
   return (
     <div className="flex min-h-screen bg-black text-white overflow-hidden font-sans selection:bg-pink-500 selection:text-white">
       
@@ -279,7 +308,6 @@ export default function DashboardClient({
                         <span className="text-xl">👤</span>
                         <span className="text-sm font-bold text-gray-300">My Profile</span>
                     </Link>
-                    {/* 🎯 NEW: Mobile Store Link */}
                      <Link href="/store" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-pink-500/30 hover:bg-gray-800 transition-all group">
                         <span className="text-xl group-hover:scale-110 transition-transform">💎</span>
                         <span className="text-sm font-bold text-pink-500">Item Store</span>
@@ -303,7 +331,6 @@ export default function DashboardClient({
                         <span className="text-gray-300 cursor-default">Global Feed</span>
                         <Link href="/leaderboard" className="hover:text-white transition-colors">Leaderboards</Link>
                         
-                        {/* 🎯 NEW: Desktop Store Link */}
                         <Link href="/store" className="hover:text-pink-400 text-pink-600 transition-colors flex items-center gap-1">
                             <span>STORE</span>
                         </Link>
@@ -401,7 +428,6 @@ export default function DashboardClient({
                         <FightDashboard 
                             fights={cleanFights} 
                             groupedFights={cleanGroups} 
-                            initialPicks={allPicks} 
                             userPicks={clientPicks} 
                             league_id={null} 
                             onInteractionStart={handleInteraction}
@@ -425,12 +451,75 @@ export default function DashboardClient({
                          </div>
                     ) : (
                          <div className={`transition-opacity duration-300 ${isFocusMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-                            <div className="min-w-[350px] mb-8 bg-gray-950 border border-gray-900 rounded-xl overflow-hidden p-4 shadow-lg">
-                                <div className="flex justify-between items-center mb-4 px-2">
-                                    <h3 className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">Live Feed</h3>
-                                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                            
+                            {/* 🎯 NEW: League Discovery Directory */}
+                            <div className="min-w-[350px] mb-8 bg-gray-950 border border-gray-900 rounded-xl overflow-hidden p-6 shadow-lg">
+                                <div className="flex justify-between items-center mb-6">
+                                    <div>
+                                        <h3 className="text-xs font-black text-white uppercase tracking-[0.2em] flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+                                            Public Leagues
+                                        </h3>
+                                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Join the community</p>
+                                    </div>
+                                    <button 
+                                        onClick={() => setShowCreateModal(true)}
+                                        className="bg-gray-900 hover:bg-gray-800 border border-gray-800 text-pink-500 hover:text-pink-400 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-colors"
+                                    >
+                                        + Create
+                                    </button>
                                 </div>
-                                <GlobalActivityFeed initialPicks={allPicks} currentUserEmail={userEmail} />
+                                
+                                <div className="space-y-4 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                                    {publicLeagues && publicLeagues.length > 0 ? (
+                                        publicLeagues.map(league => {
+                                            const isAlreadyMember = clientLeagues.some(l => l.id === league.id);
+                                            
+                                            return (
+                                                <div key={league.id} className="bg-black border border-gray-800 p-4 rounded-xl flex items-center justify-between group hover:border-teal-500/50 transition-colors">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 rounded-full bg-gray-900 border border-gray-700 flex items-center justify-center overflow-hidden shrink-0">
+                                                            {league.imageUrl ? (
+                                                                <img src={league.imageUrl} alt={league.name} className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <span className="text-[10px] font-black text-gray-500">LG</span>
+                                                            )}
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="font-bold text-sm text-white truncate max-w-[120px]" title={league.name}>
+                                                                {league.name}
+                                                            </h4>
+                                                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                                                                {league.memberCount} Members
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    {isAlreadyMember ? (
+                                                        <Link 
+                                                            href={`/league/${league.id}`}
+                                                            className="text-[10px] font-black uppercase text-gray-500 bg-gray-900 px-3 py-1.5 rounded border border-gray-800 hover:text-white transition-colors"
+                                                        >
+                                                            View
+                                                        </Link>
+                                                    ) : (
+                                                        <button 
+                                                            onClick={() => handleJoinPublicLeague(league.id, league.name)}
+                                                            disabled={joiningLeagueId === league.id}
+                                                            className="text-[10px] font-black uppercase text-black bg-teal-500 hover:bg-teal-400 px-3 py-1.5 rounded transition-colors disabled:opacity-50"
+                                                        >
+                                                            {joiningLeagueId === league.id ? '...' : 'Join'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        <div className="text-center p-6 border border-dashed border-gray-800 rounded-xl">
+                                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">No public leagues found.</p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="h-[600px] min-w-[350px] flex flex-col">

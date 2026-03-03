@@ -29,26 +29,33 @@ export default async function FightList() {
     
   const myLeagues = myMemberships ? myMemberships.map(m => m.leagues).filter(Boolean) : [];
 
-  // 🎯 FIX: Added .is('league_id', null) to isolate Global Picks
+  // 3. Fetch User's Global Picks
   const { data: myPicksRaw } = await supabase
     .from('picks')
     .select('*, fight:fights(*)')
     .eq('user_id', currentUserEmail)
-    .is('league_id', null); // <--- This ensures League picks stay out of Global
+    .is('league_id', null); 
 
   const myPicks = myPicksRaw || [];
-  
-  // Wins and Losses now correctly only count Global performance
   const totalWins = myPicks.filter(p => p.result === 'Win').length;
   const totalLosses = myPicks.filter(p => p.result === 'Loss').length;
 
-  // 3. Fetch Global Activity Feed (filtered by league_id is null)
-  const { data: allPicks } = await supabase
-    .from('picks')
-    .select('*')
-    .is('league_id', null)
-    .order('id', { ascending: false })
-    .limit(50); 
+  // 🎯 NEW 4. Fetch Public Leagues (and count their members dynamically)
+  const { data: publicLeaguesRaw } = await supabase
+    .from('leagues')
+    .select('id, name, image_url, invite_code, created_at, league_members(count)')
+    .eq('is_public', true)
+    .order('created_at', { ascending: false })
+    .limit(20); 
+
+  // Clean up the data structure so it's easy for the frontend to read
+  const publicLeagues = publicLeaguesRaw ? publicLeaguesRaw.map(league => ({
+      id: league.id,
+      name: league.name,
+      imageUrl: league.image_url,
+      inviteCode: league.invite_code,
+      memberCount: league.league_members[0]?.count || 0
+  })) : [];
 
   // --- LOGIC: 3-DAY CLUSTERING + REVERSE ORDER ---
   let finalGroupedFights = {};
@@ -93,7 +100,7 @@ export default async function FightList() {
     <DashboardClient 
         fights={fights}
         groupedFights={finalGroupedFights}
-        allPicks={allPicks}         
+        publicLeagues={publicLeagues}
         myPicks={myPicks}           
         userEmail={currentUserEmail}
         myLeagues={myLeagues}
