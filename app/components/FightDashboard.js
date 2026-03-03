@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import FightCard from './FightCard'; 
 
-// Initialize Supabase so we can fetch the stats
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 export default function FightDashboard({ 
@@ -13,13 +12,13 @@ export default function FightDashboard({
     onInteractionStart, 
     onPickSelect,
     pendingPicks = [],
-    showOdds = true 
+    showOdds = true,
+    league_id = null,    // 🎯 NEW: Grab the league_id prop 
+    isShowdown = false   // 🎯 NEW: Grab a showdown flag
 }) {
 
-  // 🎯 NEW: State to hold our historical averages
   const [fighterStats, setFighterStats] = useState({});
 
-  // 🎯 NEW: Fetch the stats once when the dashboard loads
   useEffect(() => {
     const fetchHistoricalStats = async () => {
       const { data, error } = await supabase
@@ -27,7 +26,6 @@ export default function FightDashboard({
         .select('fighter_name, average_fantasy_points');
 
       if (data && !error) {
-        // Convert array into a fast lookup object: { "Jon Jones": 85.5 }
         const statsMap = {};
         data.forEach(stat => {
           statsMap[stat.fighter_name] = stat.average_fantasy_points;
@@ -37,6 +35,22 @@ export default function FightDashboard({
     };
 
     fetchHistoricalStats();
+
+    // Setup the Real-Time Subscription
+    const statsChannel = supabase.channel('fighter-stats-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'fighter_historical_stats' },
+        (payload) => {
+            fetchHistoricalStats();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(statsChannel);
+    };
+
   }, []);
 
   const handlePickClick = (fightId, fighterName, odds) => {
@@ -65,6 +79,9 @@ export default function FightDashboard({
         </div>
       );
   }
+
+  // 🎯 THE LOGIC: Only show averages if we are in a League OR a 1v1 Showdown
+  const shouldShowAverages = league_id !== null || isShowdown === true;
 
   return (
     <div className="space-y-12 pb-24">
@@ -101,7 +118,8 @@ export default function FightDashboard({
                   pendingPick={pendingForThisFight} 
                   onPick={handlePickClick}
                   showOdds={showOdds} 
-                  fighterStats={fighterStats} // 🎯 NEW: Pass the stats dictionary to the cards!
+                  // 🎯 THE TOGGLE: Pass null if we are on the Global page
+                  fighterStats={shouldShowAverages ? fighterStats : null} 
                 />
               );
             })}

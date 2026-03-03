@@ -55,7 +55,7 @@ export default function FightCard({
       return <>{odds > 0 ? '+' : ''}{odds}</>;
   };
 
-  // 🎯 UPDATED: Now checks the stats dictionary and renders the badge
+  // 🎯 UPDATED: Now checks the stats dictionary and renders a TEAL badge
   const renderFighterName = (name, badgeLabel) => {
     const isBMF = badgeLabel === 'BMF';
     const badgeStyle = isBMF 
@@ -86,10 +86,10 @@ export default function FightCard({
           )}
         </div>
         
-        {/* 🎯 NEW: The Average Points Badge */}
+        {/* 🎯 NEW: The Average Points Badge in Teal */}
         {avgPoints !== null && (
-            <div className="mt-1.5 bg-yellow-500/10 border border-yellow-500/30 px-2 py-0.5 rounded shadow-[0_0_10px_rgba(234,179,8,0.1)]">
-                <span className="text-[10px] font-black text-yellow-500 uppercase tracking-widest">
+            <div className="mt-1.5 bg-teal-500/10 border border-teal-500/30 px-2 py-0.5 rounded shadow-[0_0_10px_rgba(20,184,166,0.15)]">
+                <span className="text-[10px] font-black text-teal-400 uppercase tracking-widest">
                     Avg: {avgPoints} pts
                 </span>
             </div>
