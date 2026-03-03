@@ -22,18 +22,18 @@ const REQUEST_HEADERS = {
     }
 };
 
-// 1. BULLETPROOF PROFILE SEARCH
+// 1. GOD MODE PROFILE SEARCH (Using page=all bypass)
 async function searchFighterProfile(fighterName) {
     console.log(`🔍 Searching for ${fighterName.trim()}...`);
     
     const cleanName = fighterName.trim().toLowerCase().replace(/-/g, ' ').replace(/[łŁ]/g, 'l');
     const nameParts = cleanName.split(/\s+/); 
     
-    const firstInitial = nameParts[0][0]; 
-    const lastWord1 = nameParts.length > 1 ? nameParts[1].substring(0, 4) : '';
-    const lastWord2 = nameParts.length > 2 ? nameParts[2].substring(0, 4) : '';
+    const dbFirst = nameParts[0];
+    const dbLast = nameParts[nameParts.length - 1]; // "neal", "van", "kim"
     
-    const url = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(nameParts[1] || nameParts[0])}`;
+    // 🎯 The Bypass: Search the Last Name, but force the server to load ALL pages at once
+    const url = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(dbLast)}&page=all`;
     
     const { data } = await axios.get(url, REQUEST_HEADERS);
     const $ = cheerio.load(data);
@@ -41,20 +41,47 @@ async function searchFighterProfile(fighterName) {
     let profileUrl = null;
     
     $('.b-statistics__table-row').each((i, el) => {
-        if (i === 0) return; 
-        const rowText = $(el).text().toLowerCase().replace(/-/g, ' ').replace(/[łŁ]/g, 'l');
+        if (i === 0) return; // Skip header
         
-        const hasFirst = rowText.includes(firstInitial);
-        const hasLast = (lastWord1 && rowText.includes(lastWord1)) || (lastWord2 && rowText.includes(lastWord2));
+        const fName = $(el).find('td').eq(0).text().toLowerCase().trim();
+        const lName = $(el).find('td').eq(1).text().toLowerCase().trim();
         
-        if (hasFirst && hasLast) {
-            profileUrl = $(el).find('.b-link_style_black').attr('href');
-            return false; 
+        // Strip spaces to ensure "Sanguk Kim" matches "Sang Uk Kim"
+        const cleanSiteLast = lName.replace(/[^a-z]/g, '');
+        const cleanDbLast = dbLast.replace(/[^a-z]/g, '');
+        
+        // 🎯 The 3-Letter Matcher: "geo" matches "geoff" and "geoffrey"
+        const firstMatch = fName.substring(0, 3) === dbFirst.substring(0, 3);
+        const lastMatch = cleanSiteLast.includes(cleanDbLast) || cleanDbLast.includes(cleanSiteLast);
+        
+        if (firstMatch && lastMatch) {
+            profileUrl = $(el).find('.b-link_style_black').first().attr('href');
+            return false; // Break loop
         }
     });
 
+    // BACKUP: If last name fails, try First Name with page=all
     if (!profileUrl) {
-        profileUrl = $('.b-link_style_black').first().attr('href');
+        const backupUrl = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(dbFirst)}&page=all`;
+        const { data: backupData } = await axios.get(backupUrl, REQUEST_HEADERS);
+        const _$ = cheerio.load(backupData);
+        
+        _$('.b-statistics__table-row').each((i, el) => {
+            if (i === 0) return;
+            const fName = _$(el).find('td').eq(0).text().toLowerCase().trim();
+            const lName = _$(el).find('td').eq(1).text().toLowerCase().trim();
+            
+            const cleanSiteLast = lName.replace(/[^a-z]/g, '');
+            const cleanDbLast = dbLast.replace(/[^a-z]/g, '');
+            
+            const firstMatch = fName.substring(0, 3) === dbFirst.substring(0, 3);
+            const lastMatch = cleanSiteLast.includes(cleanDbLast) || cleanDbLast.includes(cleanSiteLast);
+            
+            if (firstMatch && lastMatch) {
+                profileUrl = _$(el).find('.b-link_style_black').first().attr('href');
+                return false;
+            }
+        });
     }
 
     if (!profileUrl) {
@@ -78,7 +105,7 @@ async function getFighterFightUrls(profileUrl) {
     return fightUrls;
 }
 
-// 3. SCORE FIGHT WITH BULLETPROOF NAME MATCHING
+// 3. SCORE FIGHT (With identical relaxed matching)
 async function scoreHistoricalFight(fightUrl, targetFighterName) {
     try {
         const { data } = await axios.get(fightUrl, REQUEST_HEADERS);
@@ -91,15 +118,17 @@ async function scoreHistoricalFight(fightUrl, targetFighterName) {
         const cleanName = targetFighterName.trim().toLowerCase().replace(/-/g, ' ').replace(/[łŁ]/g, 'l');
         const nameParts = cleanName.split(/\s+/);
         
-        const targetFirstInitial = nameParts[0][0];
-        const lastWord1 = nameParts.length > 1 ? nameParts[1].substring(0, 4) : '';
-        const lastWord2 = nameParts.length > 2 ? nameParts[2].substring(0, 4) : '';
+        const dbFirst3 = nameParts[0].substring(0, 3);
+        const dbLast = nameParts[nameParts.length - 1].replace(/[^a-z]/g, '');
 
         const targetIndex = fighters.findIndex(f => {
-            const fLower = f.toLowerCase().replace(/-/g, ' ').replace(/[łŁ]/g, 'l');
-            const hasFirst = fLower.includes(targetFirstInitial);
-            const hasLast = (lastWord1 && fLower.includes(lastWord1)) || (lastWord2 && fLower.includes(lastWord2));
-            return hasFirst && hasLast;
+            const fLower = f.toLowerCase().replace(/-/g, ' ').replace(/[łŁ]/g, 'l').trim();
+            const fParts = fLower.split(/\s+/);
+            
+            const fFirst3 = fParts[0].substring(0, 3);
+            const fLast = fParts[fParts.length - 1].replace(/[^a-z]/g, '');
+
+            return (fFirst3 === dbFirst3) && (fLast.includes(dbLast) || dbLast.includes(fLast));
         });
 
         if (targetIndex === -1) {
@@ -275,7 +304,6 @@ async function runBatch() {
 
     const alreadyScraped = new Set();
     
-    // 🎯 THE FIX: Explicitly parse as float and check if > 0
     existingStats.forEach(stat => {
         const avg = parseFloat(stat.average_fantasy_points);
         if (!isNaN(avg) && avg > 0) {
