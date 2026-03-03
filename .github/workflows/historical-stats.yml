@@ -1,0 +1,35 @@
+name: UFC Historical Scraper
+
+on:
+  # This allows you to click a "Run workflow" button manually in GitHub
+  workflow_dispatch: 
+  
+  # This runs automatically every Tuesday at 8:00 AM UTC (4:00 AM EST)
+  # Perfect timing after the weekend fights have been fully updated on UFC Stats!
+  schedule:
+    - cron: '0 8 * * 2'
+
+jobs:
+  scrape-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        # This installs axios, cheerio, and supabase just for this runner
+        run: npm install axios cheerio @supabase/supabase-js dotenv
+
+      - name: Run Historical Stats Scraper
+        # This injects your secure keys from GitHub Secrets into the script
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }} 
+        run: node utils/historicalScraper.js
