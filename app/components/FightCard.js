@@ -8,7 +8,8 @@ export default function FightCard({
   existingPick, 
   pendingPick, 
   onPick, 
-  showOdds = true 
+  showOdds = true,
+  fighterStats // 🎯 NEW: Accept the historical stats mapping
 }) {
   
   // 1. SAFETY GUARD
@@ -17,12 +18,9 @@ export default function FightCard({
   }
 
   // 2. FIXED TIME PARSING
-  // We parse the Supabase string directly. The browser handles ISO strings better natively.
-  // We only add 'Z' as a fallback if the date is completely invalid without it.
   const rawTime = fight.start_time;
   let startTime = new Date(rawTime);
 
-  // Fallback: If parsing failed (Invalid Date), try appending Z (assuming it was a raw UTC string)
   if (isNaN(startTime.getTime())) {
       startTime = new Date(`${rawTime}Z`);
   }
@@ -36,8 +34,6 @@ export default function FightCard({
   // 3. FORMATTING HELPERS
   const formatFightTime = (date) => {
     if (!isValidDate) return 'TBD';
-    
-    // Shows distinct time for EVERY card (e.g., 6:00 PM, 6:30 PM) in the user's local time
     return new Intl.DateTimeFormat('en-US', {
       weekday: 'short', 
       hour: 'numeric', 
@@ -59,11 +55,15 @@ export default function FightCard({
       return <>{odds > 0 ? '+' : ''}{odds}</>;
   };
 
+  // 🎯 UPDATED: Now checks the stats dictionary and renders the badge
   const renderFighterName = (name, badgeLabel) => {
     const isBMF = badgeLabel === 'BMF';
     const badgeStyle = isBMF 
       ? "bg-zinc-800 text-white border border-zinc-500 shadow-[0_0_10px_rgba(255,255,255,0.2)]" 
       : "bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]"; 
+
+    // Check if we have historical data for this specific fighter
+    const avgPoints = fighterStats && fighterStats[name] !== undefined ? fighterStats[name] : null;
 
     return (
       <div className="flex flex-col items-center justify-center mb-2">
@@ -85,6 +85,15 @@ export default function FightCard({
             </span>
           )}
         </div>
+        
+        {/* 🎯 NEW: The Average Points Badge */}
+        {avgPoints !== null && (
+            <div className="mt-1.5 bg-yellow-500/10 border border-yellow-500/30 px-2 py-0.5 rounded shadow-[0_0_10px_rgba(234,179,8,0.1)]">
+                <span className="text-[10px] font-black text-yellow-500 uppercase tracking-widest">
+                    Avg: {avgPoints} pts
+                </span>
+            </div>
+        )}
       </div>
     );
   };

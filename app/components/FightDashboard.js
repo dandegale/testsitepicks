@@ -1,7 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import FightCard from './FightCard'; 
+
+// Initialize Supabase so we can fetch the stats
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 export default function FightDashboard({ 
     groupedFights, 
@@ -12,11 +16,33 @@ export default function FightDashboard({
     showOdds = true 
 }) {
 
+  // 🎯 NEW: State to hold our historical averages
+  const [fighterStats, setFighterStats] = useState({});
+
+  // 🎯 NEW: Fetch the stats once when the dashboard loads
+  useEffect(() => {
+    const fetchHistoricalStats = async () => {
+      const { data, error } = await supabase
+        .from('fighter_historical_stats')
+        .select('fighter_name, average_fantasy_points');
+
+      if (data && !error) {
+        // Convert array into a fast lookup object: { "Jon Jones": 85.5 }
+        const statsMap = {};
+        data.forEach(stat => {
+          statsMap[stat.fighter_name] = stat.average_fantasy_points;
+        });
+        setFighterStats(statsMap);
+      }
+    };
+
+    fetchHistoricalStats();
+  }, []);
+
   const handlePickClick = (fightId, fighterName, odds) => {
     if (onInteractionStart) onInteractionStart();
     
     let fightEventName = '';
-    // Safely look for the event name
     Object.values(groupedFights).forEach(group => {
         const found = group.find(f => f && f.id === fightId);
         if (found) fightEventName = found.event_name;
@@ -32,7 +58,6 @@ export default function FightDashboard({
     }
   };
 
-  // 1. Handle Empty State Gracefully
   if (!groupedFights || Object.keys(groupedFights).length === 0) {
       return (
         <div className="text-zinc-500 text-center py-20 font-bold uppercase tracking-widest text-xs">
@@ -63,8 +88,6 @@ export default function FightDashboard({
           <div className="grid grid-cols-1 gap-4">
             {groupFights.map((fight) => {
               
-              // --- CRITICAL FIX: SAFETY CHECK ---
-              // If the data is bad/undefined, skip this card to prevent the crash
               if (!fight) return null;
 
               const existingPick = userPicks.find(p => p.fight_id === fight.id);
@@ -78,6 +101,7 @@ export default function FightDashboard({
                   pendingPick={pendingForThisFight} 
                   onPick={handlePickClick}
                   showOdds={showOdds} 
+                  fighterStats={fighterStats} // 🎯 NEW: Pass the stats dictionary to the cards!
                 />
               );
             })}
