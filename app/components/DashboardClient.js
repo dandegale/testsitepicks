@@ -45,10 +45,6 @@ export default function DashboardClient({
   fights, groupedFights, publicLeagues, myPicks, userEmail, myLeagues, totalWins, totalLosses, nextEventName, mainEvent 
 }) {
   const router = useRouter();
-  
-  // 🛡️ THE GATEKEEPER STATE
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -70,6 +66,17 @@ export default function DashboardClient({
   const eventDate = mainEvent?.start_time || "2026-02-01T22:00:00"; 
   const safeEventName = nextEventName || "Upcoming Event";
 
+  // 🛡️ THE INVISIBLE GATEKEEPER
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.replace('/login');
+      }
+    };
+    checkAuth();
+  }, [router]);
+
   useEffect(() => { if (myLeagues && myLeagues.length > 0) setClientLeagues(myLeagues); }, [myLeagues]);
 
   const { cleanFights, cleanGroups } = useMemo(() => {
@@ -80,18 +87,11 @@ export default function DashboardClient({
       const validFights = fights.filter(f => {
           if (!f) return false; 
           if (!f.start_time) return false; 
-          
           if (f.winner) return true; 
-          const fTime = new Date(f.start_time).getTime();
-          return fTime > (now - TWELVE_HOURS);
+          return new Date(f.start_time).getTime() > (now - TWELVE_HOURS);
       });
 
-      validFights.sort((a, b) => {
-          const timeA = new Date(a.start_time).getTime();
-          const timeB = new Date(b.start_time).getTime();
-          if (timeA === timeB) return a.id > b.id ? 1 : -1;
-          return timeA - timeB;
-      });
+      validFights.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
       let finalGroupedFights = {};
       const tempGroups = [];
@@ -101,25 +101,16 @@ export default function DashboardClient({
 
       validFights.forEach((fight) => {
           const fightTime = new Date(fight.start_time).getTime();
-          if (fightTime - groupReferenceTime < THREE_DAYS_MS) {
-              currentBucket.push(fight);
-          } else {
-              tempGroups.push(currentBucket);
-              currentBucket = [fight];
-              groupReferenceTime = fightTime;
-          }
+          if (fightTime - groupReferenceTime < THREE_DAYS_MS) currentBucket.push(fight);
+          else { tempGroups.push(currentBucket); currentBucket = [fight]; groupReferenceTime = fightTime; }
       });
       if (currentBucket.length > 0) tempGroups.push(currentBucket);
 
       tempGroups.forEach(bucket => {
           if (bucket.length === 0) return;
-          
           const mainEventFight = bucket[bucket.length - 1];
-          const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { 
-              month: 'short', day: 'numeric', timeZone: 'America/New_York' 
-          });
+          const dateStr = new Date(mainEventFight.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
           const title = `${mainEventFight.fighter_1_name} vs ${mainEventFight.fighter_2_name} (${dateStr})`;
-          
           finalGroupedFights[title] = [...bucket].reverse();
       });
 
@@ -128,20 +119,8 @@ export default function DashboardClient({
 
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    
-    // 🛡️ ROUTE PROTECTION LOGIC
-    if (!user) {
-        router.replace('/login');
-        return; // Stop execution immediately
-    }
-
     if (user && user.email) {
-        const { data: picksData } = await supabase
-          .from('picks')
-          .select('*')
-          .eq('user_id', user.email)
-          .is('league_id', null); 
-
+        const { data: picksData } = await supabase.from('picks').select('*').eq('user_id', user.email).is('league_id', null); 
         if (picksData) {
             setClientPicks(picksData); 
             const { data: results } = await supabase.from('fights').select('id, winner').not('winner', 'is', null);
@@ -160,29 +139,25 @@ export default function DashboardClient({
             }
         }
 
-        const { data: memberships } = await supabase
-            .from('league_members')
-            .select('leagues ( id, name, image_url, invite_code )')
-            .eq('user_id', user.email);
-        
-        if (memberships) {
-            const validLeagues = memberships.map(m => m.leagues).filter(Boolean);
-            setClientLeagues(validLeagues);
-        }
+        const { data: memberships } = await supabase.from('league_members').select('leagues ( id, name, image_url, invite_code )').eq('user_id', user.email);
+        if (memberships) setClientLeagues(memberships.map(m => m.leagues).filter(Boolean));
 
         const { data: profile } = await supabase.from('profiles').select('show_odds').eq('id', user.id).single();
         if (profile && profile.show_odds === true) setShowOdds(true);
     }
-    
-    // Data successfully loaded, dismiss the loading screen
-    setIsCheckingAuth(false);
   };
 
   useEffect(() => { fetchUserData(); }, []);
 
   const handleInteraction = () => setIsFocusMode(true);
 
-  const handlePickSelect = (newPick) => {
+  const handlePickSelect = async (newPick) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+        router.push('/login');
+        return;
+    }
+
     setPendingPicks(currentPicks => {
         const existingIndex = currentPicks.findIndex(p => p.fightId === newPick.fightId);
         if (existingIndex >= 0) {
@@ -208,7 +183,7 @@ export default function DashboardClient({
     if (pendingPicks.length === 0) return;
     setIsSubmitting(true);
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user || !user.email) { router.replace('/login'); setIsSubmitting(false); return; }
+    if (authError || !user || !user.email) { router.push('/login'); setIsSubmitting(false); return; }
     const username = user.user_metadata?.username || user.email.split('@')[0];
     const picksToInsert = pendingPicks.map(p => ({
         user_id: user.email, username: username, fight_id: p.fightId, selected_fighter: p.fighterName, odds_at_pick: parseInt(p.odds, 10), league_id: p.leagueId || null
@@ -221,15 +196,13 @@ export default function DashboardClient({
   const handleJoinPublicLeague = async (leagueId, leagueName) => {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user || !user.email) {
-          router.replace('/login');
+          router.push('/login');
           return;
       }
 
       setJoiningLeagueId(leagueId);
 
-      const { error: joinError } = await supabase
-          .from('league_members')
-          .insert([{ league_id: leagueId, user_id: user.email }]);
+      const { error: joinError } = await supabase.from('league_members').insert([{ league_id: leagueId, user_id: user.email }]);
 
       if (joinError) {
           if (joinError.code === '23505') {
@@ -244,31 +217,29 @@ export default function DashboardClient({
       }
   };
 
-  // 🛡️ THE LOADING SCREEN
-  if (isCheckingAuth) {
-      return (
-          <div className="min-h-screen bg-black flex flex-col items-center justify-center font-sans">
-              <span className="w-12 h-12 rounded-full border-4 border-pink-600 border-t-transparent animate-spin mb-4"></span>
-              <div className="text-xs font-black uppercase tracking-widest text-pink-600">Verifying Access...</div>
-          </div>
-      );
+  const openCreateModalAuthGate = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) router.push('/login');
+      else { setShowMobileMenu(false); setShowCreateModal(true); }
+  }
+
+  const openShowdownAuthGate = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) router.push('/login');
+      else setShowShowdown(true);
   }
 
   return (
     <div className="flex min-h-screen bg-black text-white overflow-hidden font-sans selection:bg-pink-500 selection:text-white">
-      
       <OnboardingModal />
 
-      {/* DESKTOP RAIL */}
       <div className={`hidden md:block transition-all duration-500 ${isFocusMode ? '-ml-20' : 'ml-0'}`}>
         <LeagueRail initialLeagues={clientLeagues} />
       </div>
 
-      {/* 🚀 PREMIUM MOBILE DRAWER */}
       <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileMenu(false)}>
          <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-[#0b0e14] border-r border-gray-800/60 shadow-2xl transform transition-transform duration-300 flex flex-col ${showMobileMenu ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
             
-            {/* Drawer Header */}
             <div className="p-5 border-b border-gray-800/60 flex justify-between items-center bg-black/20">
                 <span className="text-xl font-black italic text-white tracking-tighter uppercase">
                     FIGHT<span className="text-pink-600">IQ</span>
@@ -277,8 +248,6 @@ export default function DashboardClient({
             </div>
             
             <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-6 custom-scrollbar">
-                
-                {/* Leagues Section */}
                 <div>
                     <p className="text-[10px] font-black text-pink-500 uppercase tracking-widest mb-4">Your Leagues</p>
                     <div className="flex flex-col gap-2">
@@ -286,70 +255,47 @@ export default function DashboardClient({
                             clientLeagues.map(league => (
                                 <Link key={league.id} href={`/league/${league.id}`} className="flex items-center gap-4 p-3 rounded-xl bg-[#12161f] hover:bg-gray-800 border border-gray-800/60 hover:border-pink-500/50 transition-all group">
                                     <div className="w-10 h-10 rounded-full bg-black border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-400 group-hover:text-pink-500 group-hover:border-pink-500 transition-all shrink-0 overflow-hidden relative">
-                                        {league.image_url ? (
-                                            <img src={league.image_url} alt={league.name} className="w-full h-full object-cover" />
-                                        ) : (
-                                            league.name ? league.name.substring(0,2).toUpperCase() : 'LG'
-                                        )}
+                                        {league.image_url ? <img src={league.image_url} alt={league.name} className="w-full h-full object-cover" /> : (league.name ? league.name.substring(0,2).toUpperCase() : 'LG')}
                                     </div>
-                                    <span className="font-bold text-sm text-gray-300 group-hover:text-white truncate">
-                                        {league.name}
-                                    </span>
+                                    <span className="font-bold text-sm text-gray-300 group-hover:text-white truncate">{league.name}</span>
                                 </Link>
                             ))
                         ) : (
                             <div className="p-4 border border-dashed border-gray-800 rounded-xl text-center bg-black/20">
                                 <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest mb-2">No Leagues Joined</p>
-                                <button 
-                                    onClick={() => { setShowMobileMenu(false); setShowCreateModal(true); }}
-                                    className="text-pink-500 text-xs font-black uppercase hover:underline"
-                                >
-                                    + Create One
-                                </button>
+                                <button onClick={openCreateModalAuthGate} className="text-pink-500 text-xs font-black uppercase hover:underline">+ Create One</button>
                             </div>
                         )}
-                        
-                        <button 
-                            onClick={() => { setShowMobileMenu(false); setShowCreateModal(true); }}
-                            className="w-full py-3 mt-2 border border-dashed border-gray-800 text-gray-500 rounded-xl hover:text-teal-400 hover:border-teal-500/50 hover:bg-teal-500/5 transition-all text-xs font-bold uppercase"
-                        >
+                        <button onClick={openCreateModalAuthGate} className="w-full py-3 mt-2 border border-dashed border-gray-800 text-gray-500 rounded-xl hover:text-teal-400 hover:border-teal-500/50 hover:bg-teal-500/5 transition-all text-xs font-bold uppercase">
                             + Create / Join
                         </button>
                     </div>
                 </div>
                 
-                {/* Menu Section */}
                 <div className="border-t border-gray-800/60 pt-6 mt-2 pb-6">
                     <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Main Menu</p>
-                    
                     <Link href="/how-it-works" className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-gray-800/60 transition-all mb-1 group">
                         <svg className="w-5 h-5 text-gray-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
                         <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">How It Works</span>
                     </Link>
-                    
                     <Link href="/leaderboard" className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-gray-800/60 transition-all mb-1 group">
                         <svg className="w-5 h-5 text-gray-500 group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v1a5 5 0 01-5 5h-1v2h4v2H5v-2h4v-2H8a5 5 0 01-5-5v-1a2 2 0 012-2m14 0V5a2 2 0 00-2-2H5a2 2 0 00-2 2v6" /></svg>
                         <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">Global Leaderboard</span>
                     </Link>
-                    
                     <Link href="/profile" className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-gray-800/60 transition-all mb-1 group">
                         <svg className="w-5 h-5 text-gray-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                         <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">My Profile</span>
                     </Link>
-                    
                     <Link href="/store" className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-pink-500/30 transition-all group">
                         <svg className="w-5 h-5 text-gray-500 group-hover:text-pink-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                         <span className="text-sm font-bold text-gray-300 group-hover:text-pink-500 transition-colors">Item Store</span>
                     </Link>
                 </div>
-
             </div>
          </div>
       </div>
 
       <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24 md:pb-0"> 
-        
-        {/* HEADER */}
         <header className={`sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800 transition-all duration-500 ${isFocusMode ? '-translate-y-full' : 'translate-y-0'}`}>
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
                 
@@ -370,7 +316,7 @@ export default function DashboardClient({
 
                 <div className="flex items-center gap-3 md:gap-6">
                     <button 
-                        onClick={() => setShowShowdown(true)}
+                        onClick={openShowdownAuthGate}
                         className="flex bg-gradient-to-r from-pink-600 to-teal-600 hover:from-pink-500 hover:to-teal-500 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-white shadow-[0_0_15px_rgba(219,39,119,0.2)] hover:shadow-[0_0_20px_rgba(20,184,166,0.4)] transition-all items-center gap-2 active:scale-95"
                     >
                         <span>⚔️</span><span className="hidden sm:inline">1v1 Showdown</span><span className="sm:hidden">1v1</span>
@@ -433,7 +379,7 @@ export default function DashboardClient({
                                 Public Leagues
                             </h3>
                         </div>
-                        <button onClick={() => setShowCreateModal(true)} className="text-[10px] font-black text-pink-500 uppercase tracking-widest bg-pink-500/10 px-2 py-1 rounded border border-pink-500/20">
+                        <button onClick={openCreateModalAuthGate} className="text-[10px] font-black text-pink-500 uppercase tracking-widest bg-pink-500/10 px-2 py-1 rounded border border-pink-500/20">
                             + Create
                         </button>
                     </div>
@@ -515,7 +461,7 @@ export default function DashboardClient({
                                         </h3>
                                         <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Join the community</p>
                                     </div>
-                                    <button onClick={() => setShowCreateModal(true)} className="bg-gray-900 hover:bg-gray-800 border border-gray-800 text-pink-500 hover:text-pink-400 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-colors">
+                                    <button onClick={openCreateModalAuthGate} className="bg-gray-900 hover:bg-gray-800 border border-gray-800 text-pink-500 hover:text-pink-400 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-colors">
                                         + Create
                                     </button>
                                 </div>
