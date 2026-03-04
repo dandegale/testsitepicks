@@ -297,6 +297,11 @@ export default function DashboardClient({
                 
                 <div className="border-t border-gray-800 pt-6">
                     <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Menu</p>
+                    {/* 🚀 ADDED TO MOBILE MENU HERE */}
+                    <Link href="/how-it-works" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all mb-2 group">
+                        <span className="text-xl group-hover:scale-110 transition-transform">📖</span>
+                        <span className="text-sm font-bold text-white">How It Works</span>
+                    </Link>
                     <Link href="/leaderboard" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all mb-2">
                         <span className="text-xl">🏆</span>
                         <span className="text-sm font-bold text-gray-300">Global Leaderboard</span>
@@ -305,7 +310,7 @@ export default function DashboardClient({
                         <span className="text-xl">👤</span>
                         <span className="text-sm font-bold text-gray-300">My Profile</span>
                     </Link>
-                     <Link href="/store" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-pink-500/30 hover:bg-gray-800 transition-all group">
+                     <Link href="/store" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-pink-500/30 hover:bg-gray-800 transition-all group mb-2">
                         <span className="text-xl group-hover:scale-110 transition-transform">💎</span>
                         <span className="text-sm font-bold text-pink-500">Item Store</span>
                     </Link>
@@ -324,6 +329,8 @@ export default function DashboardClient({
                     </Link>
                     <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
                     <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
+                        {/* 🚀 ADDED TO DESKTOP NAV HERE (explicitly text-white) */}
+                        <Link href="/how-it-works" className="text-white hover:text-pink-400 transition-colors">How It Works</Link>
                         <Link href="/my-picks" className="hover:text-white transition-colors">My Picks</Link>
                         <span className="text-gray-300 cursor-default">Global Feed</span>
                         <Link href="/leaderboard" className="hover:text-white transition-colors">Leaderboards</Link>

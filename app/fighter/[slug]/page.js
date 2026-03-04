@@ -130,6 +130,25 @@ export default function FighterProfilePage() {
                      </div>
                 </div>
 
+                {/* 🎯 NEW: ACCURACY & DEFENSE */}
+                <div className="mt-8 pt-6 border-t border-gray-800">
+                     <h4 className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-4">Accuracy & Defense</h4>
+                     <div className="space-y-4">
+                        <div>
+                            <div className="flex justify-between text-xs font-bold uppercase mb-1"><span className="text-white">Striking Accuracy</span><span className="text-pink-500">{fighterBio.striking_accuracy || 0}%</span></div>
+                            <div className="w-full bg-gray-900 rounded-full h-1.5"><div className="bg-pink-600 h-1.5 rounded-full" style={{ width: `${fighterBio.striking_accuracy || 0}%` }}></div></div>
+                        </div>
+                        <div>
+                            <div className="flex justify-between text-xs font-bold uppercase mb-1"><span className="text-white">Takedown Accuracy</span><span className="text-teal-400">{fighterBio.takedown_accuracy || 0}%</span></div>
+                            <div className="w-full bg-gray-900 rounded-full h-1.5"><div className="bg-teal-500 h-1.5 rounded-full" style={{ width: `${fighterBio.takedown_accuracy || 0}%` }}></div></div>
+                        </div>
+                        <div>
+                            <div className="flex justify-between text-xs font-bold uppercase mb-1"><span className="text-white">Takedown Defense</span><span className="text-blue-400">{fighterBio.takedown_defense || 0}%</span></div>
+                            <div className="w-full bg-gray-900 rounded-full h-1.5"><div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${fighterBio.takedown_defense || 0}%` }}></div></div>
+                        </div>
+                     </div>
+                </div>
+
                 {/* 3. RESTORED WIN BREAKDOWN */}
                 {fighterBio.winStats && fighterBio.winStats.totalWins > 0 && (
                     <div className="mt-8 pt-6 border-t border-gray-800">

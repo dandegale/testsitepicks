@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useState } from 'react';
 
 export default function HowItWorks() {
@@ -11,29 +10,27 @@ export default function HowItWorks() {
   const [subAttempts, setSubAttempts] = useState(0);
   const [controlMins, setControlMins] = useState(3);
   const [controlSecs, setControlSecs] = useState(30);
-  
+
   // Outcome Inputs
   const [vegasOdds, setVegasOdds] = useState(-150);
-  const [winMethod, setWinMethod] = useState('Decision'); // None, Decision, KO, Submission
-  const [finishRound, setFinishRound] = useState('3'); // 1, 2, 3, 4, 5
-  const [specialty, setSpecialty] = useState('None'); // None, Under 30s, Last 10s
+  const [winMethod, setWinMethod] = useState('Decision');
+  const [finishRound, setFinishRound] = useState('3');
+  const [specialty, setSpecialty] = useState('None');
 
   // --- EXACT SCRAPER MATH ---
   const controlTimeTotalMins = (controlMins || 0) + ((controlSecs || 0) / 60);
   const baseStriking = ((sigStrikes || 0) * 0.25) + ((knockdowns || 0) * 5);
   const baseGrappling = ((takedowns || 0) * 2.5) + ((subAttempts || 0) * 3) + (controlTimeTotalMins * 1.8);
   const totalBasePoints = baseStriking + baseGrappling;
-  
-  // 1. Calculate Multiplier from Raw Vegas Odds
+
   let oddsMultiplier = 1;
   const numOdds = parseInt(vegasOdds) || 0;
   if (numOdds > 0) {
-      oddsMultiplier = numOdds / 100; // Underdog: +150 = 1.5x
+      oddsMultiplier = numOdds / 100;
   } else if (numOdds < 0) {
-      oddsMultiplier = 100 / Math.abs(numOdds); // Favorite: -200 = 0.5x
+      oddsMultiplier = 100 / Math.abs(numOdds);
   }
 
-  // 2. Determine Base Finish Bonus
   let baseBonus = 0;
   if (winMethod === 'Decision') {
       baseBonus = 10;
@@ -51,10 +48,7 @@ export default function HowItWorks() {
       }
   }
 
-  // 3. Apply Vegas Multiplier to the Finish Bonus
   let finalBonus = parseFloat((baseBonus * oddsMultiplier).toFixed(2));
-
-  // 4. The "Favorite Flat Bonus" Rule (From your scraper line 232)
   let favoriteBonusApplied = false;
   if (numOdds < 0 && (winMethod === 'KO' || winMethod === 'Submission')) {
       finalBonus += 10;
@@ -64,248 +58,150 @@ export default function HowItWorks() {
   const finalScore = totalBasePoints + finalBonus;
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans selection:bg-pink-500 pb-20">
-      
+    <div className="w-full min-h-screen text-white font-sans selection:bg-pink-500 pb-20 overflow-x-hidden">
       {/* HEADER */}
-      <div className="pt-20 pb-12 px-6 text-center border-b border-gray-900 bg-gradient-to-b from-gray-900/50 to-black">
-        <h1 className="text-5xl md:text-7xl font-black italic uppercase tracking-tighter mb-4 text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-teal-400">
+      <div className="pt-12 pb-8 px-4 text-center border-b border-gray-800/50 bg-gradient-to-b from-gray-900/20 to-transparent">
+        <h1 className="text-4xl md:text-6xl font-black italic uppercase tracking-tighter mb-2 text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-teal-400">
           The Scoring System
         </h1>
-        <p className="text-gray-400 font-bold tracking-widest uppercase text-sm md:text-base max-w-2xl mx-auto">
+        <p className="text-gray-400 font-bold tracking-widest uppercase text-[10px] md:text-xs max-w-2xl mx-auto px-4">
           How your fighters earn points in the octagon.
         </p>
       </div>
 
-      <div className="max-w-6xl mx-auto p-6 md:p-10 mt-8">
-        
-        {/* =========================================
-            PART 1: THE STATIC CHEAT SHEET
-        ========================================= */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-20">
-            
-            {/* STRIKING COLUMN */}
-            <div className="bg-gray-950 border border-gray-800 rounded-2xl p-8 shadow-2xl relative overflow-hidden group hover:border-pink-500/50 transition-colors">
+      <div className="max-w-5xl mx-auto p-4 md:p-8 mt-2">
+
+        {/* STATIC CHEAT SHEET */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+            {/* STRIKING */}
+            <div className="bg-[#0b0e14] border border-gray-800/60 rounded-xl p-6 shadow-lg relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-1 bg-pink-600"></div>
-                <h2 className="text-2xl font-black italic uppercase text-white mb-6 tracking-tight">Striking Metrics</h2>
-                
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center border-b border-gray-800 pb-4">
-                        <span className="font-bold text-gray-300 uppercase tracking-wider text-sm">Significant Strike</span>
-                        <span className="text-pink-500 font-black text-xl">+ 0.25</span>
+                <h2 className="text-lg md:text-xl font-black italic uppercase text-white mb-5 tracking-tight">Striking Metrics</h2>
+                <div className="space-y-3">
+                    <div className="flex justify-between items-center border-b border-gray-800/50 pb-3">
+                        <span className="font-bold text-gray-400 uppercase tracking-wider text-[10px] md:text-xs">Significant Strike</span>
+                        <span className="text-pink-500 font-black text-base md:text-lg">+ 0.25</span>
                     </div>
-                    <div className="flex justify-between items-center border-b border-gray-800 pb-4">
-                        <span className="font-bold text-gray-300 uppercase tracking-wider text-sm">Knockdown</span>
-                        <span className="text-pink-500 font-black text-xl">+ 5.0</span>
+                    <div className="flex justify-between items-center border-b border-gray-800/50 pb-3">
+                        <span className="font-bold text-gray-400 uppercase tracking-wider text-[10px] md:text-xs">Knockdown</span>
+                        <span className="text-pink-500 font-black text-base md:text-lg">+ 5.0</span>
                     </div>
                 </div>
             </div>
 
-            {/* GRAPPLING COLUMN */}
-            <div className="bg-gray-950 border border-gray-800 rounded-2xl p-8 shadow-2xl relative overflow-hidden group hover:border-teal-500/50 transition-colors">
+            {/* GRAPPLING */}
+            <div className="bg-[#0b0e14] border border-gray-800/60 rounded-xl p-6 shadow-lg relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-1 bg-teal-500"></div>
-                <h2 className="text-2xl font-black italic uppercase text-white mb-6 tracking-tight">Grappling Metrics</h2>
-                
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center border-b border-gray-800 pb-4">
-                        <span className="font-bold text-gray-300 uppercase tracking-wider text-sm">Takedown Landed</span>
-                        <span className="text-teal-400 font-black text-xl">+ 2.5</span>
+                <h2 className="text-lg md:text-xl font-black italic uppercase text-white mb-5 tracking-tight">Grappling Metrics</h2>
+                <div className="space-y-3">
+                    <div className="flex justify-between items-center border-b border-gray-800/50 pb-3">
+                        <span className="font-bold text-gray-400 uppercase tracking-wider text-[10px] md:text-xs">Takedown Landed</span>
+                        <span className="text-teal-400 font-black text-base md:text-lg">+ 2.5</span>
                     </div>
-                    <div className="flex justify-between items-center border-b border-gray-800 pb-4">
-                        <span className="font-bold text-gray-300 uppercase tracking-wider text-sm">Submission Attempt</span>
-                        <span className="text-teal-400 font-black text-xl">+ 3.0</span>
+                    <div className="flex justify-between items-center border-b border-gray-800/50 pb-3">
+                        <span className="font-bold text-gray-400 uppercase tracking-wider text-[10px] md:text-xs">Submission Attempt</span>
+                        <span className="text-teal-400 font-black text-base md:text-lg">+ 3.0</span>
                     </div>
-                    <div className="flex justify-between items-center border-b border-gray-800 pb-4">
-                        <span className="font-bold text-gray-300 uppercase tracking-wider text-sm">Control Time (Per Min)</span>
-                        <span className="text-teal-400 font-black text-xl">+ 1.8</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* FINISH BONUSES */}
-            <div className="md:col-span-2 bg-gray-900/50 border border-gray-800 rounded-2xl p-8 shadow-2xl relative overflow-hidden">
-                <h2 className="text-2xl font-black italic uppercase text-white mb-6 tracking-tight text-center">Outcome Bonuses</h2>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
-                    <div className="bg-black/50 p-4 rounded-xl border border-gray-800">
-                        <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px] mb-2">Decision Win</p>
-                        <p className="text-2xl font-black italic text-white">10x <span className="text-sm text-gray-500 not-italic">Odds</span></p>
-                    </div>
-                    <div className="bg-black/50 p-4 rounded-xl border border-gray-800">
-                        <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px] mb-2">Round 1 Finish</p>
-                        <p className="text-2xl font-black italic text-white">+ 35 <span className="text-sm text-gray-500 not-italic">pts</span></p>
-                    </div>
-                    <div className="bg-black/50 p-4 rounded-xl border border-gray-800">
-                        <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px] mb-2">Round 2/3 Finish</p>
-                        <p className="text-2xl font-black italic text-white">+ 25 / 20 <span className="text-sm text-gray-500 not-italic">pts</span></p>
-                    </div>
-                    <div className="bg-black/50 p-4 rounded-xl border border-gray-800">
-                        <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px] mb-2">Round 4/5 Finish</p>
-                        <p className="text-2xl font-black italic text-white">+ 25 / 40 <span className="text-sm text-gray-500 not-italic">pts</span></p>
+                    <div className="flex justify-between items-center border-b border-gray-800/50 pb-3">
+                        <span className="font-bold text-gray-400 uppercase tracking-wider text-[10px] md:text-xs">Control Time (Per Min)</span>
+                        <span className="text-teal-400 font-black text-base md:text-lg">+ 1.8</span>
                     </div>
                 </div>
             </div>
 
-            {/* VEGAS ODDS MULTIPLIER EXPLANATION */}
-            <div className="md:col-span-2 bg-gradient-to-r from-gray-950 via-gray-900 to-gray-950 border border-gray-800 rounded-2xl p-8 shadow-2xl relative overflow-hidden">
-                <h2 className="text-2xl font-black italic uppercase text-white mb-4 tracking-tight text-center">The Vegas Odds Multiplier</h2>
-                <p className="text-gray-400 text-center max-w-3xl mx-auto font-bold tracking-wide leading-relaxed">
-                    Every fighter&apos;s baseline score is dynamically scaled by a Vegas Odds Multiplier. <span className="text-teal-400">Underdogs</span> receive a higher multiplier that significantly boosts their total, while <span className="text-pink-500">Favorites</span> have a lower scaling factor to balance out their safety. If a fighter wins by <span className="text-white">Decision</span>, their finish bonus is exactly <span className="text-white">10 x their Vegas Multiplier</span>!
+            {/* ODDS SCALING */}
+            <div className="md:col-span-2 bg-gradient-to-r from-[#0b0e14] via-gray-900/40 to-[#0b0e14] border border-gray-800/60 rounded-xl p-6 shadow-lg relative overflow-hidden">
+                <h2 className="text-lg md:text-xl font-black italic uppercase text-white mb-3 tracking-tight text-center">Vegas Odds Scaling</h2>
+                <p className="text-gray-400 text-center max-w-2xl mx-auto font-medium tracking-wide leading-relaxed text-[10px] md:text-xs">
+                    Baseline scores are scaled by a Vegas Odds Multiplier. <span className="text-teal-400 font-bold">Underdogs</span> receive a boost, while <span className="text-pink-500 font-bold">Favorites</span> are scaled down for safety. Decision wins award <span className="text-white font-bold">10 x the Vegas Multiplier</span>.
                 </p>
             </div>
         </div>
 
-        {/* =========================================
-            PART 2: THE INTERACTIVE CALCULATOR
-        ========================================= */}
-        <div className="pt-10 border-t border-gray-800/50">
-            <div className="text-center mb-10">
-                <h2 className="text-4xl font-black italic uppercase tracking-tighter text-white mb-2">Fantasy Simulator</h2>
-                <p className="text-gray-500 uppercase font-bold tracking-widest text-xs">Input stats below to see the exact match engine calculations.</p>
+        {/* SIMULATOR */}
+        <div className="pt-8 border-t border-gray-800/50">
+            <div className="text-center mb-8">
+                <h2 className="text-2xl md:text-3xl font-black italic uppercase tracking-tighter text-white">Fantasy Simulator</h2>
+                <p className="text-gray-500 uppercase font-bold tracking-widest text-[9px] md:text-[10px] mt-1">Test the engine math below.</p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-                
-                {/* LEFT COLUMN: THE INPUT TABLE */}
-                <div className="lg:col-span-8 space-y-8">
-                    
-                    {/* Vegas Odds Section */}
-                    <div className="bg-gray-950 border border-gray-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
-                        <div>
-                            <h3 className="text-xl font-black italic uppercase text-white tracking-tight">Vegas Odds</h3>
-                            <p className="text-xs text-gray-500 font-bold uppercase tracking-widest">Sets your finish bonus multiplier.</p>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* INPUTS */}
+                <div className="lg:col-span-7 space-y-4">
+                    <div className="bg-[#0b0e14] border border-gray-800/60 rounded-xl p-4 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="text-center sm:text-left">
+                            <h3 className="text-base md:text-lg font-black italic uppercase text-white tracking-tight">Vegas Odds</h3>
                         </div>
-                        <div className="flex items-center gap-3">
-                            <span className="text-gray-400 font-black text-xl">Odds:</span>
-                            <input 
-                                type="number" 
-                                value={vegasOdds} 
-                                onChange={(e) => setVegasOdds(e.target.value)} 
-                                className="bg-gray-900 border-2 border-gray-700 focus:border-pink-500 text-white font-mono text-xl text-center rounded-lg w-32 py-2 outline-none transition-colors"
-                            />
+                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                            <span className="text-gray-400 font-black text-sm md:text-base">Odds:</span>
+                            <input type="number" value={vegasOdds} onChange={(e) => setVegasOdds(e.target.value)} className="bg-black border border-gray-700 focus:border-pink-500 text-white font-mono text-sm text-center rounded w-full sm:w-24 py-1.5 outline-none transition-colors" />
                         </div>
                     </div>
 
-                    {/* Base Stats Table */}
-                    <div className="bg-gray-950 border border-gray-800 rounded-2xl overflow-hidden shadow-xl">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-gray-900 border-b border-gray-800 text-gray-500 text-[10px] font-bold uppercase tracking-widest">
-                                    <th className="p-4 w-1/2">Action</th>
-                                    <th className="p-4 text-center">Value</th>
-                                    <th className="p-4 text-right">Input</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-800">
-                                <tr className="hover:bg-gray-900/30 transition-colors">
-                                    <td className="p-4 text-sm font-bold text-gray-300">Significant Strikes</td>
-                                    <td className="p-4 text-center font-mono text-pink-500 text-sm">0.25 pts</td>
-                                    <td className="p-4 text-right">
-                                        <input type="number" value={sigStrikes} onChange={(e) => setSigStrikes(Number(e.target.value))} className="bg-black border border-gray-700 text-white font-mono rounded w-20 p-2 text-right outline-none focus:border-pink-500" />
-                                    </td>
-                                </tr>
-                                <tr className="hover:bg-gray-900/30 transition-colors">
-                                    <td className="p-4 text-sm font-bold text-gray-300">Knockdowns</td>
-                                    <td className="p-4 text-center font-mono text-pink-500 text-sm">5.0 pts</td>
-                                    <td className="p-4 text-right">
-                                        <input type="number" value={knockdowns} onChange={(e) => setKnockdowns(Number(e.target.value))} className="bg-black border border-gray-700 text-white font-mono rounded w-20 p-2 text-right outline-none focus:border-pink-500" />
-                                    </td>
-                                </tr>
-                                <tr className="hover:bg-gray-900/30 transition-colors">
-                                    <td className="p-4 text-sm font-bold text-gray-300">Takedowns</td>
-                                    <td className="p-4 text-center font-mono text-teal-400 text-sm">2.5 pts</td>
-                                    <td className="p-4 text-right">
-                                        <input type="number" value={takedowns} onChange={(e) => setTakedowns(Number(e.target.value))} className="bg-black border border-gray-700 text-white font-mono rounded w-20 p-2 text-right outline-none focus:border-teal-500" />
-                                    </td>
-                                </tr>
-                                <tr className="hover:bg-gray-900/30 transition-colors">
-                                    <td className="p-4 text-sm font-bold text-gray-300">Sub Attempts</td>
-                                    <td className="p-4 text-center font-mono text-teal-400 text-sm">3.0 pts</td>
-                                    <td className="p-4 text-right">
-                                        <input type="number" value={subAttempts} onChange={(e) => setSubAttempts(Number(e.target.value))} className="bg-black border border-gray-700 text-white font-mono rounded w-20 p-2 text-right outline-none focus:border-teal-500" />
-                                    </td>
-                                </tr>
-                                <tr className="hover:bg-gray-900/30 transition-colors">
-                                    <td className="p-4 text-sm font-bold text-gray-300">Control Time</td>
-                                    <td className="p-4 text-center font-mono text-teal-400 text-sm">1.8 pts / min</td>
-                                    <td className="p-4 flex justify-end gap-2">
-                                        <input type="number" placeholder="Min" value={controlMins} onChange={(e) => setControlMins(Number(e.target.value))} className="bg-black border border-gray-700 text-white font-mono rounded w-16 p-2 text-right outline-none focus:border-teal-500" />
-                                        <span className="text-gray-500 self-center">:</span>
-                                        <input type="number" placeholder="Sec" value={controlSecs} onChange={(e) => setControlSecs(Number(e.target.value))} className="bg-black border border-gray-700 text-white font-mono rounded w-16 p-2 text-right outline-none focus:border-teal-500" />
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
+                    <div className="bg-[#0b0e14] border border-gray-800/60 rounded-xl overflow-hidden shadow-lg p-2 md:p-4">
+                        <div className="divide-y divide-gray-800/40">
+                            {[
+                              { label: 'Sig. Strikes', val: sigStrikes, set: setSigStrikes, color: 'text-pink-500', pts: '0.25' },
+                              { label: 'Knockdowns', val: knockdowns, set: setKnockdowns, color: 'text-pink-500', pts: '5.0' },
+                              { label: 'Takedowns', val: takedowns, set: setTakedowns, color: 'text-teal-400', pts: '2.5' },
+                              { label: 'Sub Attempts', val: subAttempts, set: setSubAttempts, color: 'text-teal-400', pts: '3.0' }
+                            ].map((item, idx) => (
+                              <div key={idx} className="flex items-center justify-between p-3">
+                                <div className="flex flex-col"><span className="text-xs font-bold text-gray-300 uppercase tracking-wide">{item.label}</span><span className={`text-[9px] font-mono ${item.color}`}>{item.pts} pts</span></div>
+                                <input type="number" value={item.val} onChange={(e) => item.set(Number(e.target.value))} className="bg-black border border-gray-700 text-white font-mono rounded w-16 p-1.5 text-right outline-none focus:border-pink-500 text-xs" />
+                              </div>
+                            ))}
+                            <div className="flex items-center justify-between p-3">
+                                <div className="flex flex-col"><span className="text-xs font-bold text-gray-300 uppercase tracking-wide">Control Time</span><span className="text-[9px] font-mono text-teal-400">1.8 pts/m</span></div>
+                                <div className="flex items-center gap-1">
+                                    <input type="number" placeholder="M" value={controlMins} onChange={(e) => setControlMins(Number(e.target.value))} className="bg-black border border-gray-700 text-white font-mono rounded w-12 p-1.5 text-center outline-none focus:border-teal-500 text-xs" />
+                                    <span className="text-gray-500 text-xs">:</span>
+                                    <input type="number" placeholder="S" value={controlSecs} onChange={(e) => setControlSecs(Number(e.target.value))} className="bg-black border border-gray-700 text-white font-mono rounded w-12 p-1.5 text-center outline-none focus:border-teal-500 text-xs" />
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    {/* Outcome Controls */}
-                    <div className="bg-gray-950 border border-gray-800 rounded-2xl p-6 shadow-xl">
-                        <h3 className="text-sm font-black uppercase tracking-widest text-gray-400 border-b border-gray-800 pb-4 mb-6">Match Outcome</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <select className="bg-gray-900 border border-gray-700 text-white text-sm rounded-lg focus:ring-pink-500 p-3 outline-none font-bold uppercase tracking-wider" value={winMethod} onChange={(e) => setWinMethod(e.target.value)}>
-                                <option value="None">No Finish (Loss)</option>
+                    <div className="bg-[#0b0e14] border border-gray-800/60 rounded-xl p-4 shadow-lg">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <select className="bg-black border border-gray-700 text-white text-[10px] rounded p-2 outline-none font-bold uppercase" value={winMethod} onChange={(e) => setWinMethod(e.target.value)}>
+                                <option value="None">Loss / Draw</option>
                                 <option value="Decision">Decision Win</option>
                                 <option value="KO">KO / TKO</option>
                                 <option value="Submission">Submission</option>
                             </select>
-                            <select className="bg-gray-900 border border-gray-700 text-white text-sm rounded-lg focus:ring-pink-500 p-3 outline-none font-bold uppercase tracking-wider disabled:opacity-50" value={finishRound} onChange={(e) => setFinishRound(e.target.value)} disabled={winMethod === 'Decision' || winMethod === 'None'}>
-                                <option value="1">Round 1</option>
-                                <option value="2">Round 2</option>
-                                <option value="3">Round 3</option>
-                                <option value="4">Round 4</option>
-                                <option value="5">Round 5</option>
+                            <select className="bg-black border border-gray-700 text-white text-[10px] rounded p-2 outline-none font-bold uppercase disabled:opacity-30" value={finishRound} onChange={(e) => setFinishRound(e.target.value)} disabled={winMethod === 'Decision' || winMethod === 'None'}>
+                                <option value="1">Round 1</option><option value="2">Round 2</option><option value="3">Round 3</option><option value="4">Round 4</option><option value="5">Round 5</option>
                             </select>
-                            <select className="bg-gray-900 border border-gray-700 text-white text-sm rounded-lg focus:ring-pink-500 p-3 outline-none font-bold uppercase tracking-wider disabled:opacity-50" value={specialty} onChange={(e) => setSpecialty(e.target.value)} disabled={winMethod === 'Decision' || winMethod === 'None'}>
-                                <option value="None">Normal Time</option>
-                                <option value="Under 30s">Under 30 Secs (R1)</option>
-                                <option value="Last 10s">Last 10 Secs (R5)</option>
+                            <select className="bg-black border border-gray-700 text-white text-[10px] rounded p-2 outline-none font-bold uppercase disabled:opacity-30" value={specialty} onChange={(e) => setSpecialty(e.target.value)} disabled={winMethod === 'Decision' || winMethod === 'None'}>
+                                <option value="None">Normal Time</option><option value="Under 30s">Under 30 Secs</option><option value="Last 10s">Last 10 Secs</option>
                             </select>
                         </div>
                     </div>
-
                 </div>
 
-                {/* RIGHT COLUMN: THE RECEIPT */}
-                <div className="lg:col-span-4">
-                    <div className="bg-black border border-gray-800 rounded-3xl p-6 md:p-8 shadow-[0_0_50px_rgba(236,72,153,0.05)] relative overflow-hidden sticky top-24">
-                        <div className="absolute top-0 right-0 w-48 h-48 bg-teal-500/10 blur-3xl rounded-full pointer-events-none"></div>
-                        <div className="absolute bottom-0 left-0 w-48 h-48 bg-pink-600/10 blur-3xl rounded-full pointer-events-none"></div>
-                        
-                        <h3 className="text-center text-xs font-black uppercase tracking-widest text-gray-500 border-b border-gray-800 pb-4 mb-6">Engine Calculation</h3>
-                        
-                        <div className="space-y-3 mb-6">
-                            <div className="flex justify-between text-sm"><span className="text-gray-400 font-bold uppercase">Striking Base</span><span className="font-mono text-pink-500">{baseStriking.toFixed(2)}</span></div>
-                            <div className="flex justify-between text-sm"><span className="text-gray-400 font-bold uppercase">Grappling Base</span><span className="font-mono text-teal-400">{baseGrappling.toFixed(2)}</span></div>
-                            <div className="flex justify-between text-sm border-t border-gray-800 pt-3"><span className="text-gray-300 font-bold uppercase">Total Base Pts</span><span className="font-mono text-white">{totalBasePoints.toFixed(2)}</span></div>
+                {/* RECEIPT */}
+                <div className="lg:col-span-5">
+                    <div className="bg-black border border-gray-800/60 rounded-xl p-5 shadow-2xl lg:sticky lg:top-8">
+                        <h3 className="text-center text-[10px] font-black uppercase tracking-widest text-gray-500 border-b border-gray-800/50 pb-3 mb-4">Live Receipt</h3>
+                        <div className="space-y-2 mb-4">
+                            <div className="flex justify-between text-[10px] md:text-xs"><span className="text-gray-400 font-bold uppercase">Base Striking</span><span className="font-mono text-pink-500">{baseStriking.toFixed(2)}</span></div>
+                            <div className="flex justify-between text-[10px] md:text-xs"><span className="text-gray-400 font-bold uppercase">Base Grappling</span><span className="font-mono text-teal-400">{baseGrappling.toFixed(2)}</span></div>
+                            <div className="flex justify-between text-[10px] md:text-xs border-t border-gray-800/50 pt-2"><span className="text-gray-300 font-bold uppercase">Total Base</span><span className="font-mono text-white">{totalBasePoints.toFixed(2)}</span></div>
                         </div>
-
-                        <div className="space-y-3 mb-6 bg-gray-900/50 p-4 rounded-xl border border-gray-800">
-                            <div className="flex justify-between text-[10px]"><span className="text-gray-500 font-bold uppercase">Raw Bonus Rule</span><span className="font-mono text-gray-400">{baseBonus} pts</span></div>
-                            <div className="flex justify-between text-[10px]"><span className="text-gray-500 font-bold uppercase">Odds Multiplier</span><span className="font-mono text-yellow-500">x {oddsMultiplier.toFixed(2)}</span></div>
-                            {favoriteBonusApplied && (
-                                <div className="flex justify-between text-[10px]"><span className="text-pink-500 font-bold uppercase">Fav Finish Flat Bonus</span><span className="font-mono text-pink-500">+10.00</span></div>
-                            )}
-                            <div className="flex justify-between text-sm border-t border-gray-800 pt-3"><span className="text-gray-300 font-bold uppercase">Final Finish Bonus</span><span className="font-mono text-green-400">+{finalBonus.toFixed(2)}</span></div>
+                        <div className="space-y-2 mb-4 bg-gray-900/30 p-3 rounded-lg border border-gray-800/50">
+                            <div className="flex justify-between text-[9px] uppercase font-bold"><span className="text-gray-500">Odds Multiplier</span><span className="font-mono text-yellow-500">x {oddsMultiplier.toFixed(2)}</span></div>
+                            <div className="flex justify-between text-[10px] md:text-xs border-t border-gray-800/50 pt-2"><span className="text-gray-300 font-bold uppercase">Finish Bonus</span><span className="font-mono text-green-400">+{finalBonus.toFixed(2)}</span></div>
                         </div>
-
-                        <div className="mt-6 border-t-2 border-dashed border-gray-700 pt-6 text-center">
-                            <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px] mb-1">Total Fantasy Score</p>
-                            <p className="text-5xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-teal-400 drop-shadow-md">
+                        <div className="mt-4 border-t-2 border-dashed border-gray-800/80 pt-4 text-center">
+                            <p className="text-gray-500 font-bold uppercase tracking-widest text-[9px] mb-1">Total Score</p>
+                            <p className="text-4xl md:text-5xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-teal-400">
                                 {finalScore.toFixed(2)}
                             </p>
                         </div>
-
-                        <div className="mt-6 text-[9px] text-gray-600 uppercase tracking-widest font-bold text-center">
-                            *Equalizer Rule: The winner is guaranteed to never score fewer points than the loser.
-                        </div>
                     </div>
                 </div>
-
             </div>
-        </div>
-
-        <div className="mt-12 text-center relative z-20">
-            <Link href="/" className="inline-block px-8 py-4 bg-white text-black font-black uppercase tracking-widest text-sm hover:bg-pink-500 hover:text-white transition-all rounded">
-                Back to Dashboard
-            </Link>
         </div>
       </div>
     </div>

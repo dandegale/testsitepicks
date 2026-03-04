@@ -21,18 +21,6 @@ const REQUEST_HEADERS = {
     }
 };
 
-// 🎯 THE NAME DICTIONARY
-// If the UFC spells a name differently than your database, add it here!
-const NAME_DICTIONARY = {
-    "Javier Reyes Rugeles": "Javier Reyes",
-    "Joseph Pyfer": "Joe Pyfer",
-    "Long Xiao": "Xiao Long",
-    "Sergey Spivak": "Serghei Spivac",
-    "Sulangrangbo": "Sulangrangbo", 
-    "Sumudaerji Sumudaerji": "Su Mudaerji",
-    "Yi Zha": "Yizha"
-};
-
 // 1. GOD MODE PROFILE SEARCH 
 async function searchFighterProfile(fighterName) {
     console.log(`🔍 Searching for ${fighterName.trim()}...`);
@@ -98,7 +86,7 @@ async function searchFighterProfile(fighterName) {
     return profileUrl;
 }
 
-// 🎯 OFFICIAL HEADSHOT SCRAPER
+// 🎯 NEW: Grab the official headshot from the main UFC website
 async function getFighterImage(fighterName) {
     try {
         const formattedName = fighterName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[łŁ]/g, 'l');
@@ -119,27 +107,41 @@ async function getFighterImage(fighterName) {
     }
 }
 
-// 2. GET BIO STATS (Fight URL fetching removed for speed)
+// 2. GET FIGHT URLS AND EXTRACT PROFILE STATS
 async function getFighterProfileData(profileUrl) {
     const { data } = await axios.get(profileUrl, REQUEST_HEADERS);
     const $ = cheerio.load(data);
+    
+    const fightUrls = [];
+    $('.b-fight-details__table-row').each((i, el) => {
+        const link = $(el).attr('data-link');
+        if (link) fightUrls.push(link);
+    });
     
     const nickname = $('.b-content__Nickname').text().trim().replace(/^["'](.+)["']$/, '$1') || null;
     const record = $('.b-content__title-record').text().replace('Record:', '').trim() || '0-0-0';
     
     let height = '--', weight = '--', reach = '--', dob = '--';
-    let slpm = 0, tdAvg = 0, subAvg = 0; // 🎯 Swapped KD for Sub
+    let slpm = 0, tdAvg = 0, kdAvg = 0;
+    
+    // 🎯 NEW: Setting up buckets for the accuracy stats
+    let strAcc = 0, tdAcc = 0, tdDef = 0;
 
     $('.b-list__box-list-item').each((i, el) => {
         const text = $(el).text().replace(/\s+/g, ' ').trim();
         if (text.includes('Height:')) height = text.replace('Height:', '').trim();
-        if (text.includes('Weight:')) weight = text.replace('Weight:', '').trim();
+        if (text.includes('Weight:')) weight = text.replace('Weight:', '').trim(); 
         if (text.includes('Reach:')) reach = text.replace('Reach:', '').trim();
         if (text.includes('DOB:')) dob = text.replace('DOB:', '').trim();
         
         if (text.includes('SLpM:')) slpm = parseFloat(text.replace('SLpM:', '').trim()) || 0;
-        if (text.includes('TD Avg.:')) tdAvg = parseFloat(text.replace('TD Avg.:', '').trim()) || 0;
-        if (text.includes('Sub. Avg.:')) subAvg = parseFloat(text.replace('Sub. Avg.:', '').trim()) || 0;
+        if (text.includes('Td. Avg.:') || text.includes('TD Avg.:')) tdAvg = parseFloat(text.replace(/Td\. Avg\.:|TD Avg\.:/i, '').trim()) || 0;
+        if (text.includes('KD Avg.:')) kdAvg = parseFloat(text.replace('KD Avg.:', '').trim()) || 0;
+        
+        // 🎯 NEW: Parsing the accuracy stats and stripping the "%" sign
+        if (text.includes('Str. Acc.:')) strAcc = parseFloat(text.replace('Str. Acc.:', '').replace('%', '').trim()) || 0;
+        if (text.includes('TD Acc.:')) tdAcc = parseFloat(text.replace('TD Acc.:', '').replace('%', '').trim()) || 0;
+        if (text.includes('TD Def.:')) tdDef = parseFloat(text.replace('TD Def.:', '').replace('%', '').trim()) || 0;
     });
 
     let age = null;
@@ -154,39 +156,167 @@ async function getFighterProfileData(profileUrl) {
     }
 
     return { 
-        stats: { nickname, record, age, height, weight, reach, slpm, tdAvg, subAvg } 
+        fightUrls, 
+        stats: { nickname, record, age, height, weight, reach, slpm, tdAvg, kdAvg, strAcc, tdAcc, tdDef } 
     };
 }
 
-// 3. PROCESS FIGHTER (Scoring disabled)
+// 3. SCORE FIGHT 
+async function scoreHistoricalFight(fightUrl, targetFighterName) {
+    try {
+        const { data } = await axios.get(fightUrl, REQUEST_HEADERS);
+        const $ = cheerio.load(data);
+        
+        const fighters = [];
+        $('.b-fight-details__person-name').each((i, el) => fighters.push($(el).text().trim()));
+        if (fighters.length < 2) return null;
+
+        const cleanName = targetFighterName.trim().toLowerCase().replace(/-/g, ' ').replace(/[łŁ]/g, 'l');
+        const nameParts = cleanName.split(/\s+/);
+        
+        const dbFirst3 = nameParts[0].substring(0, 3);
+        const dbLast = nameParts[nameParts.length - 1].replace(/[^a-z]/g, '');
+
+        const targetIndex = fighters.findIndex(f => {
+            const fLower = f.toLowerCase().replace(/-/g, ' ').replace(/[łŁ]/g, 'l').trim();
+            const fParts = fLower.split(/\s+/);
+            
+            const fFirst3 = fParts[0].substring(0, 3);
+            const fLast = fParts[fParts.length - 1].replace(/[^a-z]/g, '');
+
+            return (fFirst3 === dbFirst3) && (fLast.includes(dbLast) || dbLast.includes(fLast));
+        });
+
+        if (targetIndex === -1) return null; 
+        
+        const opponentIndex = targetIndex === 0 ? 1 : 0;
+        const statuses = [];
+        $('.b-fight-details__person-status').each((i, el) => statuses.push($(el).text().trim().toUpperCase()));
+        
+        const isFinished = statuses.includes('W') || statuses.includes('L') || statuses.includes('NC') || statuses.includes('D');
+        if (!isFinished) return null;
+
+        let isKO = false, isSub = false, isDec = false;
+        let finishRound = 1, finishTimeSeconds = 999;
+
+        $('.b-fight-details__text-item, .b-fight-details__text-item_first').each((i, el) => {
+            const text = $(el).text().replace(/\s+/g, ' ').toUpperCase().trim();
+            if (text.includes('METHOD:')) {
+                if (text.includes('KO/TKO') || text.includes('TKO') || text.includes('KO')) isKO = true;
+                if (text.includes('SUB') || text.includes('SUBMISSION')) isSub = true;
+                if (text.includes('DEC') || text.includes('DECISION')) isDec = true; 
+            }
+            if (text.includes('ROUND:') && !text.includes('FORMAT')) {
+                const parts = text.split('ROUND:');
+                if (parts.length > 1) finishRound = parseInt(parts[1].trim()) || 1;
+            }
+            if (text.includes('TIME:') && !text.includes('FORMAT')) {
+                const parts = text.split('TIME:');
+                if (parts.length > 1) {
+                    const [m, s] = parts[1].trim().split(':').map(Number);
+                    if (!isNaN(m) && !isNaN(s)) finishTimeSeconds = (m * 60) + s;
+                }
+            }
+        });
+
+        const isUnder30s = finishRound === 1 && finishTimeSeconds <= 30;
+        const isLast10sR5 = finishRound === 5 && finishTimeSeconds >= 290; 
+        let baseBonus = 0;
+        
+        if (isLast10sR5 && (isKO || isSub)) baseBonus = 100;
+        else if (isKO) {
+            if (isUnder30s) baseBonus = 60;
+            else if (finishRound === 1) baseBonus = 35;
+            else if (finishRound === 2) baseBonus = 25;
+            else if (finishRound === 3) baseBonus = 20; 
+            else if (finishRound === 4) baseBonus = 25;
+            else if (finishRound === 5) baseBonus = 40; 
+        } 
+        else if (isSub) {
+            if (isUnder30s) baseBonus = 65;
+            else if (finishRound === 1) baseBonus = 35;
+            else if (finishRound === 2) baseBonus = 25;
+            else if (finishRound === 3) baseBonus = 20; 
+            else if (finishRound === 4) baseBonus = 25;
+            else if (finishRound === 5) baseBonus = 40; 
+        }
+        else if (isDec) baseBonus = 10;
+
+        const rows = $('.b-fight-details__table-body').first().find('.b-fight-details__table-text');
+        const parseStat = (index) => parseInt(rows.eq(index).text().trim().split(' of ')[0]) || 0;
+
+        let results = fighters.map((name, i) => {
+            const kd = parseStat(2 + i);
+            const sig_str = parseStat(4 + i);
+            const td = parseStat(10 + i);
+            const sub_att = parseStat(14 + i);
+            
+            const ctrlRaw = rows.eq(18 + i).text().trim() || "0:00"; 
+            const [m, s] = ctrlRaw.split(':').map(Number);
+            const ctrlMinutes = (m || 0) + ((s || 0) / 60);
+
+            let points = (sig_str * 0.25) + (td * 2.5) + (kd * 5) + (sub_att * 3) + (ctrlMinutes * 1.8);
+            
+            return { is_winner: statuses[i] === 'W', fantasy_points: points };
+        });
+
+        const winnerIndex = results.findIndex(r => r.is_winner);
+        if (winnerIndex !== -1) {
+            const loserIndex = winnerIndex === 0 ? 1 : 0;
+            results[winnerIndex].fantasy_points += baseBonus;
+            
+            if (results[winnerIndex].fantasy_points < results[loserIndex].fantasy_points) {
+                results[winnerIndex].fantasy_points = results[loserIndex].fantasy_points;
+            }
+        }
+
+        return parseFloat(Math.min(results[targetIndex].fantasy_points, 999.99).toFixed(2));
+
+    } catch (err) {
+        console.error(`❌ Fight Error:`, err.message);
+        return null;
+    }
+}
+
+// 4. PROCESS FIGHTER
 async function processFighter(fighterName) {
     try {
         const trimmedName = fighterName.trim();
-        
-        // 🎯 THE DICTIONARY INTERCEPT
-        let searchName = trimmedName;
-        if (NAME_DICTIONARY[trimmedName]) {
-            console.log(`🔀 Dictionary Match: Translating "${trimmedName}" to "${NAME_DICTIONARY[trimmedName]}"`);
-            searchName = NAME_DICTIONARY[trimmedName];
-        }
-
-        const profileUrl = await searchFighterProfile(searchName);
+        const profileUrl = await searchFighterProfile(trimmedName);
         console.log(`✅ Found profile: ${profileUrl}`);
 
-        const { stats } = await getFighterProfileData(profileUrl);
+        const { fightUrls, stats } = await getFighterProfileData(profileUrl);
         
         console.log(`📸 Hunting for image...`);
-        const imageUrl = await getFighterImage(searchName);
+        const imageUrl = await getFighterImage(trimmedName);
         if (imageUrl) console.log(`   ✅ Image secured!`);
         
-        console.log(`📊 Scraped bio: ${stats.record} | TD Avg: ${stats.tdAvg} | Sub Avg: ${stats.subAvg}`);
+        console.log(`📊 Scraped bio: ${stats.record} | Str Acc: ${stats.strAcc}% | TD Acc: ${stats.tdAcc}%`);
+        console.log(`🥊 Found ${fightUrls.length} career fights. Commencing score scrape...`);
 
-        // 🛑 SCORING LOOP TEMPORARILY REMOVED FOR SPEED 🛑
+        let totalPoints = 0;
+        let fightsScored = 0;
 
-        // 🎯 UPDATE DATABASE (Using UPDATE instead of UPSERT to protect existing points)
+        for (let i = 0; i < fightUrls.length; i++) {
+            const points = await scoreHistoricalFight(fightUrls[i], trimmedName);
+            if (points !== null) {
+                totalPoints += points;
+                fightsScored++;
+            }
+            await new Promise(r => setTimeout(r, 1500)); 
+        }
+
+        const average = fightsScored === 0 ? 0 : parseFloat((totalPoints / fightsScored).toFixed(2));
+        
+        console.log(`🏆 FINAL: ${trimmedName.toUpperCase()} -> AVG: ${average} pts\n`);
+
         const { error } = await supabase
             .from('fighter_historical_stats')
-            .update({
+            .upsert({
+                fighter_name: trimmedName,
+                average_fantasy_points: average,
+                total_fights_scored: fightsScored,
+                total_points: parseFloat(totalPoints.toFixed(2)),
                 nickname: stats.nickname,
                 record: stats.record,
                 age: stats.age,
@@ -195,16 +325,18 @@ async function processFighter(fighterName) {
                 reach: stats.reach,
                 sig_strikes_per_min: stats.slpm,
                 takedown_avg: stats.tdAvg,
-                submission_avg: stats.subAvg, 
+                knockdown_avg: stats.kdAvg,
+                striking_accuracy: stats.strAcc, // 🎯 NEW
+                takedown_accuracy: stats.tdAcc,  // 🎯 NEW
+                takedown_defense: stats.tdDef,   // 🎯 NEW
                 image_url: imageUrl,
                 last_updated: new Date().toISOString()
-            })
-            .eq('fighter_name', trimmedName);
+            }, { onConflict: 'fighter_name' });
 
         if (error) {
             console.error(`❌ Supabase Save Error for ${trimmedName}:`, error.message);
         } else {
-            console.log(`💾 Successfully updated bio for ${trimmedName}!\n`);
+            console.log(`💾 Successfully saved to database!\n`);
         }
 
     } catch (error) {
@@ -212,7 +344,7 @@ async function processFighter(fighterName) {
     }
 }
 
-// 4. BATCH RUNNER
+// 5. BATCH RUNNER
 async function runBatch() {
     console.log("📥 Fetching current fighters from your database...");
     
@@ -231,44 +363,17 @@ async function runBatch() {
         if (fight.fighter_2_name) fighterSet.add(fight.fighter_2_name.trim());
     });
 
-    // 🎯 THE NEW OPTIMIZATION: Check who already has a height!
-    console.log("📥 Checking which fighters already have bio stats...");
-    const { data: existingStats, error: statsError } = await supabase
-        .from('fighter_historical_stats')
-        .select('fighter_name, height');
+    const fightersToProcess = Array.from(fighterSet);
 
-    if (statsError) {
-        console.error("❌ Failed to fetch existing stats:", statsError.message);
-        return;
-    }
-
-    const alreadyUpdated = new Set();
-    existingStats.forEach(stat => {
-        // If they have a height saved, and it's not our default '--' fallback, they are good!
-        if (stat.height && stat.height !== '--') {
-            alreadyUpdated.add(stat.fighter_name.trim());
-        }
-    });
-
-    // Filter our main list to ONLY include fighters who aren't in the alreadyUpdated set
-    const fightersToProcess = Array.from(fighterSet).filter(fighter => !alreadyUpdated.has(fighter));
-
-    const skippedCount = fighterSet.size - fightersToProcess.length;
-    console.log(`⏭️  Skipping ${skippedCount} fighters who already have their bio stats.`);
-    console.log(`📋 ${fightersToProcess.length} fighters left to process. Starting fast-scrape...\n`);
-
-    if (fightersToProcess.length === 0) {
-        console.log("🎉 ALL CAUGHT UP! No new bios to scrape.");
-        return;
-    }
+    console.log(`📋 ${fightersToProcess.length} fighters to process. Starting scrape...\n`);
 
     for (const fighter of fightersToProcess) {
         await processFighter(fighter);
-        console.log("⏳ Resting 3 seconds before next fighter...");
-        await new Promise(r => setTimeout(r, 3000)); 
+        console.log("⏳ Resting 5 seconds before next fighter to avoid IP bans...");
+        await new Promise(r => setTimeout(r, 5000));
     }
     
-    console.log("🎉 ALL MISSING FIGHTERS UPDATED WITH NEW BIO STATS AND IMAGES!");
+    console.log("🎉 ALL FIGHTERS UPDATED WITH NEW BIO STATS!");
 }
 
 runBatch();

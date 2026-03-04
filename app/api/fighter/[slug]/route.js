@@ -43,8 +43,8 @@ export async function GET(request, { params }) {
     // Data Buckets
     let espn = null;
     let tsdb = null;
-    // 🎯 NEW: Added slpm, tdAvg, subAvg to the bucket
-    let ufcStats = { height: null, weight: null, reach: null, stance: null, age: null, record: null, nickname: null, history: [], winStats: null, slpm: 0, tdAvg: 0, subAvg: 0 };
+    // 🎯 NEW: Added strAcc, tdAcc, tdDef to the bucket initialization
+    let ufcStats = { height: null, weight: null, reach: null, stance: null, age: null, record: null, nickname: null, history: [], winStats: null, slpm: 0, tdAvg: 0, subAvg: 0, strAcc: 0, tdAcc: 0, tdDef: 0 };
     let ufcCom = { ranking: '', nextFight: null };
     let wiki = { history: [], winStats: null };
 
@@ -112,10 +112,13 @@ export async function GET(request, { params }) {
                             ufcStats.age = (new Date().getFullYear() - birthYear).toString();
                         }
                     }
-                    // 🎯 NEW: Scrape the Fantasy Metrics
+                    // 🎯 FANTASY METRICS & ACCURACY STATS
                     if (text.includes('SLpM:')) ufcStats.slpm = parseFloat(text.replace('SLpM:', '').trim()) || 0;
                     if (text.includes('TD Avg.:')) ufcStats.tdAvg = parseFloat(text.replace('TD Avg.:', '').trim()) || 0;
                     if (text.includes('Sub. Avg.:')) ufcStats.subAvg = parseFloat(text.replace('Sub. Avg.:', '').trim()) || 0;
+                    if (text.includes('Str. Acc.:')) ufcStats.strAcc = parseFloat(text.replace('Str. Acc.:', '').replace('%', '').trim()) || 0;
+                    if (text.includes('TD Acc.:') || text.includes('Td. Acc.:')) ufcStats.tdAcc = parseFloat(text.replace(/TD Acc\.:|Td\. Acc\.:/i, '').replace('%', '').trim()) || 0;
+                    if (text.includes('TD Def.:') || text.includes('Td. Def.:')) ufcStats.tdDef = parseFloat(text.replace(/TD Def\.:|Td\. Def\.:/i, '').replace('%', '').trim()) || 0;
                 });
 
                 const recordText = $('.b-content__title-record').text().trim();
@@ -271,7 +274,6 @@ export async function GET(request, { params }) {
     ]);
 
     // 🧠 3. THE MERGE: Intelligently combine Supabase, ESPN, UFC Stats, etc.
-    // If Supabase has the stat, we use it first. If not, we fall back to what we just scraped.
     let bio = {
         image_url: dbData?.image_url || (espn?.headshot?.href) || (tsdb?.strCutout) || (tsdb?.strThumb) || null,
         height: dbData?.height || (espn?.displayHeight) || ufcStats.height || '—',
@@ -285,20 +287,21 @@ export async function GET(request, { params }) {
         nickname: dbData?.nickname || (espn?.nickname) || ufcStats.nickname || '',
         history: wiki.history.length > 0 ? wiki.history : ufcStats.history,
         winStats: wiki.winStats || ufcStats.winStats || { ko: 0, koPct: 0, sub: 0, subPct: 0, dec: 0, decPct: 0, totalWins: 0 },
-        // 🎯 NEW: FANTASY METRICS
+        // 🎯 FANTASY METRICS & ACCURACY STATS
         sig_strikes_per_min: dbData?.sig_strikes_per_min || ufcStats.slpm || 0,
         takedown_avg: dbData?.takedown_avg || ufcStats.tdAvg || 0,
         submission_avg: dbData?.submission_avg || ufcStats.subAvg || 0,
+        striking_accuracy: dbData?.striking_accuracy || ufcStats.strAcc || 0,
+        takedown_accuracy: dbData?.takedown_accuracy || ufcStats.tdAcc || 0,
+        takedown_defense: dbData?.takedown_defense || ufcStats.tdDef || 0,
         average_fantasy_points: dbData?.average_fantasy_points || 0
     };
 
-    // Inject upcoming fight at the top of history if it exists
     if (ufcCom.nextFight) {
         bio.history.unshift(ufcCom.nextFight);
     }
 
     // 🎯 4. AUTO-SAVE TO SUPABASE
-    // If the fighter wasn't in the database, OR they didn't have a height saved, save them now!
     if (!dbData || !dbData.height || dbData.height === '--') {
         const newDbEntry = {
             fighter_name: searchName,
@@ -311,11 +314,13 @@ export async function GET(request, { params }) {
             sig_strikes_per_min: bio.sig_strikes_per_min,
             takedown_avg: bio.takedown_avg,
             submission_avg: bio.submission_avg,
+            striking_accuracy: bio.striking_accuracy,
+            takedown_accuracy: bio.takedown_accuracy,
+            takedown_defense: bio.takedown_defense,
             image_url: bio.image_url,
             last_updated: new Date().toISOString()
         };
         
-        // We run this in the background without `await` so the user doesn't have to wait for it to finish!
         supabase.from('fighter_historical_stats').upsert(newDbEntry, { onConflict: 'fighter_name' }).then(({error}) => {
             if (error) console.error("Auto-save failed:", error.message);
         });
