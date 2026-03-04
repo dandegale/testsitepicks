@@ -44,6 +44,10 @@ export default function DashboardClient({
   fights, groupedFights, publicLeagues, myPicks, userEmail, myLeagues, totalWins, totalLosses, nextEventName, mainEvent 
 }) {
   const router = useRouter();
+  
+  // 🛡️ THE GATEKEEPER STATE
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -65,7 +69,7 @@ export default function DashboardClient({
   const eventDate = mainEvent?.start_time || "2026-02-01T22:00:00"; 
   const safeEventName = nextEventName || "Upcoming Event";
 
-  // 🛡️ INVISIBLE GATEKEEPER
+  // 🛡️ ROUTE GUARD
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -117,6 +121,12 @@ export default function DashboardClient({
 
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+        router.replace('/login');
+        return; 
+    }
+
     if (user && user.email) {
         const { data: picksData } = await supabase.from('picks').select('*').eq('user_id', user.email).is('league_id', null); 
         if (picksData) {
@@ -143,6 +153,7 @@ export default function DashboardClient({
         const { data: profile } = await supabase.from('profiles').select('show_odds').eq('id', user.id).single();
         if (profile && profile.show_odds === true) setShowOdds(true);
     }
+    setIsCheckingAuth(false);
   };
 
   useEffect(() => { fetchUserData(); }, []);
@@ -227,6 +238,15 @@ export default function DashboardClient({
       else setShowShowdown(true);
   }
 
+  if (isCheckingAuth) {
+      return (
+          <div className="min-h-screen bg-black flex flex-col items-center justify-center font-sans">
+              <span className="w-12 h-12 rounded-full border-4 border-pink-600 border-t-transparent animate-spin mb-4"></span>
+              <div className="text-xs font-black uppercase tracking-widest text-pink-600">Verifying Access...</div>
+          </div>
+      );
+  }
+
   return (
     <div className="flex min-h-screen bg-black text-white overflow-hidden font-sans selection:bg-pink-500 selection:text-white">
       <OnboardingModal />
@@ -293,9 +313,10 @@ export default function DashboardClient({
          </div>
       </div>
 
-      <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24 md:pb-0"> 
+      {/* 🎯 FIXED: ADDED overflow-x-hidden TO MAIN */}
+      <main className="flex-1 h-screen overflow-y-auto overflow-x-hidden scrollbar-hide relative flex flex-col pb-24 md:pb-0 w-full max-w-[100vw]"> 
         <header className={`sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800 transition-all duration-500 ${isFocusMode ? '-translate-y-full' : 'translate-y-0'}`}>
-            <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
+            <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between w-full">
                 
                 <div className="flex items-center gap-3 md:gap-4">
                     <button onClick={() => setShowMobileMenu(true)} className="md:hidden p-1 text-gray-400 hover:text-white transition-colors">
@@ -366,10 +387,11 @@ export default function DashboardClient({
             </div>
         </div>
 
-        <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen">
+        <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen w-full">
             <div className={`mb-8 transition-all duration-500 origin-top ${isFocusMode ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100'}`}>
                 
-                <div className="md:hidden mt-4 px-1 mb-2">
+                {/* 🎯 FIXED: STRICT WIDTH BOUNDARIES ADDED HERE FOR MOBILE OVERFLOW */}
+                <div className="md:hidden mt-4 mb-2 w-full overflow-hidden">
                     <div className="flex justify-between items-center mb-3 px-1">
                         <div>
                             <h3 className="text-xs font-black text-white uppercase tracking-[0.2em] flex items-center gap-2">
@@ -382,18 +404,18 @@ export default function DashboardClient({
                         </button>
                     </div>
                     
-                    <div className="flex overflow-x-auto gap-3 pb-4 snap-x scrollbar-hide" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
+                    <div className="flex overflow-x-auto gap-3 pb-4 snap-x scrollbar-hide w-full" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
                         {publicLeagues && publicLeagues.length > 0 ? (
                             publicLeagues.map(league => {
                                 const isAlreadyMember = clientLeagues.some(l => l.id === league.id);
                                 return (
-                                    <div key={league.id} className="min-w-[260px] snap-center bg-black border border-gray-800 p-4 rounded-xl flex flex-col justify-between shadow-lg">
+                                    <div key={league.id} className="min-w-[260px] w-[260px] shrink-0 snap-center bg-black border border-gray-800 p-4 rounded-xl flex flex-col justify-between shadow-lg">
                                         <div className="flex items-center gap-3 mb-4">
                                             <div className="w-12 h-12 rounded-full bg-gray-900 border border-gray-700 flex items-center justify-center overflow-hidden shrink-0">
-                                                {league.imageUrl ? <img src={league.imageUrl} alt={league.name} className="w-full h-full object-cover" /> : <span className="text-[12px] font-black text-gray-500">LG</span>}
+                                                {league.imageUrl ? <img src={league.imageUrl} alt={league.name} className="w-full h-full object-cover shrink-0" /> : <span className="text-[12px] font-black text-gray-500">LG</span>}
                                             </div>
-                                            <div>
-                                                <h4 className="font-bold text-sm text-white truncate max-w-[150px]">{league.name}</h4>
+                                            <div className="min-w-0">
+                                                <h4 className="font-bold text-sm text-white truncate w-full">{league.name}</h4>
                                                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{league.memberCount} Members</p>
                                             </div>
                                         </div>
@@ -411,7 +433,7 @@ export default function DashboardClient({
                                 );
                             })
                         ) : (
-                            <div className="min-w-[260px] p-4 border border-dashed border-gray-800 rounded-xl flex items-center justify-center text-center">
+                            <div className="min-w-[260px] w-[260px] shrink-0 p-4 border border-dashed border-gray-800 rounded-xl flex items-center justify-center text-center">
                                 <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">No public leagues found.</p>
                             </div>
                         )}
@@ -420,7 +442,6 @@ export default function DashboardClient({
             </div>
 
             <div className="relative flex w-full">
-                {/* 🎯 CHANGED w-full back to w-[66%] on desktop */}
                 <div className={`transition-all duration-700 ease-in-out w-full xl:w-[66%] ${isFocusMode ? 'xl:w-full xl:max-w-4xl xl:mx-auto' : ''}`}>
                     <div className="flex items-center gap-2 mb-6">
                         <span className={`w-2 h-2 rounded-full bg-teal-500 animate-pulse ${isFocusMode ? 'opacity-0' : ''}`}></span>
@@ -451,7 +472,6 @@ export default function DashboardClient({
                     ) : (
                          <div>
                             
-                            {/* 🎯 FIXED OVERFLOW SCROLL BAR */}
                             <div className="min-w-[350px] mb-8 bg-gray-950 border border-gray-900 rounded-xl overflow-hidden p-6 shadow-lg">
                                 <div className="flex justify-between items-center mb-6">
                                     <div>
