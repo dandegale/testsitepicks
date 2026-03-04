@@ -13,8 +13,8 @@ export default function FightDashboard({
     onPickSelect,
     pendingPicks = [],
     showOdds = true,
-    league_id = null,    // 🎯 NEW: Grab the league_id prop 
-    isShowdown = false   // 🎯 NEW: Grab a showdown flag
+    league_id = null,    
+    isShowdown = false   
 }) {
 
   const [fighterStats, setFighterStats] = useState({});
@@ -85,47 +85,58 @@ export default function FightDashboard({
 
   return (
     <div className="space-y-12 pb-24">
-      {Object.entries(groupedFights).map(([groupName, groupFights]) => (
-        <div key={groupName} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-          
-          {/* HEADER */}
-          <div className="flex items-center gap-4 mb-6 sticky top-[64px] md:top-0 bg-gray-900/95 backdrop-blur z-30 py-4 border-b border-gray-800 shadow-xl -mx-4 px-4 md:mx-0 md:px-0 md:rounded-xl">
-             <div className="w-1.5 h-10 bg-pink-600 rounded-r-full shadow-[0_0_15px_rgba(236,72,153,0.5)]"></div>
-             <div>
-                 <h2 className="text-lg md:text-xl font-black italic uppercase text-white tracking-tighter leading-none">
-                   {groupName}
-                 </h2>
-                 <p className="text-[8px] md:text-[9px] font-bold text-gray-500 uppercase tracking-[0.2em] mt-1">
-                   {groupFights.length} Bouts Scheduled
-                 </p>
-             </div>
-          </div>
+      {Object.entries(groupedFights).map(([groupName, groupFights]) => {
+        
+        // 🎯 FIXED: GRAB THE ENTIRE OFFICIAL EVENT NAME
+        const firstFight = groupFights && groupFights.length > 0 ? groupFights[0] : null;
+        const fullEventName = firstFight?.event_name || 'UFC Event';
+        
+        // 🎯 EXTRACT JUST THE DATE FROM THE GROUP NAME (e.g., "(Mar 9)")
+        const dateMatch = groupName.match(/\(([^)]+)\)/);
+        const displayDate = dateMatch ? dateMatch[0] : '';
 
-          {/* FIGHT LIST */}
-          <div className="grid grid-cols-1 gap-4">
-            {groupFights.map((fight) => {
-              
-              if (!fight) return null;
+        return (
+          <div key={groupName} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+            
+            {/* HEADER */}
+            <div className="flex items-center gap-4 mb-6 sticky top-[64px] md:top-0 bg-gray-900/95 backdrop-blur z-30 py-4 border-b border-gray-800 shadow-xl -mx-4 px-4 md:mx-0 md:px-0 md:rounded-xl">
+               <div className="w-1.5 h-10 bg-pink-600 rounded-r-full shadow-[0_0_15px_rgba(236,72,153,0.5)]"></div>
+               <div>
+                   {/* 🎯 RENDER THE FULL NAME WITH THE DATE */}
+                   <h2 className="text-lg md:text-xl font-black italic uppercase text-white tracking-tighter leading-none">
+                     {fullEventName} <span className="text-pink-600 ml-1">{displayDate}</span>
+                   </h2>
+                   <p className="text-[8px] md:text-[9px] font-bold text-gray-500 uppercase tracking-[0.2em] mt-1">
+                     {groupFights.length} Bouts Scheduled
+                   </p>
+               </div>
+            </div>
 
-              const existingPick = userPicks.find(p => p.fight_id === fight.id);
-              const pendingForThisFight = pendingPicks.find(p => p.fightId === fight.id);
-              
-              return (
-                <FightCard 
-                  key={fight.id} 
-                  fight={fight} 
-                  existingPick={existingPick} 
-                  pendingPick={pendingForThisFight} 
-                  onPick={handlePickClick}
-                  showOdds={showOdds} 
-                  // 🎯 THE TOGGLE: Pass null if we are on the Global page
-                  fighterStats={shouldShowAverages ? fighterStats : null} 
-                />
-              );
-            })}
+            {/* FIGHT LIST */}
+            <div className="grid grid-cols-1 gap-4">
+              {groupFights.map((fight) => {
+                
+                if (!fight) return null;
+
+                const existingPick = userPicks.find(p => p.fight_id === fight.id);
+                const pendingForThisFight = pendingPicks.find(p => p.fightId === fight.id);
+                
+                return (
+                  <FightCard 
+                    key={fight.id} 
+                    fight={fight} 
+                    existingPick={existingPick} 
+                    pendingPick={pendingForThisFight} 
+                    onPick={handlePickClick}
+                    showOdds={showOdds} 
+                    fighterStats={shouldShowAverages ? fighterStats : null} 
+                  />
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

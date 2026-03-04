@@ -44,10 +44,7 @@ export default function DashboardClient({
   fights, groupedFights, publicLeagues, myPicks, userEmail, myLeagues, totalWins, totalLosses, nextEventName, mainEvent 
 }) {
   const router = useRouter();
-  
-  // 🛡️ THE GATEKEEPER STATE
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -69,7 +66,6 @@ export default function DashboardClient({
   const eventDate = mainEvent?.start_time || "2026-02-01T22:00:00"; 
   const safeEventName = nextEventName || "Upcoming Event";
 
-  // 🛡️ ROUTE GUARD
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -313,15 +309,19 @@ export default function DashboardClient({
          </div>
       </div>
 
-      {/* 🎯 FIXED: ADDED overflow-x-hidden TO MAIN */}
       <main className="flex-1 h-screen overflow-y-auto overflow-x-hidden scrollbar-hide relative flex flex-col pb-24 md:pb-0 w-full max-w-[100vw]"> 
         <header className={`sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800 transition-all duration-500 ${isFocusMode ? '-translate-y-full' : 'translate-y-0'}`}>
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between w-full">
                 
                 <div className="flex items-center gap-3 md:gap-4">
-                    <button onClick={() => setShowMobileMenu(true)} className="md:hidden p-1 text-gray-400 hover:text-white transition-colors">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                    {/* 🎯 UPDATED HAMBURGER ICON: TEAL COLOR AND PULSE ANIMATION */}
+                    <button 
+                        onClick={() => setShowMobileMenu(true)} 
+                        className="md:hidden p-1 text-teal-400 hover:text-teal-300 transition-colors drop-shadow-[0_0_5px_rgba(45,212,191,0.5)] animate-pulse"
+                    >
+                        <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" /></svg>
                     </button>
+                    
                     <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">FIGHT<span className="text-pink-600">IQ</span></Link>
                     <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
                     <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
@@ -390,7 +390,6 @@ export default function DashboardClient({
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen w-full">
             <div className={`mb-8 transition-all duration-500 origin-top ${isFocusMode ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100'}`}>
                 
-                {/* 🎯 FIXED: STRICT WIDTH BOUNDARIES ADDED HERE FOR MOBILE OVERFLOW */}
                 <div className="md:hidden mt-4 mb-2 w-full overflow-hidden">
                     <div className="flex justify-between items-center mb-3 px-1">
                         <div>
