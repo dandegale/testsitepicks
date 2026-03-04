@@ -46,7 +46,7 @@ export default function DashboardClient({
 }) {
   const router = useRouter();
   
-  // 🛡️ NEW: The Gatekeeper State
+  // 🛡️ THE GATEKEEPER STATE
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   const [isFocusMode, setIsFocusMode] = useState(false);
@@ -66,18 +66,11 @@ export default function DashboardClient({
 
   const [joiningLeagueId, setJoiningLeagueId] = useState(null);
 
-  const liveWinPercentage = (careerStats.wins + careerStats.losses) > 0 
-      ? (careerStats.wins / (careerStats.wins + careerStats.losses)) * 100 
-      : 0;
-
+  const liveWinPercentage = (careerStats.wins + careerStats.losses) > 0 ? (careerStats.wins / (careerStats.wins + careerStats.losses)) * 100 : 0;
   const eventDate = mainEvent?.start_time || "2026-02-01T22:00:00"; 
   const safeEventName = nextEventName || "Upcoming Event";
 
-  useEffect(() => {
-    if (myLeagues && myLeagues.length > 0) {
-      setClientLeagues(myLeagues);
-    }
-  }, [myLeagues]);
+  useEffect(() => { if (myLeagues && myLeagues.length > 0) setClientLeagues(myLeagues); }, [myLeagues]);
 
   const { cleanFights, cleanGroups } = useMemo(() => {
       if (!fights) return { cleanFights: [], cleanGroups: {} };
@@ -136,13 +129,12 @@ export default function DashboardClient({
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     
-    // 🛡️ THE GATEKEEPER LOGIC
+    // 🛡️ ROUTE PROTECTION LOGIC
     if (!user) {
-        router.replace('/login'); // Instantly bounce them to login
-        return; // Stop running this function
+        router.replace('/login');
+        return; // Stop execution immediately
     }
 
-    // If they made it past the gatekeeper, load their data!
     if (user && user.email) {
         const { data: picksData } = await supabase
           .from('picks')
@@ -182,7 +174,7 @@ export default function DashboardClient({
         if (profile && profile.show_odds === true) setShowOdds(true);
     }
     
-    // Auth checks and data loading are done, let them see the page!
+    // Data successfully loaded, dismiss the loading screen
     setIsCheckingAuth(false);
   };
 
@@ -216,7 +208,7 @@ export default function DashboardClient({
     if (pendingPicks.length === 0) return;
     setIsSubmitting(true);
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user || !user.email) { alert("You must be logged in to lock picks."); setIsSubmitting(false); return; }
+    if (authError || !user || !user.email) { router.replace('/login'); setIsSubmitting(false); return; }
     const username = user.user_metadata?.username || user.email.split('@')[0];
     const picksToInsert = pendingPicks.map(p => ({
         user_id: user.email, username: username, fight_id: p.fightId, selected_fighter: p.fighterName, odds_at_pick: parseInt(p.odds, 10), league_id: p.leagueId || null
@@ -229,7 +221,8 @@ export default function DashboardClient({
   const handleJoinPublicLeague = async (leagueId, leagueName) => {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user || !user.email) {
-          return alert("You must log in or create an account to join a league.");
+          router.replace('/login');
+          return;
       }
 
       setJoiningLeagueId(leagueId);
@@ -251,7 +244,7 @@ export default function DashboardClient({
       }
   };
 
-  // 🛡️ NEW: RENDER THE LOADING SCREEN WHILE CHECKING
+  // 🛡️ THE LOADING SCREEN
   if (isCheckingAuth) {
       return (
           <div className="min-h-screen bg-black flex flex-col items-center justify-center font-sans">
@@ -261,7 +254,6 @@ export default function DashboardClient({
       );
   }
 
-  // If they pass, they get to see the real return block!
   return (
     <div className="flex min-h-screen bg-black text-white overflow-hidden font-sans selection:bg-pink-500 selection:text-white">
       
@@ -363,25 +355,16 @@ export default function DashboardClient({
                 
                 <div className="flex items-center gap-3 md:gap-4">
                     <button onClick={() => setShowMobileMenu(true)} className="md:hidden p-1 text-gray-400 hover:text-white transition-colors">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                        </svg>
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
                     </button>
-                    
-                    <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">
-                        FIGHT<span className="text-pink-600">IQ</span>
-                    </Link>
-                    
+                    <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">FIGHT<span className="text-pink-600">IQ</span></Link>
                     <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
                     <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
                         <Link href="/how-it-works" className="text-white hover:text-pink-400 transition-colors">How It Works</Link>
                         <Link href="/my-picks" className="hover:text-white transition-colors">My Picks</Link>
                         <span className="text-gray-300 cursor-default">Global Feed</span>
                         <Link href="/leaderboard" className="hover:text-white transition-colors">Leaderboards</Link>
-                        
-                        <Link href="/store" className="hover:text-pink-400 text-pink-600 transition-colors flex items-center gap-1">
-                            <span>STORE</span>
-                        </Link>
+                        <Link href="/store" className="hover:text-pink-400 text-pink-600 transition-colors flex items-center gap-1"><span>STORE</span></Link>
                     </nav>
                 </div>
 
@@ -390,17 +373,13 @@ export default function DashboardClient({
                         onClick={() => setShowShowdown(true)}
                         className="flex bg-gradient-to-r from-pink-600 to-teal-600 hover:from-pink-500 hover:to-teal-500 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-white shadow-[0_0_15px_rgba(219,39,119,0.2)] hover:shadow-[0_0_20px_rgba(20,184,166,0.4)] transition-all items-center gap-2 active:scale-95"
                     >
-                        <span>⚔️</span>
-                        <span className="hidden sm:inline">1v1 Showdown</span>
-                        <span className="sm:hidden">1v1</span>
+                        <span>⚔️</span><span className="hidden sm:inline">1v1 Showdown</span><span className="sm:hidden">1v1</span>
                     </button>
 
                     <div className="hidden md:flex items-center gap-3 px-4 border-x border-gray-800">
                         <div className="text-right">
                             <p className="text-[9px] font-black text-gray-600 uppercase tracking-tighter leading-none mb-1">Career Record</p>
-                            <p className="text-sm font-black italic text-white leading-none">
-                                {careerStats.wins}W - {careerStats.losses}L
-                            </p>
+                            <p className="text-sm font-black italic text-white leading-none">{careerStats.wins}W - {careerStats.losses}L</p>
                         </div>
                         <div className="w-8 h-8 rounded-full border border-gray-800 flex items-center justify-center relative text-[8px] font-black">
                             {Math.round(liveWinPercentage)}%
@@ -459,23 +438,15 @@ export default function DashboardClient({
                         </button>
                     </div>
                     
-                    <div 
-                        className="flex overflow-x-auto gap-3 pb-4 snap-x scrollbar-hide"
-                        style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}
-                    >
+                    <div className="flex overflow-x-auto gap-3 pb-4 snap-x scrollbar-hide" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
                         {publicLeagues && publicLeagues.length > 0 ? (
                             publicLeagues.map(league => {
                                 const isAlreadyMember = clientLeagues.some(l => l.id === league.id);
-                                
                                 return (
                                     <div key={league.id} className="min-w-[260px] snap-center bg-black border border-gray-800 p-4 rounded-xl flex flex-col justify-between shadow-lg">
                                         <div className="flex items-center gap-3 mb-4">
                                             <div className="w-12 h-12 rounded-full bg-gray-900 border border-gray-700 flex items-center justify-center overflow-hidden shrink-0">
-                                                {league.imageUrl ? (
-                                                    <img src={league.imageUrl} alt={league.name} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <span className="text-[12px] font-black text-gray-500">LG</span>
-                                                )}
+                                                {league.imageUrl ? <img src={league.imageUrl} alt={league.name} className="w-full h-full object-cover" /> : <span className="text-[12px] font-black text-gray-500">LG</span>}
                                             </div>
                                             <div>
                                                 <h4 className="font-bold text-sm text-white truncate max-w-[150px]">{league.name}</h4>
@@ -484,18 +455,11 @@ export default function DashboardClient({
                                         </div>
                                         
                                         {isAlreadyMember ? (
-                                            <Link 
-                                                href={`/league/${league.id}`}
-                                                className="w-full text-center text-[10px] font-black uppercase text-gray-400 bg-gray-900 py-2.5 rounded border border-gray-800 hover:text-white transition-colors block"
-                                            >
+                                            <Link href={`/league/${league.id}`} className="w-full text-center text-[10px] font-black uppercase text-gray-400 bg-gray-900 py-2.5 rounded border border-gray-800 hover:text-white transition-colors block">
                                                 View League
                                             </Link>
                                         ) : (
-                                            <button 
-                                                onClick={() => handleJoinPublicLeague(league.id, league.name)}
-                                                disabled={joiningLeagueId === league.id}
-                                                className="w-full text-[10px] font-black uppercase text-black bg-teal-500 hover:bg-teal-400 py-2.5 rounded transition-colors disabled:opacity-50"
-                                            >
+                                            <button onClick={() => handleJoinPublicLeague(league.id, league.name)} disabled={joiningLeagueId === league.id} className="w-full text-[10px] font-black uppercase text-black bg-teal-500 hover:bg-teal-400 py-2.5 rounded transition-colors disabled:opacity-50">
                                                 {joiningLeagueId === league.id ? 'Joining...' : 'Join Now'}
                                             </button>
                                         )}
@@ -537,13 +501,7 @@ export default function DashboardClient({
                 <div className={`hidden xl:block ml-10 space-y-8 transition-all duration-700 w-[33%] relative`}>
                     {pendingPicks.length > 0 ? (
                          <div className="sticky top-24 max-h-[calc(100vh-120px)] min-w-[350px] bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto">
-                             <BettingSlip 
-                                picks={pendingPicks} 
-                                onCancelAll={() => setPendingPicks([])}
-                                onRemovePick={handleRemovePick}
-                                onConfirm={handleConfirmAllPicks}
-                                isSubmitting={isSubmitting}
-                             />
+                             <BettingSlip picks={pendingPicks} onCancelAll={() => setPendingPicks([])} onRemovePick={handleRemovePick} onConfirm={handleConfirmAllPicks} isSubmitting={isSubmitting} />
                          </div>
                     ) : (
                          <div className={`transition-opacity duration-300 ${isFocusMode ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
@@ -557,10 +515,7 @@ export default function DashboardClient({
                                         </h3>
                                         <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Join the community</p>
                                     </div>
-                                    <button 
-                                        onClick={() => setShowCreateModal(true)}
-                                        className="bg-gray-900 hover:bg-gray-800 border border-gray-800 text-pink-500 hover:text-pink-400 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-colors"
-                                    >
+                                    <button onClick={() => setShowCreateModal(true)} className="bg-gray-900 hover:bg-gray-800 border border-gray-800 text-pink-500 hover:text-pink-400 px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-colors">
                                         + Create
                                     </button>
                                 </div>
@@ -569,40 +524,21 @@ export default function DashboardClient({
                                     {publicLeagues && publicLeagues.length > 0 ? (
                                         publicLeagues.map(league => {
                                             const isAlreadyMember = clientLeagues.some(l => l.id === league.id);
-                                            
                                             return (
                                                 <div key={league.id} className="bg-black border border-gray-800 p-4 rounded-xl flex items-center justify-between group hover:border-teal-500/50 transition-colors">
                                                     <div className="flex items-center gap-3">
                                                         <div className="w-10 h-10 rounded-full bg-gray-900 border border-gray-700 flex items-center justify-center overflow-hidden shrink-0">
-                                                            {league.imageUrl ? (
-                                                                <img src={league.imageUrl} alt={league.name} className="w-full h-full object-cover" />
-                                                            ) : (
-                                                                <span className="text-[10px] font-black text-gray-500">LG</span>
-                                                            )}
+                                                            {league.imageUrl ? <img src={league.imageUrl} alt={league.name} className="w-full h-full object-cover" /> : <span className="text-[10px] font-black text-gray-500">LG</span>}
                                                         </div>
                                                         <div>
-                                                            <h4 className="font-bold text-sm text-white truncate max-w-[120px]" title={league.name}>
-                                                                {league.name}
-                                                            </h4>
-                                                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
-                                                                {league.memberCount} Members
-                                                            </p>
+                                                            <h4 className="font-bold text-sm text-white truncate max-w-[120px]" title={league.name}>{league.name}</h4>
+                                                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{league.memberCount} Members</p>
                                                         </div>
                                                     </div>
-                                                    
                                                     {isAlreadyMember ? (
-                                                        <Link 
-                                                            href={`/league/${league.id}`}
-                                                            className="text-[10px] font-black uppercase text-gray-500 bg-gray-900 px-3 py-1.5 rounded border border-gray-800 hover:text-white transition-colors"
-                                                        >
-                                                            View
-                                                        </Link>
+                                                        <Link href={`/league/${league.id}`} className="text-[10px] font-black uppercase text-gray-500 bg-gray-900 px-3 py-1.5 rounded border border-gray-800 hover:text-white transition-colors">View</Link>
                                                     ) : (
-                                                        <button 
-                                                            onClick={() => handleJoinPublicLeague(league.id, league.name)}
-                                                            disabled={joiningLeagueId === league.id}
-                                                            className="text-[10px] font-black uppercase text-black bg-teal-500 hover:bg-teal-400 px-3 py-1.5 rounded transition-colors disabled:opacity-50"
-                                                        >
+                                                        <button onClick={() => handleJoinPublicLeague(league.id, league.name)} disabled={joiningLeagueId === league.id} className="text-[10px] font-black uppercase text-black bg-teal-500 hover:bg-teal-400 px-3 py-1.5 rounded transition-colors disabled:opacity-50">
                                                             {joiningLeagueId === league.id ? '...' : 'Join'}
                                                         </button>
                                                     )}
@@ -633,27 +569,18 @@ export default function DashboardClient({
         </div>
       </main>
 
-      {/* --- MOBILE: BOTTOM FLOATING BAR --- */}
       {pendingPicks.length > 0 && (
           <div className="md:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
-            <button 
-              onClick={() => setShowMobileSlip(true)}
-              className="w-full bg-pink-600 text-white p-4 rounded-xl shadow-2xl shadow-pink-900/50 flex justify-between items-center border border-pink-400 active:scale-95 transition-transform"
-            >
+            <button onClick={() => setShowMobileSlip(true)} className="w-full bg-pink-600 text-white p-4 rounded-xl shadow-2xl shadow-pink-900/50 flex justify-between items-center border border-pink-400 active:scale-95 transition-transform">
               <div className="flex items-center gap-3">
-                <span className="bg-black/20 px-3 py-1 rounded-lg text-xs font-black">
-                  {pendingPicks.length}
-                </span>
-                <span className="text-sm font-black uppercase italic tracking-tighter">
-                  Picks in Slip
-                </span>
+                <span className="bg-black/20 px-3 py-1 rounded-lg text-xs font-black">{pendingPicks.length}</span>
+                <span className="text-sm font-black uppercase italic tracking-tighter">Picks in Slip</span>
               </div>
               <span className="text-xs font-bold uppercase tracking-widest">Review & Submit →</span>
             </button>
           </div>
       )}
 
-      {/* --- MOBILE: FULL SCREEN SLIP MODAL --- */}
       {showMobileSlip && (
           <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm md:hidden flex items-end">
             <div className="w-full h-[85vh] bg-gray-950 rounded-t-2xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300">
@@ -662,31 +589,15 @@ export default function DashboardClient({
                   <button onClick={() => setShowMobileSlip(false)} className="text-gray-500 hover:text-white p-2 text-xs font-bold uppercase tracking-widest">✕ Close</button>
                </div>
                <div className="flex-1 overflow-y-auto p-4">
-                  <BettingSlip 
-                     picks={pendingPicks} 
-                     onCancelAll={() => { setPendingPicks([]); setShowMobileSlip(false); }}
-                     onRemovePick={handleRemovePick}
-                     onConfirm={handleConfirmAllPicks}
-                     isSubmitting={isSubmitting}
-                  />
+                  <BettingSlip picks={pendingPicks} onCancelAll={() => { setPendingPicks([]); setShowMobileSlip(false); }} onRemovePick={handleRemovePick} onConfirm={handleConfirmAllPicks} isSubmitting={isSubmitting} />
                </div>
             </div>
           </div>
       )}
 
-      <CreateLeagueModal 
-        isOpen={showCreateModal} 
-        onClose={() => setShowCreateModal(false)} 
-        onRefresh={() => window.location.reload()} 
-      />
-
-      <ShowdownModal 
-        isOpen={showShowdown} 
-        onClose={() => setShowShowdown(false)} 
-      />
-
+      <CreateLeagueModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} onRefresh={() => window.location.reload()} />
+      <ShowdownModal isOpen={showShowdown} onClose={() => setShowShowdown(false)} />
       <MobileNav />
-
     </div>
   );
 }
