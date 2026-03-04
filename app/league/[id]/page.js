@@ -1,7 +1,7 @@
 'use client';
 
 import { createClient } from '@supabase/supabase-js';
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import FightDashboard from '../../components/FightDashboard';
@@ -43,7 +43,6 @@ export default function LeaguePage() {
   const [showMobileLeagues, setShowMobileLeagues] = useState(false);
   const [showMobileSlip, setShowMobileSlip] = useState(false);
   
-  // 🏆 NEW: Championship Celebration State
   const [showChampCelebration, setShowChampCelebration] = useState(false);
   
   const [expandedUserRoster, setExpandedUserRoster] = useState(null); 
@@ -89,6 +88,52 @@ export default function LeaguePage() {
       };
       return getCore(pickName) === getCore(statName);
   };
+
+  // 🎯 CUSTOM LEAGUE SCORING ENGINE
+  const getCustomPoints = useCallback((pick, stats, fightInfo, format) => {
+      if (!stats) return 0;
+      if (format === 'MMA' || !format) return stats.fantasy_points || 0;
+
+      let pts = 0;
+      
+      // 1. Base Stats
+      if (format === 'Striking') {
+          pts = ((stats.sig_strikes || 0) * 0.25) + ((stats.knockdowns || 0) * 5);
+      } else if (format === 'Grappling') {
+          const ctrlMins = (stats.control_time_seconds || 0) / 60;
+          pts = ((stats.takedowns || 0) * 2.5) + ((stats.sub_attempts || 0) * 3) + (ctrlMins * 1.8);
+      }
+
+      // 2. Finish Bonuses (Only applied if the finish matches the skill-set)
+      if (stats.is_winner && fightInfo && fightInfo.method) {
+          const method = fightInfo.method.toLowerCase();
+          const isKO = method.includes('ko');
+          const isSub = method.includes('sub');
+
+          if ((format === 'Striking' && isKO) || (format === 'Grappling' && isSub)) {
+              let baseBonus = 0;
+              const r = fightInfo.round || 1;
+              if (r === 1) baseBonus = 35;
+              else if (r === 2) baseBonus = 25;
+              else if (r === 3) baseBonus = 20;
+              else if (r === 4) baseBonus = 25;
+              else if (r === 5) baseBonus = 40;
+              else baseBonus = 10;
+
+              let oddsMult = 1;
+              const odds = parseInt(pick.odds_at_pick) || 0;
+              if (odds > 0) oddsMult = odds / 100;
+              else if (odds < 0) oddsMult = 100 / Math.abs(odds);
+
+              let finBonus = baseBonus * oddsMult;
+              if (odds < 0) finBonus += 10; // Fav Flat Bonus
+
+              pts += finBonus;
+          }
+      }
+
+      return parseFloat(pts.toFixed(1));
+  }, []);
 
   const { currentEventFights, visibleFights, groupedFights, isEventConcluded } = useMemo(() => {
       if (!allFights || allFights.length === 0) return { currentEventFights: [], visibleFights: [], groupedFights: {}, isEventConcluded: false };
@@ -186,17 +231,24 @@ export default function LeaguePage() {
 
   const allCardFightersRanked = useMemo(() => {
       if (!fighterStats || fighterStats.length === 0 || currentEventFights.length === 0) return [];
+      const leagueFormat = league?.scoring_format || 'MMA';
       const fightIds = currentEventFights.map(f => String(f.id));
+      
       const filteredStats = fighterStats.filter(s => fightIds.includes(String(s.fight_id)));
+      
       const mappedStats = filteredStats.map(s => {
           const fight = currentEventFights.find(f => String(f.id) === String(s.fight_id));
-          return { ...s, method: fight?.method || '' };
+          const dummyPick = { odds_at_pick: 0 }; // Baseline 1x multiplier for optimal lineup preview
+          const customPts = getCustomPoints(dummyPick, s, fight, leagueFormat);
+          return { ...s, method: fight?.method || '', customPts };
       });
-      return mappedStats.sort((a, b) => (b.fantasy_points || 0) - (a.fantasy_points || 0));
-  }, [fighterStats, currentEventFights]);
+      
+      return mappedStats.sort((a, b) => (b.customPts || 0) - (a.customPts || 0));
+  }, [fighterStats, currentEventFights, league, getCustomPoints]);
 
   const leaderboard = useMemo(() => {
       if (!members || !allLeaguePicks || !fighterStats || !allFights) return [];
+      const leagueFormat = league?.scoring_format || 'MMA';
 
       let pastEvents = [];
       let currentBucket = [];
@@ -233,8 +285,9 @@ export default function LeaguePage() {
           let eventScores = {};
           eventPicks.forEach(pick => {
               const stats = fighterStats.find(s => String(s.fight_id) === String(pick.fight_id) && isFighterMatch(pick.selected_fighter, s.fighter_name));
+              const fightInfo = eventFights.find(f => String(f.id) === String(pick.fight_id));
               if (stats) {
-                  eventScores[pick.user_id] = (eventScores[pick.user_id] || 0) + parseFloat(stats.fantasy_points || 0);
+                  eventScores[pick.user_id] = (eventScores[pick.user_id] || 0) + getCustomPoints(pick, stats, fightInfo, leagueFormat);
               }
           });
 
@@ -264,7 +317,8 @@ export default function LeaguePage() {
 
           memberPicks.forEach(pick => {
               const stats = fighterStats.find(s => String(s.fight_id) === String(pick.fight_id) && isFighterMatch(pick.selected_fighter, s.fighter_name));
-              if (stats) totalScore += parseFloat(stats.fantasy_points || 0);
+              const fightInfo = allFights.find(f => String(f.id) === String(pick.fight_id));
+              if (stats) totalScore += getCustomPoints(pick, stats, fightInfo, leagueFormat);
           });
 
           return {
@@ -272,7 +326,7 @@ export default function LeaguePage() {
               displayName: member.displayName,
               avatarUrl: member.avatarUrl,
               lifetimePoints: member.lifetimePoints, 
-              equippedTitle: member.equippedTitle, // 🎯 Feed Title down to table
+              equippedTitle: member.equippedTitle, 
               pickCount: memberPicks.length,
               totalScore: parseFloat(totalScore.toFixed(1)),
               cardsWon: historicalWinsMap[member.user_id] || 0,
@@ -281,11 +335,10 @@ export default function LeaguePage() {
       });
 
       return scores.sort((a, b) => b.totalScore - a.totalScore || b.cardsWon - a.cardsWon);
-  }, [members, activeLeaguePicks, allLeaguePicks, fighterStats, allFights, leagueId]);
+  }, [members, activeLeaguePicks, allLeaguePicks, fighterStats, allFights, leagueId, league, getCustomPoints]);
 
   useEffect(() => {
       if (!user || leaderboard.length === 0) return;
-
       const myLeaderboardEntry = leaderboard.find(p => p.user_id === user.email);
       
       if (myLeaderboardEntry?.isReigningChamp) {
@@ -343,8 +396,6 @@ export default function LeaguePage() {
 
         if (processedMembers.length > 0) {
             const memberIds = processedMembers.map(m => m.user_id);
-            
-            // 🎯 GRAB equipped_title for members
             const { data: profiles } = await supabase
                 .from('profiles')
                 .select('email, username, avatar_url, lifetime_points, equipped_title')
@@ -355,7 +406,7 @@ export default function LeaguePage() {
                 const displayName = (profile && profile.username) ? profile.username : member.user_id.split('@')[0]; 
                 const avatarUrl = profile?.avatar_url || null;
                 const lifetimePoints = profile?.lifetime_points || 0; 
-                const equippedTitle = profile?.equipped_title || null; // 🎯 Assign title
+                const equippedTitle = profile?.equipped_title || null; 
                 
                 return { ...member, displayName, avatarUrl, lifetimePoints, equippedTitle };
             });
@@ -524,6 +575,7 @@ export default function LeaguePage() {
   const renderTeamBoxScore = (email, playerName = null, totalScore = 0, showHeader = false, isReigningChamp = false) => {
       if (!email) return null; 
       const teamPicks = activeLeaguePicks.filter(p => p.user_id === email && String(p.league_id) === String(leagueId));
+      const leagueFormat = league?.scoring_format || 'MMA';
       
       return (
           <div className={`bg-black overflow-hidden w-full transition-all ${showHeader ? 'border border-gray-800 rounded-xl' : 'border-t border-gray-800'}`}>
@@ -546,11 +598,14 @@ export default function LeaguePage() {
                           <tr>
                               <th className="px-1 py-2 sm:p-2 md:p-3 truncate max-w-[60px] sm:max-w-none">Fighter</th>
                               <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Result</th>
-                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">KD</th> 
-                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SS</th>
-                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">TD</th>
-                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SUB</th>
-                              <th className="px-1 py-2 sm:p-2 md:p-3 text-center">CTRL</th>
+                              
+                              {/* 🎯 DYNAMIC COLUMNS BASED ON LEAGUE FORMAT */}
+                              {leagueFormat !== 'Grappling' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-pink-700/50">KD</th>}
+                              {leagueFormat !== 'Grappling' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-pink-700/50">SS</th>}
+                              {leagueFormat !== 'Striking' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-teal-700/50">TD</th>}
+                              {leagueFormat !== 'Striking' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-teal-700/50">SUB</th>}
+                              {leagueFormat !== 'Striking' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-teal-700/50">CTRL</th>}
+                              
                               <th className="px-1 py-2 sm:p-2 md:p-3 text-right text-pink-500">PTS</th>
                           </tr>
                       </thead>
@@ -567,24 +622,25 @@ export default function LeaguePage() {
                                               HIDDEN
                                           </td>
                                           <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
-                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td> 
-                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
-                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
-                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
-                                          <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>
+                                          {leagueFormat !== 'Grappling' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>}
+                                          {leagueFormat !== 'Grappling' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>}
+                                          {leagueFormat !== 'Striking' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>}
+                                          {leagueFormat !== 'Striking' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>}
+                                          {leagueFormat !== 'Striking' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-700">-</td>}
                                           <td className="px-1 py-2 sm:p-2 md:p-3 text-right text-gray-700">-</td>
                                       </tr>
                                   );
                               }
 
                               const stats = getStatsForPick(pick);
+                              const fightInfo = allFights.find(f => String(f.id) === String(pick.fight_id));
                               const m = Math.floor((stats.control_time_seconds || 0) / 60);
                               const s = (stats.control_time_seconds || 0) % 60;
                               const ctrlStr = `${m}:${s.toString().padStart(2, '0')}`;
-                              
-                              const fightInfo = allFights.find(f => String(f.id) === String(pick.fight_id));
                               const winMethod = fightInfo?.method ? `\n(${fightInfo.method})` : '';
                               
+                              const customPts = getCustomPoints(pick, stats, fightInfo, leagueFormat);
+
                               return (
                                   <tr key={pick.id} className="hover:bg-gray-900/50 transition-colors">
                                       <td className="px-1 py-2 sm:p-2 md:p-3 font-bold text-white truncate max-w-[60px] sm:max-w-[100px] md:max-w-none" title={pick.selected_fighter}>{pick.selected_fighter}</td>
@@ -597,12 +653,12 @@ export default function LeaguePage() {
                                               <span className="text-gray-600">-</span>
                                           )}
                                       </td>
-                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.knockdowns || 0}</td>
-                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
-                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
-                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>
-                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{ctrlStr}</td>
-                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-right font-black text-pink-500">{(stats.fantasy_points || 0).toFixed(1)}</td>
+                                      {leagueFormat !== 'Grappling' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.knockdowns || 0}</td>}
+                                      {leagueFormat !== 'Grappling' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>}
+                                      {leagueFormat !== 'Striking' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.takedowns || 0}</td>}
+                                      {leagueFormat !== 'Striking' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>}
+                                      {leagueFormat !== 'Striking' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{ctrlStr}</td>}
+                                      <td className="px-1 py-2 sm:p-2 md:p-3 text-right font-black text-pink-500">{customPts.toFixed(1)}</td>
                                   </tr>
                               );
                           })}
@@ -735,8 +791,9 @@ export default function LeaguePage() {
             )}
             <div className="absolute inset-0 flex flex-col justify-end p-4 md:p-10 z-20">
                 <div className="max-w-7xl mx-auto w-full">
-                    <span className="bg-pink-600 text-white text-[9px] font-black uppercase px-2 py-1 rounded inline-block mb-2 md:mb-3">
-                        DFS League
+                    {/* 🎯 DYNAMIC LEAGUE TAG */}
+                    <span className="bg-pink-600 text-white text-[9px] font-black uppercase px-2 py-1 rounded inline-block mb-2 md:mb-3 shadow-[0_0_10px_rgba(236,72,153,0.3)]">
+                        {league?.scoring_format === 'Striking' ? '🥊 Striking Only League' : league?.scoring_format === 'Grappling' ? '🥋 Grappling Only League' : '⚔️ Standard MMA League'}
                     </span>
                     <h1 className="text-3xl md:text-6xl font-black italic uppercase tracking-tighter mb-2 leading-none">
                         {league?.name}
@@ -855,11 +912,13 @@ export default function LeaguePage() {
                                                                 <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Rnk</th>
                                                                 <th className="px-1 py-2 sm:p-2 md:p-3 truncate max-w-[60px] sm:max-w-none">Fighter</th>
                                                                 <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Result</th>
-                                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">KD</th>
-                                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SS</th>
-                                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">TD</th>
-                                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">SUB</th>
-                                                                <th className="px-1 py-2 sm:p-2 md:p-3 text-center">CTRL</th>
+                                                                
+                                                                {league?.scoring_format !== 'Grappling' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-pink-700/50">KD</th>}
+                                                                {league?.scoring_format !== 'Grappling' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-pink-700/50">SS</th>}
+                                                                {league?.scoring_format !== 'Striking' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-teal-700/50">TD</th>}
+                                                                {league?.scoring_format !== 'Striking' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-teal-700/50">SUB</th>}
+                                                                {league?.scoring_format !== 'Striking' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-teal-700/50">CTRL</th>}
+                                                                
                                                                 <th className="px-1 py-2 sm:p-2 md:p-3 text-right text-teal-400">PTS</th>
                                                             </tr>
                                                         </thead>
@@ -883,12 +942,12 @@ export default function LeaguePage() {
                                                                                 <span className="text-gray-600">-</span>
                                                                             )}
                                                                         </td>
-                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.knockdowns || 0}</td>
-                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>
-                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.takedowns || 0}</td>
-                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>
-                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{ctrlStr}</td>
-                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-right font-black text-teal-400">{(stats.fantasy_points || 0).toFixed(1)}</td>
+                                                                        {league?.scoring_format !== 'Grappling' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.knockdowns || 0}</td>}
+                                                                        {league?.scoring_format !== 'Grappling' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sig_strikes || 0}</td>}
+                                                                        {league?.scoring_format !== 'Striking' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.takedowns || 0}</td>}
+                                                                        {league?.scoring_format !== 'Striking' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{stats.sub_attempts || 0}</td>}
+                                                                        {league?.scoring_format !== 'Striking' && <td className="px-1 py-2 sm:p-2 md:p-3 text-center text-gray-300">{ctrlStr}</td>}
+                                                                        <td className="px-1 py-2 sm:p-2 md:p-3 text-right font-black text-teal-400">{(stats.customPts || 0).toFixed(1)}</td>
                                                                     </tr>
                                                                 );
                                                             })}
@@ -969,7 +1028,6 @@ export default function LeaguePage() {
                                         <div className="divide-y divide-gray-800">
                                             {leaderboard.map((player, index) => {
                                                 
-                                                // 🎯 Calculate Title Rarity specifically for this player
                                                 let titleRarity = 'Common';
                                                 if (player.equippedTitle) {
                                                     for (const crate of STORE_CASES) {
@@ -1030,7 +1088,6 @@ export default function LeaguePage() {
                                                                         )}
                                                                     </div>
 
-                                                                    {/* 🎯 THE EQUIPPED TITLE INJECTED HERE */}
                                                                     {player.equippedTitle && (
                                                                         <span className={`text-[9px] font-black uppercase tracking-widest mt-0.5 truncate ${getRarityTextStyle(titleRarity)}`}>
                                                                             "{player.equippedTitle}"
@@ -1136,6 +1193,7 @@ export default function LeaguePage() {
                         </div>
                     )}
 
+                    {/* 🎯 NEW ADMIN SETTINGS FOR SCORING FORMAT */}
                     {activeTab === 'settings' && isAdmin && (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-12">
                             
@@ -1149,10 +1207,15 @@ export default function LeaguePage() {
                                         e.preventDefault();
                                         const form = e.target;
                                         const newName = form.leagueName.value;
+                                        const newFormat = form.scoringFormat.value; // 🎯 Capture new format
                                         
                                         const { error } = await supabase
                                             .from('leagues')
-                                            .update({ name: newName, image_url: localLeagueImage }) 
+                                            .update({ 
+                                                name: newName, 
+                                                image_url: localLeagueImage,
+                                                scoring_format: newFormat // 🎯 Save to DB
+                                            }) 
                                             .eq('id', leagueId);
 
                                         if (error) setToast({ message: error.message, type: "error" });
@@ -1211,6 +1274,20 @@ export default function LeaguePage() {
                                                     </button>
                                                 </div>
                                             </div>
+                                        </div>
+
+                                        {/* 🎯 NEW DROPDOWN FOR SCORING FORMAT */}
+                                        <div className="min-w-0 col-span-1 lg:col-span-2 mt-2">
+                                            <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">League Scoring Format</label>
+                                            <select
+                                                name="scoringFormat"
+                                                defaultValue={league?.scoring_format || 'MMA'}
+                                                className="w-full bg-black border border-gray-700 p-4 rounded-xl text-white font-bold focus:border-pink-500 outline-none transition-all cursor-pointer"
+                                            >
+                                                <option value="MMA">⚔️ Standard MMA (All Stats & General Bonuses)</option>
+                                                <option value="Striking">🥊 Striking Only (Sig. Strikes, KDs, & KO Bonuses only)</option>
+                                                <option value="Grappling">🥋 Grappling Only (Takedowns, Subs, Control Time, & Sub Bonuses only)</option>
+                                            </select>
                                         </div>
                                     </div>
                                     

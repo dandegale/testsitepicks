@@ -21,6 +21,17 @@ const REQUEST_HEADERS = {
     }
 };
 
+// 🎯 THE NAME DICTIONARY
+const NAME_DICTIONARY = {
+    "Javier Reyes Rugeles": "Javier Reyes",
+    "Joseph Pyfer": "Joe Pyfer",
+    "Long Xiao": "Xiao Long",
+    "Sergey Spivak": "Serghei Spivac",
+    "Sulangrangbo": "Sulangrangbo", 
+    "Sumudaerji Sumudaerji": "Su Mudaerji",
+    "Yi Zha": "Yizha"
+};
+
 // 1. GOD MODE PROFILE SEARCH 
 async function searchFighterProfile(fighterName) {
     console.log(`🔍 Searching for ${fighterName.trim()}...`);
@@ -86,7 +97,7 @@ async function searchFighterProfile(fighterName) {
     return profileUrl;
 }
 
-// 🎯 NEW: Grab the official headshot from the main UFC website
+// 🎯 Grab the official headshot
 async function getFighterImage(fighterName) {
     try {
         const formattedName = fighterName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[łŁ]/g, 'l');
@@ -95,14 +106,8 @@ async function getFighterImage(fighterName) {
         const { data } = await axios.get(url, REQUEST_HEADERS);
         const $ = cheerio.load(data);
         
-        let imageUrl = $('.hero-profile__image').attr('src');
-        
-        if (imageUrl) {
-            return imageUrl;
-        }
-        return null;
+        return $('.hero-profile__image').attr('src') || null;
     } catch (err) {
-        console.log(`   ⚠️ No official image found for ${fighterName}`);
         return null;
     }
 }
@@ -123,8 +128,6 @@ async function getFighterProfileData(profileUrl) {
     
     let height = '--', weight = '--', reach = '--', dob = '--';
     let slpm = 0, tdAvg = 0, kdAvg = 0;
-    
-    // 🎯 NEW: Setting up buckets for the accuracy stats
     let strAcc = 0, tdAcc = 0, tdDef = 0;
 
     $('.b-list__box-list-item').each((i, el) => {
@@ -138,7 +141,6 @@ async function getFighterProfileData(profileUrl) {
         if (text.includes('Td. Avg.:') || text.includes('TD Avg.:')) tdAvg = parseFloat(text.replace(/Td\. Avg\.:|TD Avg\.:/i, '').trim()) || 0;
         if (text.includes('KD Avg.:')) kdAvg = parseFloat(text.replace('KD Avg.:', '').trim()) || 0;
         
-        // 🎯 NEW: Parsing the accuracy stats and stripping the "%" sign
         if (text.includes('Str. Acc.:')) strAcc = parseFloat(text.replace('Str. Acc.:', '').replace('%', '').trim()) || 0;
         if (text.includes('TD Acc.:')) tdAcc = parseFloat(text.replace('TD Acc.:', '').replace('%', '').trim()) || 0;
         if (text.includes('TD Def.:')) tdDef = parseFloat(text.replace('TD Def.:', '').replace('%', '').trim()) || 0;
@@ -150,9 +152,7 @@ async function getFighterProfileData(profileUrl) {
         const today = new Date();
         age = today.getFullYear() - birthDate.getFullYear();
         const m = today.getMonth() - birthDate.getMonth();
-        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-            age--; 
-        }
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--; 
     }
 
     return { 
@@ -161,7 +161,7 @@ async function getFighterProfileData(profileUrl) {
     };
 }
 
-// 3. SCORE FIGHT 
+// 3. SCORE FIGHT (NOW RETURNS SEPARATED BUCKETS)
 async function scoreHistoricalFight(fightUrl, targetFighterName) {
     try {
         const { data } = await axios.get(fightUrl, REQUEST_HEADERS);
@@ -180,16 +180,13 @@ async function scoreHistoricalFight(fightUrl, targetFighterName) {
         const targetIndex = fighters.findIndex(f => {
             const fLower = f.toLowerCase().replace(/-/g, ' ').replace(/[łŁ]/g, 'l').trim();
             const fParts = fLower.split(/\s+/);
-            
             const fFirst3 = fParts[0].substring(0, 3);
             const fLast = fParts[fParts.length - 1].replace(/[^a-z]/g, '');
-
             return (fFirst3 === dbFirst3) && (fLast.includes(dbLast) || dbLast.includes(fLast));
         });
 
         if (targetIndex === -1) return null; 
         
-        const opponentIndex = targetIndex === 0 ? 1 : 0;
         const statuses = [];
         $('.b-fight-details__person-status').each((i, el) => statuses.push($(el).text().trim().toUpperCase()));
         
@@ -255,22 +252,36 @@ async function scoreHistoricalFight(fightUrl, targetFighterName) {
             const [m, s] = ctrlRaw.split(':').map(Number);
             const ctrlMinutes = (m || 0) + ((s || 0) / 60);
 
-            let points = (sig_str * 0.25) + (td * 2.5) + (kd * 5) + (sub_att * 3) + (ctrlMinutes * 1.8);
+            // 🎯 SPLITTING THE BUCKETS HERE
+            let strPts = (sig_str * 0.25) + (kd * 5);
+            let grapPts = (td * 2.5) + (sub_att * 3) + (ctrlMinutes * 1.8);
+            let totalBase = strPts + grapPts;
             
-            return { is_winner: statuses[i] === 'W', fantasy_points: points };
+            return { 
+                is_winner: statuses[i] === 'W', 
+                fantasy_points: totalBase,
+                striking_points: strPts,
+                grappling_points: grapPts
+            };
         });
 
         const winnerIndex = results.findIndex(r => r.is_winner);
         if (winnerIndex !== -1) {
             const loserIndex = winnerIndex === 0 ? 1 : 0;
-            results[winnerIndex].fantasy_points += baseBonus;
+            // Note: In historical tracking, we apply the base bonus as 1x since odds aren't easily scraped here.
+            results[winnerIndex].fantasy_points += baseBonus; 
             
             if (results[winnerIndex].fantasy_points < results[loserIndex].fantasy_points) {
                 results[winnerIndex].fantasy_points = results[loserIndex].fantasy_points;
             }
         }
 
-        return parseFloat(Math.min(results[targetIndex].fantasy_points, 999.99).toFixed(2));
+        // 🎯 RETURN ALL THREE METRICS
+        return {
+            total: parseFloat(Math.min(results[targetIndex].fantasy_points, 999.99).toFixed(2)),
+            striking: parseFloat(results[targetIndex].striking_points.toFixed(2)),
+            grappling: parseFloat(results[targetIndex].grappling_points.toFixed(2))
+        };
 
     } catch (err) {
         console.error(`❌ Fight Error:`, err.message);
@@ -282,39 +293,48 @@ async function scoreHistoricalFight(fightUrl, targetFighterName) {
 async function processFighter(fighterName) {
     try {
         const trimmedName = fighterName.trim();
-        const profileUrl = await searchFighterProfile(trimmedName);
-        console.log(`✅ Found profile: ${profileUrl}`);
+        
+        let searchName = trimmedName;
+        if (NAME_DICTIONARY[trimmedName]) {
+            searchName = NAME_DICTIONARY[trimmedName];
+        }
 
+        const profileUrl = await searchFighterProfile(searchName);
         const { fightUrls, stats } = await getFighterProfileData(profileUrl);
+        const imageUrl = await getFighterImage(searchName);
         
-        console.log(`📸 Hunting for image...`);
-        const imageUrl = await getFighterImage(trimmedName);
-        if (imageUrl) console.log(`   ✅ Image secured!`);
-        
-        console.log(`📊 Scraped bio: ${stats.record} | Str Acc: ${stats.strAcc}% | TD Acc: ${stats.tdAcc}%`);
-        console.log(`🥊 Found ${fightUrls.length} career fights. Commencing score scrape...`);
+        console.log(`🥊 Scoring ${fightUrls.length} career fights for ${trimmedName}...`);
 
         let totalPoints = 0;
+        let totalStriking = 0;
+        let totalGrappling = 0;
         let fightsScored = 0;
 
         for (let i = 0; i < fightUrls.length; i++) {
-            const points = await scoreHistoricalFight(fightUrls[i], trimmedName);
-            if (points !== null) {
-                totalPoints += points;
+            const scoreData = await scoreHistoricalFight(fightUrls[i], searchName);
+            if (scoreData !== null) {
+                totalPoints += scoreData.total;
+                totalStriking += scoreData.striking;
+                totalGrappling += scoreData.grappling;
                 fightsScored++;
             }
             await new Promise(r => setTimeout(r, 1500)); 
         }
 
-        const average = fightsScored === 0 ? 0 : parseFloat((totalPoints / fightsScored).toFixed(2));
+        // 🎯 CALCULATE THE AVERAGES
+        const avgTotal = fightsScored === 0 ? 0 : parseFloat((totalPoints / fightsScored).toFixed(2));
+        const avgStriking = fightsScored === 0 ? 0 : parseFloat((totalStriking / fightsScored).toFixed(2));
+        const avgGrappling = fightsScored === 0 ? 0 : parseFloat((totalGrappling / fightsScored).toFixed(2));
         
-        console.log(`🏆 FINAL: ${trimmedName.toUpperCase()} -> AVG: ${average} pts\n`);
+        console.log(`🏆 ${trimmedName.toUpperCase()} -> AVG TOTAL: ${avgTotal} | STR: ${avgStriking} | GRAP: ${avgGrappling}\n`);
 
         const { error } = await supabase
             .from('fighter_historical_stats')
             .upsert({
                 fighter_name: trimmedName,
-                average_fantasy_points: average,
+                average_fantasy_points: avgTotal,
+                avg_striking_points: avgStriking,     // 🎯 NEW
+                avg_grappling_points: avgGrappling,   // 🎯 NEW
                 total_fights_scored: fightsScored,
                 total_points: parseFloat(totalPoints.toFixed(2)),
                 nickname: stats.nickname,
@@ -326,9 +346,9 @@ async function processFighter(fighterName) {
                 sig_strikes_per_min: stats.slpm,
                 takedown_avg: stats.tdAvg,
                 knockdown_avg: stats.kdAvg,
-                striking_accuracy: stats.strAcc, // 🎯 NEW
-                takedown_accuracy: stats.tdAcc,  // 🎯 NEW
-                takedown_defense: stats.tdDef,   // 🎯 NEW
+                striking_accuracy: stats.strAcc, 
+                takedown_accuracy: stats.tdAcc,  
+                takedown_defense: stats.tdDef,   
                 image_url: imageUrl,
                 last_updated: new Date().toISOString()
             }, { onConflict: 'fighter_name' });
@@ -365,15 +385,15 @@ async function runBatch() {
 
     const fightersToProcess = Array.from(fighterSet);
 
-    console.log(`📋 ${fightersToProcess.length} fighters to process. Starting scrape...\n`);
+    console.log(`📋 ${fightersToProcess.length} fighters to process. Commencing Historical Backfill...\n`);
 
     for (const fighter of fightersToProcess) {
         await processFighter(fighter);
-        console.log("⏳ Resting 5 seconds before next fighter to avoid IP bans...");
-        await new Promise(r => setTimeout(r, 5000));
+        console.log("⏳ Resting 3 seconds before next fighter to avoid IP bans...");
+        await new Promise(r => setTimeout(r, 3000));
     }
     
-    console.log("🎉 ALL FIGHTERS UPDATED WITH NEW BIO STATS!");
+    console.log("🎉 ALL FIGHTERS UPDATED WITH STRIKING/GRAPPLING POINTS!");
 }
 
 runBatch();

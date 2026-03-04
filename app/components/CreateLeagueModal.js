@@ -13,8 +13,11 @@ export default function CreateLeagueModal({ isOpen, onClose, onRefresh }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // 🎯 NEW: Privacy State (Defaults to Private)
+  // Privacy State
   const [isPublic, setIsPublic] = useState(false);
+  
+  // 🎯 NEW: Format State (Defaults to MMA)
+  const [scoringFormat, setScoringFormat] = useState('MMA');
 
   const fileInputRef = useRef(null);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -81,7 +84,8 @@ export default function CreateLeagueModal({ isOpen, onClose, onRefresh }) {
         image_url: imageUrl, 
         created_by: user.id, 
         invite_code: code,
-        is_public: isPublic // 🎯 NEW: Save the privacy setting to the database
+        is_public: isPublic,
+        scoring_format: scoringFormat // 🎯 NEW: Save the custom format to DB
       }])
       .select()
       .single();
@@ -144,7 +148,7 @@ export default function CreateLeagueModal({ isOpen, onClose, onRefresh }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 backdrop-blur-sm overflow-y-auto pt-24 pb-10">
       <div className="bg-gray-950 border border-pink-600 p-8 rounded-2xl max-w-md w-full shadow-2xl animate-in zoom-in duration-200">
         
         {/* Header */}
@@ -219,7 +223,7 @@ export default function CreateLeagueModal({ isOpen, onClose, onRefresh }) {
                 </div>
             </div>
 
-            {/* 🎯 NEW: PRIVACY TOGGLE UI */}
+            {/* PRIVACY TOGGLE */}
             <div className="bg-gray-900/50 p-4 rounded-xl border border-gray-800">
                 <div className="flex items-center justify-between">
                     <div>
@@ -236,6 +240,25 @@ export default function CreateLeagueModal({ isOpen, onClose, onRefresh }) {
                         <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform duration-300 ${isPublic ? 'translate-x-6' : 'translate-x-0'}`} />
                     </button>
                 </div>
+            </div>
+
+            {/* 🎯 NEW: SCORING FORMAT DROPDOWN */}
+            <div className="bg-gray-900/50 p-4 rounded-xl border border-gray-800">
+                <label className="text-[10px] font-black text-white uppercase tracking-widest block mb-3">Scoring Format</label>
+                <select
+                    value={scoringFormat}
+                    onChange={(e) => setScoringFormat(e.target.value)}
+                    className="w-full bg-black border border-gray-700 p-3 rounded-lg text-white font-bold text-[10px] uppercase tracking-widest focus:border-pink-500 outline-none transition-all cursor-pointer"
+                >
+                    <option value="MMA">⚔️ Standard MMA</option>
+                    <option value="Striking">🥊 Striking Only</option>
+                    <option value="Grappling">🥋 Grappling Only</option>
+                </select>
+                <p className="text-[9px] text-gray-500 uppercase font-bold mt-2">
+                    {scoringFormat === 'MMA' && 'Calculates points for all stats and finish bonuses.'}
+                    {scoringFormat === 'Striking' && 'Only rewards points for Strikes, KDs, and KO Finishes.'}
+                    {scoringFormat === 'Grappling' && 'Only rewards points for TDs, Subs, Control, and Sub Finishes.'}
+                </p>
             </div>
 
             <button 
