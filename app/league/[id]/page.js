@@ -195,8 +195,11 @@ export default function LeaguePage() {
 
   const activeLeaguePicks = useMemo(() => {
       const currentEventFightIds = currentEventFights.map(f => String(f.id));
-      return allLeaguePicks.filter(p => currentEventFightIds.includes(String(p.fight_id)));
-  }, [allLeaguePicks, currentEventFights]);
+      return allLeaguePicks.filter(p => 
+          currentEventFightIds.includes(String(p.fight_id)) && 
+          String(p.league_id) === String(leagueId) // 🎯 Double check scoping
+      );
+  }, [allLeaguePicks, currentEventFights, leagueId]);
 
   const existingPicks = useMemo(() => {
       if (!user) return [];
@@ -226,7 +229,8 @@ export default function LeaguePage() {
               result: fight?.winner ? (fight.winner === pick.selected_fighter ? 'WIN' : 'LOSS') : 'PENDING'
           };
       });
-      return feed.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      // 🎯 Only show feed items for actual members of the league
+      return feed.filter(f => f.user !== "Unknown").sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   }, [activeLeaguePicks, allFights, members]);
 
   const allCardFightersRanked = useMemo(() => {
@@ -238,7 +242,7 @@ export default function LeaguePage() {
       
       const mappedStats = filteredStats.map(s => {
           const fight = currentEventFights.find(f => String(f.id) === String(s.fight_id));
-          const dummyPick = { odds_at_pick: 0 }; // Baseline 1x multiplier for optimal lineup preview
+          const dummyPick = { odds_at_pick: 0 }; 
           const customPts = getCustomPoints(dummyPick, s, fight, leagueFormat);
           return { ...s, method: fight?.method || '', customPts };
       });
@@ -278,7 +282,10 @@ export default function LeaguePage() {
           if (!isCompleted) return;
 
           const eventFightIds = eventFights.map(f => String(f.id));
-          const eventPicks = allLeaguePicks.filter(p => eventFightIds.includes(String(p.fight_id)));
+          const eventPicks = allLeaguePicks.filter(p => 
+              eventFightIds.includes(String(p.fight_id)) && 
+              String(p.league_id) === String(leagueId)
+          );
           
           if (eventPicks.length === 0) return;
 
@@ -419,7 +426,11 @@ export default function LeaguePage() {
         const { data: statsData } = await supabase.from('fighter_stats').select('*');
         setFighterStats(statsData || []);
 
-        const { data: leaguePicksData } = await supabase.from('picks').select('*');
+        // 🎯 STRICTLY LOAD PICKS FOR THIS LEAGUE ONLY
+        const { data: leaguePicksData } = await supabase
+            .from('picks')
+            .select('*')
+            .eq('league_id', leagueId); 
         setAllLeaguePicks(leaguePicksData || []);
 
     } catch (error) { console.error("League Load Error:", error); } finally { setLoading(false); }
@@ -599,7 +610,7 @@ export default function LeaguePage() {
                               <th className="px-1 py-2 sm:p-2 md:p-3 truncate max-w-[60px] sm:max-w-none">Fighter</th>
                               <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Result</th>
                               
-                              {/* 🎯 DYNAMIC COLUMNS BASED ON LEAGUE FORMAT */}
+                              {/* DYNAMIC COLUMNS BASED ON LEAGUE FORMAT */}
                               {leagueFormat !== 'Grappling' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-pink-700/50">KD</th>}
                               {leagueFormat !== 'Grappling' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-pink-700/50">SS</th>}
                               {leagueFormat !== 'Striking' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-teal-700/50">TD</th>}
@@ -791,7 +802,6 @@ export default function LeaguePage() {
             )}
             <div className="absolute inset-0 flex flex-col justify-end p-4 md:p-10 z-20">
                 <div className="max-w-7xl mx-auto w-full">
-                    {/* 🎯 DYNAMIC LEAGUE TAG */}
                     <span className="bg-pink-600 text-white text-[9px] font-black uppercase px-2 py-1 rounded inline-block mb-2 md:mb-3 shadow-[0_0_10px_rgba(236,72,153,0.3)]">
                         {league?.scoring_format === 'Striking' ? '🥊 Striking Only League' : league?.scoring_format === 'Grappling' ? '🥋 Grappling Only League' : '⚔️ Standard MMA League'}
                     </span>
@@ -836,6 +846,13 @@ export default function LeaguePage() {
                     className={`whitespace-nowrap px-4 md:px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'feed' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}
                 >
                     Activity Feed
+                </button>
+                {/* 🎯 NEW: MOBILE CHAT TAB */}
+                <button 
+                    onClick={() => setActiveTab('chat')}
+                    className={`lg:hidden whitespace-nowrap px-4 md:px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'chat' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}
+                >
+                    League Chat
                 </button>
                 {isAdmin && (
                     <button 
@@ -1193,7 +1210,21 @@ export default function LeaguePage() {
                         </div>
                     )}
 
-                    {/* 🎯 NEW ADMIN SETTINGS FOR SCORING FORMAT */}
+                    {/* 🎯 NEW: MOBILE CHAT TAB */}
+                    {activeTab === 'chat' && (
+                        <div className="lg:hidden animate-in fade-in slide-in-from-bottom-4 duration-300">
+                             <div className="flex items-center gap-2 mb-6">
+                                <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse"></span>
+                                <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
+                                    League Chat
+                                </h2>
+                            </div>
+                            <div className="h-[60vh] min-h-[500px] flex flex-col shadow-2xl shadow-black overflow-hidden rounded-xl border border-gray-900 bg-black">
+                                <ChatBox league_id={leagueId} />
+                            </div>
+                        </div>
+                    )}
+
                     {activeTab === 'settings' && isAdmin && (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-12">
                             
@@ -1207,14 +1238,14 @@ export default function LeaguePage() {
                                         e.preventDefault();
                                         const form = e.target;
                                         const newName = form.leagueName.value;
-                                        const newFormat = form.scoringFormat.value; // 🎯 Capture new format
+                                        const newFormat = form.scoringFormat.value; 
                                         
                                         const { error } = await supabase
                                             .from('leagues')
                                             .update({ 
                                                 name: newName, 
                                                 image_url: localLeagueImage,
-                                                scoring_format: newFormat // 🎯 Save to DB
+                                                scoring_format: newFormat 
                                             }) 
                                             .eq('id', leagueId);
 
@@ -1276,7 +1307,6 @@ export default function LeaguePage() {
                                             </div>
                                         </div>
 
-                                        {/* 🎯 NEW DROPDOWN FOR SCORING FORMAT */}
                                         <div className="min-w-0 col-span-1 lg:col-span-2 mt-2">
                                             <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">League Scoring Format</label>
                                             <select
