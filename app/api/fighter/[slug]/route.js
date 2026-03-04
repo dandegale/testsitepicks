@@ -1,7 +1,23 @@
 import { NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
+import { createClient } from '@supabase/supabase-js';
 
-// 🚨 CRITICAL FIX: Ensure we use "export async function GET" (No default exports!)
+// 🎯 INIT SUPABASE
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// 🎯 THE NAME DICTIONARY
+const NAME_DICTIONARY = {
+    "Javier Reyes Rugeles": "Javier Reyes",
+    "Joseph Pyfer": "Joe Pyfer",
+    "Long Xiao": "Xiao Long",
+    "Sergey Spivak": "Serghei Spivac",
+    "Sulangrangbo": "Sulangrangbo", 
+    "Sumudaerji Sumudaerji": "Su Mudaerji",
+    "Yi Zha": "Yizha"
+};
+
 export async function GET(request, { params }) {
     
     // Next.js 15+ requires params to be awaited
@@ -9,19 +25,30 @@ export async function GET(request, { params }) {
     
     if (!slug) return NextResponse.json({ error: 'No slug provided' }, { status: 400 });
 
-    const searchName = slug.replace(/-/g, ' '); 
+    // Format the name and run it through our dictionary
+    const rawName = slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    const searchName = NAME_DICTIONARY[rawName] || rawName;
+    
     const cleanSlug = slug.replace(/[^a-z0-9]/gi, '').toLowerCase();
-    const searchParts = slug.split('-');
+    const searchParts = searchName.split(' ');
     const searchLastName = searchParts[searchParts.length - 1];
+
+    // 🎯 1. CHECK SUPABASE FIRST
+    const { data: dbData } = await supabase
+        .from('fighter_historical_stats')
+        .select('*')
+        .ilike('fighter_name', searchName)
+        .single();
 
     // Data Buckets
     let espn = null;
     let tsdb = null;
-    let ufcStats = { height: null, weight: null, reach: null, stance: null, age: null, record: null, nickname: null, history: [], winStats: null };
+    // 🎯 NEW: Added slpm, tdAvg, subAvg to the bucket
+    let ufcStats = { height: null, weight: null, reach: null, stance: null, age: null, record: null, nickname: null, history: [], winStats: null, slpm: 0, tdAvg: 0, subAvg: 0 };
     let ufcCom = { ranking: '', nextFight: null };
     let wiki = { history: [], winStats: null };
 
-    // 🚀 FIRE ALL 5 DATA SOURCES CONCURRENTLY
+    // 🚀 2. FIRE ALL 5 DATA SOURCES CONCURRENTLY
     await Promise.allSettled([
         
         // 1. ESPN API (Primary for Image & Bio)
@@ -30,7 +57,6 @@ export async function GET(request, { params }) {
             const res = await fetch(espnUrl);
             if (res.ok) {
                 const data = await res.json();
-                // Safely handle ESPN's unpredictable JSON structure
                 const athletes = data.items || data.athletes || data.sports?.[0]?.leagues?.[0]?.athletes;
                 if (athletes && athletes.length > 0) espn = athletes[0];
             }
@@ -56,7 +82,6 @@ export async function GET(request, { params }) {
             const $search = cheerio.load(searchHtml);
             let fighterLink = null;
 
-            // Fuzzy match to handle names with punctuation (e.g. Lone'er)
             $search('.b-statistics__table-row').each((i, el) => {
                 const cols = $search(el).find('td');
                 if (cols.length >= 2) {
@@ -74,7 +99,6 @@ export async function GET(request, { params }) {
                 const profileHtml = await profileRes.text();
                 const $ = cheerio.load(profileHtml);
                 
-                // Get physicals & nickname
                 $('.b-list__box-list-item').each((i, el) => {
                     const text = $(el).text().replace(/\s\s+/g, ' ').trim();
                     if (text.includes('Height:')) ufcStats.height = text.replace('Height:', '').trim();
@@ -88,6 +112,10 @@ export async function GET(request, { params }) {
                             ufcStats.age = (new Date().getFullYear() - birthYear).toString();
                         }
                     }
+                    // 🎯 NEW: Scrape the Fantasy Metrics
+                    if (text.includes('SLpM:')) ufcStats.slpm = parseFloat(text.replace('SLpM:', '').trim()) || 0;
+                    if (text.includes('TD Avg.:')) ufcStats.tdAvg = parseFloat(text.replace('TD Avg.:', '').trim()) || 0;
+                    if (text.includes('Sub. Avg.:')) ufcStats.subAvg = parseFloat(text.replace('Sub. Avg.:', '').trim()) || 0;
                 });
 
                 const recordText = $('.b-content__title-record').text().trim();
@@ -97,7 +125,6 @@ export async function GET(request, { params }) {
                 const nickText = $('.b-content__nickname').text().trim();
                 if (nickText) ufcStats.nickname = nickText;
 
-                // Fallback History parsing
                 let fw = 0, fko = 0, fsub = 0, fdec = 0;
                 $('.b-fight-details__table-row').slice(1).each((i, row) => {
                     const cols = $(row).find('td');
@@ -243,25 +270,55 @@ export async function GET(request, { params }) {
         })()
     ]);
 
-    // 🧠 THE MERGE: Intelligently combine data, prioritizing ESPN, then UFC Stats, then TSDB
+    // 🧠 3. THE MERGE: Intelligently combine Supabase, ESPN, UFC Stats, etc.
+    // If Supabase has the stat, we use it first. If not, we fall back to what we just scraped.
     let bio = {
-        image: (espn?.headshot?.href) || (tsdb?.strCutout) || (tsdb?.strThumb) || null,
-        height: (espn?.displayHeight) || ufcStats.height || '—',
-        weight: (espn?.displayWeight) || ufcStats.weight || '—',
-        age: (espn?.age?.toString()) || ufcStats.age || '—',
-        reach: ufcStats.reach || '—',
+        image_url: dbData?.image_url || (espn?.headshot?.href) || (tsdb?.strCutout) || (tsdb?.strThumb) || null,
+        height: dbData?.height || (espn?.displayHeight) || ufcStats.height || '—',
+        weight: dbData?.weight || (espn?.displayWeight) || ufcStats.weight || '—',
+        age: dbData?.age?.toString() || (espn?.age?.toString()) || ufcStats.age || '—',
+        reach: dbData?.reach || ufcStats.reach || '—',
         stance: ufcStats.stance || '—',
-        record: (espn?.displayRecord) || ufcStats.record || '—',
+        record: dbData?.record || (espn?.displayRecord) || ufcStats.record || '—',
         ranking: ufcCom.ranking || '',
         country: (espn?.citizenship) || (tsdb?.strNationality) || '—',
-        nickname: (espn?.nickname) || ufcStats.nickname || '',
+        nickname: dbData?.nickname || (espn?.nickname) || ufcStats.nickname || '',
         history: wiki.history.length > 0 ? wiki.history : ufcStats.history,
-        winStats: wiki.winStats || ufcStats.winStats || { ko: 0, koPct: 0, sub: 0, subPct: 0, dec: 0, decPct: 0, totalWins: 0 }
+        winStats: wiki.winStats || ufcStats.winStats || { ko: 0, koPct: 0, sub: 0, subPct: 0, dec: 0, decPct: 0, totalWins: 0 },
+        // 🎯 NEW: FANTASY METRICS
+        sig_strikes_per_min: dbData?.sig_strikes_per_min || ufcStats.slpm || 0,
+        takedown_avg: dbData?.takedown_avg || ufcStats.tdAvg || 0,
+        submission_avg: dbData?.submission_avg || ufcStats.subAvg || 0,
+        average_fantasy_points: dbData?.average_fantasy_points || 0
     };
 
-    // Inject upcoming fight at the top if it exists
+    // Inject upcoming fight at the top of history if it exists
     if (ufcCom.nextFight) {
         bio.history.unshift(ufcCom.nextFight);
+    }
+
+    // 🎯 4. AUTO-SAVE TO SUPABASE
+    // If the fighter wasn't in the database, OR they didn't have a height saved, save them now!
+    if (!dbData || !dbData.height || dbData.height === '--') {
+        const newDbEntry = {
+            fighter_name: searchName,
+            nickname: bio.nickname,
+            record: bio.record,
+            age: parseInt(bio.age) || null,
+            height: bio.height,
+            weight: bio.weight,
+            reach: bio.reach,
+            sig_strikes_per_min: bio.sig_strikes_per_min,
+            takedown_avg: bio.takedown_avg,
+            submission_avg: bio.submission_avg,
+            image_url: bio.image_url,
+            last_updated: new Date().toISOString()
+        };
+        
+        // We run this in the background without `await` so the user doesn't have to wait for it to finish!
+        supabase.from('fighter_historical_stats').upsert(newDbEntry, { onConflict: 'fighter_name' }).then(({error}) => {
+            if (error) console.error("Auto-save failed:", error.message);
+        });
     }
 
     return NextResponse.json(bio);
