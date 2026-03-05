@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function OnboardingModal() {
+  const router = useRouter();
   const [isVisible, setIsVisible] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
 
@@ -17,6 +19,13 @@ export default function OnboardingModal() {
   const handleClose = () => {
     localStorage.setItem('hasSeenOnboarding', 'true');
     setIsVisible(false);
+  };
+
+  // 🎯 NEW: Handler to close modal and route to the guide
+  const handleGoToGuide = () => {
+    localStorage.setItem('hasSeenOnboarding', 'true');
+    setIsVisible(false);
+    router.push('/how-it-works');
   };
 
   const nextStep = () => {
@@ -106,12 +115,20 @@ export default function OnboardingModal() {
                       {currentStep === 2 ? "Let's Go" : "Next"}
                   </button>
                   
-                  {currentStep < 2 && (
+                  {/* 🎯 TOGGLE BETWEEN SKIP OR GO TO GUIDE */}
+                  {currentStep < 2 ? (
                       <button 
                           onClick={handleClose}
                           className="text-[10px] font-bold uppercase tracking-widest text-gray-600 hover:text-gray-300 transition-colors"
                       >
                           Skip Tutorial
+                      </button>
+                  ) : (
+                      <button 
+                          onClick={handleGoToGuide}
+                          className="text-[10px] font-bold uppercase tracking-widest text-teal-500 hover:text-teal-400 transition-colors"
+                      >
+                          Read Full Scoring Guide
                       </button>
                   )}
               </div>

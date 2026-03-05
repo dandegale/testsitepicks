@@ -96,7 +96,8 @@ export default function HowItWorks() {
           icon: "🌍",
           title: "Climb The Ranks",
           subtitle: "Global Picks",
-          description: "You're currently on the Global Fight Card. Select your winners for every matchup to earn points and rank up the Global Leaderboard.",
+          // 🎯 FIXED DESCRIPTION HERE
+          description: "Head over to the Global Feed to view the active fight card. Select your winners for every matchup to earn points and rank up the Global Leaderboard.",
           accent: "text-pink-500",
           border: "group-hover:border-pink-500/50",
           glow: "bg-pink-600/5 group-hover:bg-pink-600/10",
@@ -192,7 +193,6 @@ export default function HowItWorks() {
         <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between w-full">
                 <div className="flex items-center gap-3 md:gap-4">
-                    {/* TEAL HAMBURGER */}
                     <button 
                         onClick={() => setShowMobileMenu(true)} 
                         className="md:hidden p-1 text-teal-400 hover:text-teal-300 transition-colors drop-shadow-[0_0_5px_rgba(45,212,191,0.5)] animate-pulse"
