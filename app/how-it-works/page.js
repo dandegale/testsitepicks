@@ -90,13 +90,16 @@ export default function HowItWorks() {
 
   const finalScore = totalBasePoints + finalBonus;
 
-  // --- THE 3 PILLARS ---
+  // --- THE 3 PILLARS (NOW WITH SVGS) ---
   const steps = [
       {
-          icon: "🌍",
+          icon: (
+              <svg className="w-14 h-14 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+          ),
           title: "Climb The Ranks",
           subtitle: "Global Picks",
-          // 🎯 FIXED DESCRIPTION HERE
           description: "Head over to the Global Feed to view the active fight card. Select your winners for every matchup to earn points and rank up the Global Leaderboard.",
           accent: "text-pink-500",
           border: "group-hover:border-pink-500/50",
@@ -104,7 +107,11 @@ export default function HowItWorks() {
           shadow: "group-hover:shadow-[0_0_30px_rgba(236,72,153,0.15)]"
       },
       {
-          icon: "💎",
+          icon: (
+              <svg className="w-14 h-14 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+              </svg>
+          ),
           title: "Draft & Unlock",
           subtitle: "Leagues & The Store",
           description: "Create private leagues or join public ones. Remember: Leagues are the ONLY way to gain levels and earn coins to spend on exclusive items in the Store!",
@@ -114,7 +121,11 @@ export default function HowItWorks() {
           shadow: "group-hover:shadow-[0_0_30px_rgba(20,184,166,0.15)]"
       },
       {
-          icon: "⚔️",
+          icon: (
+              <svg className="w-14 h-14 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+          ),
           title: "Head-To-Head",
           subtitle: "1v1 Showdowns",
           description: "Think your Fight IQ is unmatched? Challenge other managers directly in 1v1 Showdowns to put your prediction skills to the ultimate test.",
@@ -193,6 +204,7 @@ export default function HowItWorks() {
         <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between w-full">
                 <div className="flex items-center gap-3 md:gap-4">
+                    {/* TEAL HAMBURGER */}
                     <button 
                         onClick={() => setShowMobileMenu(true)} 
                         className="md:hidden p-1 text-teal-400 hover:text-teal-300 transition-colors drop-shadow-[0_0_5px_rgba(45,212,191,0.5)] animate-pulse"
@@ -239,8 +251,8 @@ export default function HowItWorks() {
                   >
                       <div className={`absolute inset-0 transition-colors duration-500 ${step.glow}`}></div>
                       
-                      <div className="relative z-10">
-                          <div className="text-5xl md:text-6xl mb-6 transform transition-transform duration-500 group-hover:scale-110 drop-shadow-lg">
+                      <div className="relative z-10 flex flex-col items-center">
+                          <div className="mb-6 transform transition-transform duration-500 group-hover:scale-110 drop-shadow-lg">
                               {step.icon}
                           </div>
 
