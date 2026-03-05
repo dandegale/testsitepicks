@@ -45,6 +45,9 @@ export default function LeaguePage() {
   
   const [showChampCelebration, setShowChampCelebration] = useState(false);
   
+  // 🎯 NEW: CUSTOM MODAL STATE
+  const [customAlert, setCustomAlert] = useState(null);
+
   const [expandedUserRoster, setExpandedUserRoster] = useState(null); 
   const [showAllFighters, setShowAllFighters] = useState(false); 
   const [showGlobalBoxScore, setShowGlobalBoxScore] = useState(false);
@@ -78,6 +81,11 @@ export default function LeaguePage() {
   useEffect(() => {
     fetchLeagueData();
   }, [leagueId]);
+
+  // 🎯 HELPER TO SHOW CUSTOM ALERTS
+  const showAlert = (title, message) => {
+      setCustomAlert({ type: 'alert', title, message });
+  };
 
   const isFighterMatch = (pickName, statName) => {
       if (!pickName || !statName) return false;
@@ -209,7 +217,6 @@ export default function LeaguePage() {
       );
   }, [activeLeaguePicks, user, leagueId]);
 
-  // 🎯 THE COMBINED ROSTER ENGINE (DB Picks + Local Storage Picks)
   const combinedRoster = useMemo(() => {
       return [
           ...existingPicks.map(p => ({
@@ -246,7 +253,6 @@ export default function LeaguePage() {
               result: fight?.winner ? (fight.winner === pick.selected_fighter ? 'WIN' : 'LOSS') : 'PENDING'
           };
       });
-      // 🎯 Only show feed items for actual members of the league
       return feed.filter(f => f.user !== "Unknown").sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   }, [activeLeaguePicks, allFights, members]);
 
@@ -373,7 +379,7 @@ export default function LeaguePage() {
                   localStorage.setItem(winKey, 'true');
               }
           } catch (e) {
-              console.warn("Local storage disabled, skipping celebration guard.");
+              console.warn("Local storage disabled.");
           }
       }
   }, [leaderboard, user, leagueId]);
@@ -451,7 +457,6 @@ export default function LeaguePage() {
         const { data: statsData } = await supabase.from('fighter_stats').select('*');
         setFighterStats(statsData || []);
 
-        // 🎯 STRICTLY LOAD PICKS FOR THIS LEAGUE ONLY
         const { data: leaguePicksData } = await supabase
             .from('picks')
             .select('*')
@@ -517,13 +522,22 @@ export default function LeaguePage() {
   };
 
   const handleKickMember = async (memberUserId) => {
-    if (!confirm(`Are you sure you want to KICK ${memberUserId}?`)) return;
-    const { error } = await supabase.from('league_members').delete().eq('league_id', leagueId).eq('user_id', memberUserId);
-    if (error) alert('Error: ' + error.message);
-    else {
-        setMembers(members.filter(m => m.user_id !== memberUserId));
-        setToast({ message: "Member Removed", type: "success" });
-    }
+      setCustomAlert({
+          type: 'confirm',
+          title: 'Kick Member',
+          message: `Are you sure you want to KICK ${memberUserId}?`,
+          confirmText: 'Kick',
+          onConfirm: async () => {
+              setCustomAlert(null);
+              const { error } = await supabase.from('league_members').delete().eq('league_id', leagueId).eq('user_id', memberUserId);
+              if (error) {
+                  showAlert("Error", error.message);
+              } else {
+                  setMembers(members.filter(m => m.user_id !== memberUserId));
+                  setToast({ message: "Member Removed", type: "success" });
+              }
+          }
+      });
   };
 
   const handleDeleteLeague = async () => {
@@ -545,11 +559,15 @@ export default function LeaguePage() {
       }
   };
 
-  // 🎯 SELECTING A DRAFT PICK (SAVES TO LOCAL STORAGE)
+  // 🎯 SELECTING A DRAFT PICK (SAVES TO LOCAL STORAGE + CUSTOM ALERTS)
   const handlePickSelect = (newPick) => {
     if (!user) {
         router.push('/login');
         return;
+    }
+
+    if (hasLockedRoster && pendingPicks.length === 0) {
+        return showAlert("Roster Locked", "Your 5-man roster is already locked in!");
     }
 
     const safePick = { ...newPick, username: user?.user_metadata?.username || user?.email };
@@ -557,20 +575,23 @@ export default function LeaguePage() {
     // Prevent drafting 2 fighters from the same fight if one is already saved in the DB
     const hasDbPickForFight = existingPicks.some(p => String(p.fight_id) === String(safePick.fightId));
     if (hasDbPickForFight) {
-        return alert("You already drafted a fighter from this match. Drop them first.");
+        return showAlert("Duplicate Fight", "You already drafted a fighter from this match. Drop them first.");
+    }
+
+    // Pre-check for full roster before updating state
+    const existingIndex = pendingPicks.findIndex(p => p.fightId === safePick.fightId);
+    if (existingIndex === -1 && existingPicks.length + pendingPicks.length >= 5) {
+        return showAlert("Roster Full", "Roster is full! Drop a fighter to make room.");
     }
 
     setPendingPicks(currentPicks => {
-        const existingIndex = currentPicks.findIndex(p => p.fightId === safePick.fightId);
         let newPicks = [...currentPicks];
+        const existingIdx = currentPicks.findIndex(p => p.fightId === safePick.fightId);
 
-        if (existingIndex >= 0 && currentPicks[existingIndex].fighterName === safePick.fighterName) {
-            newPicks = currentPicks.filter((_, i) => i !== existingIndex);
-        } else if (existingIndex >= 0) {
-            newPicks[existingIndex] = safePick;
-        } else if (existingPicks.length + currentPicks.length >= 5) {
-            alert("Roster is full! Drop a fighter to make room.");
-            return currentPicks;
+        if (existingIdx >= 0 && currentPicks[existingIdx].fighterName === safePick.fighterName) {
+            newPicks = currentPicks.filter((_, i) => i !== existingIdx);
+        } else if (existingIdx >= 0) {
+            newPicks[existingIdx] = safePick;
         } else {
             newPicks = [...currentPicks, safePick];
         }
@@ -581,7 +602,6 @@ export default function LeaguePage() {
     });
   };
 
-  // 🎯 REMOVING A PENDING PICK (UPDATES LOCAL STORAGE)
   const handleRemovePick = (fightId) => {
       setPendingPicks(c => {
           const newPicks = c.filter(p => p.fightId !== fightId);
@@ -590,31 +610,38 @@ export default function LeaguePage() {
       });
   };
 
-  // 🎯 DROPPING AN ALREADY LOCKED PICK FROM THE DB
-  const handleDropPick = async (pickDbId, fightId) => {
+  // 🎯 DROPPING AN ALREADY LOCKED PICK FROM THE DB (WITH CUSTOM CONFIRM)
+  const handleDropPick = (pickDbId, fightId) => {
       const fightInfo = allFights.find(f => String(f.id) === String(fightId));
       const hasStarted = fightInfo ? new Date(fightInfo.start_time) <= new Date() : false;
       
       if (hasStarted) {
-          return alert("This fight has already started! You cannot drop this pick.");
+          return showAlert("Too Late", "This fight has already started! You cannot drop this pick.");
       }
 
-      if (!confirm("Are you sure you want to drop this fighter from your roster?")) return;
-
-      const { error } = await supabase.from('picks').delete().eq('id', pickDbId);
-      if (error) {
-          setToast({ message: "Failed to drop pick", type: "error" });
-      } else {
-          setToast({ message: "Fighter dropped from roster!", type: "success" });
-          setAllLeaguePicks(prev => prev.filter(p => p.id !== pickDbId));
-          setIsRosterCollapsed(false); 
-      }
+      setCustomAlert({
+          type: 'confirm',
+          title: 'Drop Fighter',
+          message: 'Are you sure you want to drop this fighter from your roster?',
+          confirmText: 'Drop',
+          onConfirm: async () => {
+              setCustomAlert(null);
+              const { error } = await supabase.from('picks').delete().eq('id', pickDbId);
+              if (error) {
+                  setToast({ message: "Failed to drop pick", type: "error" });
+              } else {
+                  setToast({ message: "Fighter dropped from roster!", type: "success" });
+                  setAllLeaguePicks(prev => prev.filter(p => p.id !== pickDbId));
+                  setIsRosterCollapsed(false); 
+              }
+          }
+      });
   };
 
   const handleConfirmAllPicks = async () => {
-    if (combinedRoster.length !== 5) return alert("You must fill all 5 roster slots!");
-    if (pendingPicks.length === 0) return alert("No new picks to lock in.");
-    if (!user) return alert("Log in to lock picks!");
+    if (combinedRoster.length !== 5) return showAlert("Incomplete Roster", "You must fill all 5 roster slots!");
+    if (pendingPicks.length === 0) return showAlert("No Changes", "No new picks to lock in.");
+    if (!user) return showAlert("Authentication Required", "Log in to lock picks!");
     
     setIsSubmitting(true);
     const username = user.user_metadata?.username || user.email.split('@')[0];
@@ -1633,6 +1660,41 @@ export default function LeaguePage() {
           type={toast.type} 
           onClose={() => setToast(null)} 
         />
+      )}
+
+      {/* 🎯 NEW: REUSABLE CUSTOM MODAL FOR ALERTS & CONFIRMATIONS */}
+      {customAlert && (
+          <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+              <div className="bg-gray-950 border border-gray-800 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="p-6">
+                      <h3 className="text-xl font-black italic uppercase tracking-tighter text-white mb-2">
+                          {customAlert.title}
+                      </h3>
+                      <p className="text-gray-400 text-sm font-medium leading-relaxed">
+                          {customAlert.message}
+                      </p>
+                  </div>
+                  <div className="p-4 bg-black/50 border-t border-gray-900 flex gap-3 justify-end">
+                      {customAlert.type === 'confirm' && (
+                          <button
+                              onClick={() => setCustomAlert(null)}
+                              className="px-5 py-2.5 rounded-lg font-bold text-xs uppercase tracking-widest text-gray-500 hover:text-white hover:bg-gray-900 transition-colors"
+                          >
+                              Cancel
+                          </button>
+                      )}
+                      <button
+                          onClick={() => {
+                              if (customAlert.onConfirm) customAlert.onConfirm();
+                              else setCustomAlert(null);
+                          }}
+                          className="px-5 py-2.5 rounded-lg font-black text-xs uppercase tracking-widest bg-pink-600 text-white hover:bg-pink-500 transition-colors shadow-[0_0_15px_rgba(236,72,153,0.3)]"
+                      >
+                          {customAlert.confirmText || 'OK'}
+                      </button>
+                  </div>
+              </div>
+          </div>
       )}
 
       {/* 🏆 CHAMPIONSHIP CELEBRATION MODAL 🏆 */}
