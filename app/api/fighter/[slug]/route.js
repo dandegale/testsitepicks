@@ -18,6 +18,9 @@ const NAME_DICTIONARY = {
     "Yi Zha": "Yizha"
 };
 
+// 🎯 HELPER: SQUASH NAMES FOR FLAWLESS MATCHING
+const squashName = (name) => name ? name.toLowerCase().replace(/[^a-z]/g, '') : '';
+
 export async function GET(request, { params }) {
     
     // Next.js 15+ requires params to be awaited
@@ -29,7 +32,7 @@ export async function GET(request, { params }) {
     const rawName = slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     const searchName = NAME_DICTIONARY[rawName] || rawName;
     
-    const cleanSlug = slug.replace(/[^a-z0-9]/gi, '').toLowerCase();
+    const targetClean = squashName(searchName);
     const searchParts = searchName.split(' ');
     const searchLastName = searchParts[searchParts.length - 1];
 
@@ -43,9 +46,8 @@ export async function GET(request, { params }) {
     // Data Buckets
     let espn = null;
     let tsdb = null;
-    // 🎯 NEW: Added strAcc, tdAcc, tdDef to the bucket initialization
     let ufcStats = { height: null, weight: null, reach: null, stance: null, age: null, record: null, nickname: null, history: [], winStats: null, slpm: 0, tdAvg: 0, subAvg: 0, strAcc: 0, tdAcc: 0, tdDef: 0 };
-    let ufcCom = { ranking: '', nextFight: null };
+    let ufcCom = { ranking: '', nextFight: null, image: null };
     let wiki = { history: [], winStats: null };
 
     // 🚀 2. FIRE ALL 5 DATA SOURCES CONCURRENTLY
@@ -75,24 +77,39 @@ export async function GET(request, { params }) {
 
         // 3. UFC STATS (Primary for Physicals, Nickname, Fallback for History)
         (async () => {
-            const searchUrl = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(searchLastName)}`;
-            const searchRes = await fetch(searchUrl);
-            const searchHtml = await searchRes.text();
-            
-            const $search = cheerio.load(searchHtml);
-            let fighterLink = null;
-
-            $search('.b-statistics__table-row').each((i, el) => {
-                const cols = $search(el).find('td');
-                if (cols.length >= 2) {
-                    const fName = $search(cols[0]).text().trim();
-                    const lName = $search(cols[1]).text().trim();
-                    const combinedScraped = (fName + lName).replace(/[^a-z0-9]/gi, '').toLowerCase();
-                    if (combinedScraped === cleanSlug) {
-                        fighterLink = $search(cols[0]).find('a').attr('href');
+            const checkRows = (html) => {
+                const $search = cheerio.load(html);
+                let link = null;
+                $search('.b-statistics__table-row').each((i, el) => {
+                    if (i === 0) return;
+                    const cols = $search(el).find('td');
+                    if (cols.length >= 2) {
+                        const fName = $search(cols[0]).text().trim();
+                        const lName = $search(cols[1]).text().trim();
+                        const siteClean = squashName(fName + lName);
+                        
+                        if (siteClean === targetClean || 
+                           (siteClean.length > 4 && targetClean.includes(siteClean)) || 
+                           (targetClean.length > 4 && siteClean.includes(targetClean))) {
+                            link = $search(cols[0]).find('a').attr('href');
+                            return false; // Break loop
+                        }
                     }
-                }
-            });
+                });
+                return link;
+            };
+
+            // First Pass: Search by Last Name
+            let searchUrl = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(searchLastName)}&page=all`;
+            let searchRes = await fetch(searchUrl);
+            let fighterLink = checkRows(await searchRes.text());
+
+            // Second Pass (The Sumudaerji Fix): Search by First Name
+            if (!fighterLink) {
+                searchUrl = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(searchParts[0])}&page=all`;
+                searchRes = await fetch(searchUrl);
+                fighterLink = checkRows(await searchRes.text());
+            }
 
             if (fighterLink) {
                 const profileRes = await fetch(fighterLink);
@@ -112,7 +129,6 @@ export async function GET(request, { params }) {
                             ufcStats.age = (new Date().getFullYear() - birthYear).toString();
                         }
                     }
-                    // 🎯 FANTASY METRICS & ACCURACY STATS
                     if (text.includes('SLpM:')) ufcStats.slpm = parseFloat(text.replace('SLpM:', '').trim()) || 0;
                     if (text.includes('TD Avg.:')) ufcStats.tdAvg = parseFloat(text.replace('TD Avg.:', '').trim()) || 0;
                     if (text.includes('Sub. Avg.:')) ufcStats.subAvg = parseFloat(text.replace('Sub. Avg.:', '').trim()) || 0;
@@ -144,7 +160,7 @@ export async function GET(request, { params }) {
                         if (fighters.length >= 2) {
                             const f1 = $(fighters[0]).text().trim();
                             const f2 = $(fighters[1]).text().trim();
-                            opponent = (f1.replace(/[^a-z0-9]/gi, '').toLowerCase() === cleanSlug) ? f2 : f1;
+                            opponent = (squashName(f1) === targetClean || targetClean.includes(squashName(f1))) ? f2 : f1;
                         }
 
                         const event = $(cols[6]).find('a').text().trim() || "UFC Event";
@@ -174,13 +190,20 @@ export async function GET(request, { params }) {
             }
         })(),
 
-        // 4. UFC.COM (Primary for Official Ranking & Next Fight)
+        // 4. UFC.COM (Primary for Official Ranking, Next Fight, & Hero Image)
         (async () => {
-            const ufcRes = await fetch(`https://www.ufc.com/athlete/${slug.toLowerCase()}`);
+            // 🎯 THE FIX: Force UFC.com to use squashed URLs for mononyms
+            const ufcComSlug = (targetClean === 'sumudaerji') ? 'sumudaerji' : slug.toLowerCase();
+
+            const ufcRes = await fetch(`https://www.ufc.com/athlete/${ufcComSlug}`);
             if (ufcRes.ok) {
                 const ufcHtml = await ufcRes.text();
                 const $ = cheerio.load(ufcHtml);
                 
+                // Extract Image
+                const img = $('.hero-profile__image').attr('src');
+                if (img) ufcCom.image = img;
+
                 const heroText = $('.hero-profile__division-title').text().toLowerCase();
                 if (heroText.includes('champion')) {
                     ufcCom.ranking = 'C';
@@ -275,7 +298,8 @@ export async function GET(request, { params }) {
 
     // 🧠 3. THE MERGE: Intelligently combine Supabase, ESPN, UFC Stats, etc.
     let bio = {
-        image_url: dbData?.image_url || (espn?.headshot?.href) || (tsdb?.strCutout) || (tsdb?.strThumb) || null,
+        // 🎯 FIX: Prioritize UFC.com image, then DB, then ESPN/TSDB
+        image_url: ufcCom.image || dbData?.image_url || (espn?.headshot?.href) || (tsdb?.strCutout) || (tsdb?.strThumb) || null,
         height: dbData?.height || (espn?.displayHeight) || ufcStats.height || '—',
         weight: dbData?.weight || (espn?.displayWeight) || ufcStats.weight || '—',
         age: dbData?.age?.toString() || (espn?.age?.toString()) || ufcStats.age || '—',
@@ -287,7 +311,6 @@ export async function GET(request, { params }) {
         nickname: dbData?.nickname || (espn?.nickname) || ufcStats.nickname || '',
         history: wiki.history.length > 0 ? wiki.history : ufcStats.history,
         winStats: wiki.winStats || ufcStats.winStats || { ko: 0, koPct: 0, sub: 0, subPct: 0, dec: 0, decPct: 0, totalWins: 0 },
-        // 🎯 FANTASY METRICS & ACCURACY STATS
         sig_strikes_per_min: dbData?.sig_strikes_per_min || ufcStats.slpm || 0,
         takedown_avg: dbData?.takedown_avg || ufcStats.tdAvg || 0,
         submission_avg: dbData?.submission_avg || ufcStats.subAvg || 0,
