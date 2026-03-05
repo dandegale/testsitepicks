@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation'; 
 import { createClient } from '@supabase/supabase-js';
 import CreateLeagueModal from './CreateLeagueModal'; 
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -30,10 +31,12 @@ export default function LeagueRail({ initialLeagues = [] }) {
     
     if (user) {
       setUserEmail(user.email);
+      // We order by sort_order first to preserve their custom layout
       const { data } = await supabase
         .from('league_members')
-        .select('leagues ( id, name, image_url, invite_code )')
-        .eq('user_id', user.email); 
+        .select('leagues ( id, name, image_url, invite_code ), sort_order')
+        .eq('user_id', user.email)
+        .order('sort_order', { ascending: true });
       
       if (data) {
         const validLeagues = data.map(item => item.leagues).filter(Boolean);
@@ -42,53 +45,99 @@ export default function LeagueRail({ initialLeagues = [] }) {
     }
   };
 
+  // 🎯 THE DRAG AND DROP HANDLER
+  const handleDragEnd = async (result) => {
+    if (!result.destination) return; // Dropped outside the list
+
+    const items = Array.from(leagues);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
+
+    // Optimistically update the UI instantly
+    setLeagues(items);
+
+    // Save the new order to the database silently
+    if (userEmail) {
+        const updates = items.map((league, index) => ({
+            league_id: league.id,
+            user_id: userEmail,
+            sort_order: index
+        }));
+
+        // Upsert updates the row if it exists (matching league_id + user_id)
+        await supabase
+            .from('league_members')
+            .upsert(updates, { onConflict: 'league_id, user_id' });
+    }
+  };
+
   return (
     <>
       {/* --- DESKTOP RAIL --- */}
       <div className="hidden md:flex flex-col items-center w-20 bg-gray-950 border-r border-pink-900/30 h-screen sticky top-0 py-6 gap-6 z-40">
         
-        {/* LOGO UPDATE: Changed .jpg to .png for transparency */}
         <Link href="/" className="w-[70px] h-[70px] flex items-center justify-center hover:scale-105 transition-transform shrink-0 px-1">
-            <img 
-              src="/fightiq-logo.png" 
-              alt="FightIQ" 
-              className="w-full h-full object-contain" 
-            />
+            <img src="/fightiq-logo.png" alt="FightIQ" className="w-full h-full object-contain" />
         </Link>
 
-        {/* Separator */}
         <div className="w-8 h-px bg-gray-800 shrink-0"></div>
 
-        {/* Global League */}
         <Link href="/" className="group relative flex items-center justify-center w-full">
             <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xs border-2 transition-all shrink-0 ${pathname === '/' ? 'bg-teal-500 text-black border-white' : 'bg-gray-950 text-teal-500 border-gray-700 hover:border-teal-500'}`}>
                 GL
             </div>
         </Link>
 
-        {/* Dynamic List */}
-        <div className="flex flex-col gap-4 overflow-y-auto overflow-x-hidden no-scrollbar w-full items-center">
-          {leagues.map((league) => {
-            const isActive = pathname === `/league/${league.id}`; 
-            return (
-                <Link key={league.id} href={`/league/${league.id}`} className="group relative flex items-center justify-center w-full shrink-0">
-                    {league.image_url ? (
-                        <img 
-                          src={league.image_url} 
-                          className={`w-12 h-12 rounded-full border-2 transition-all object-cover shrink-0 ${isActive ? 'border-pink-500' : 'border-transparent hover:border-pink-500'}`}
-                          alt={league.name}
-                        />
-                    ) : (
-                        <div className={`w-12 h-12 rounded-full bg-gray-950 flex items-center justify-center font-bold text-xs border-2 transition-colors shrink-0 ${isActive ? 'text-pink-500 border-pink-500' : 'text-gray-500 border-gray-800 hover:border-pink-500 hover:text-pink-500'}`}>
-                            {league.name.substring(0, 2).toUpperCase()}
-                        </div>
-                    )}
-                </Link>
-            );
-          })}
-        </div>
+        {/* 🎯 DRAG AND DROP CONTEXT WRAPPER */}
+        <DragDropContext onDragEnd={handleDragEnd}>
+            <Droppable droppableId="league-list">
+                {(provided) => (
+                    <div 
+                        {...provided.droppableProps} 
+                        ref={provided.innerRef} 
+                        className="flex flex-col gap-4 overflow-y-auto overflow-x-hidden no-scrollbar w-full items-center pb-4"
+                    >
+                        {leagues.map((league, index) => {
+                            const isActive = pathname === `/league/${league.id}`; 
+                            return (
+                                <Draggable key={league.id.toString()} draggableId={league.id.toString()} index={index}>
+                                    {(provided, snapshot) => (
+                                        <div
+                                            ref={provided.innerRef}
+                                            {...provided.draggableProps}
+                                            {...provided.dragHandleProps}
+                                            // The style logic prevents the item from shrinking while dragging
+                                            style={{ ...provided.draggableProps.style }}
+                                            className={`group relative flex items-center justify-center w-full shrink-0 ${snapshot.isDragging ? 'z-50 scale-110 drop-shadow-[0_0_15px_rgba(236,72,153,0.5)]' : ''}`}
+                                        >
+                                            {/* Using a standard div instead of a Link so dragging doesn't accidentally trigger a page route */}
+                                            <div 
+                                                onClick={() => { if (!snapshot.isDragging) window.location.href = `/league/${league.id}`; }}
+                                                className="cursor-pointer"
+                                            >
+                                                {league.image_url ? (
+                                                    <img 
+                                                        src={league.image_url} 
+                                                        className={`w-12 h-12 rounded-full border-2 transition-all object-cover shrink-0 ${isActive ? 'border-pink-500' : 'border-transparent hover:border-pink-500'}`}
+                                                        alt={league.name}
+                                                    />
+                                                ) : (
+                                                    <div className={`w-12 h-12 rounded-full bg-gray-950 flex items-center justify-center font-bold text-xs border-2 transition-colors shrink-0 ${isActive ? 'text-pink-500 border-pink-500' : 'text-gray-500 border-gray-800 hover:border-pink-500 hover:text-pink-500'}`}>
+                                                        {league.name.substring(0, 2).toUpperCase()}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </Draggable>
+                            );
+                        })}
+                        {provided.placeholder}
+                    </div>
+                )}
+            </Droppable>
+        </DragDropContext>
 
-        {/* Create Button */}
         <button 
           onClick={() => setShowModal(true)}
           className="w-12 h-12 rounded-full bg-gray-950 border border-dashed border-gray-700 flex items-center justify-center text-gray-500 hover:text-green-400 hover:border-green-400 transition-all text-xl mt-auto mb-4 shrink-0"
@@ -112,13 +161,8 @@ export default function LeagueRail({ initialLeagues = [] }) {
             <div className="fixed inset-0 bg-black/80 z-40 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
             <div className="fixed inset-y-0 left-0 w-72 bg-gray-950 border-r border-pink-900 z-50 p-6 flex flex-col shadow-2xl animate-in slide-in-from-left duration-300">
                 <div className="flex justify-between items-center mb-8">
-                    {/* LOGO UPDATE MOBILE: Changed .jpg to .png */}
                     <div className="flex items-center gap-3">
-                        <img 
-                          src="/fightiq-logo.png" 
-                          alt="FightIQ" 
-                          className="w-12 h-12 object-contain" 
-                        />
+                        <img src="/fightiq-logo.png" alt="FightIQ" className="w-12 h-12 object-contain" />
                         <span className="text-xl font-black text-white italic tracking-tighter uppercase">FIGHT<span className="text-pink-600">IQ</span></span>
                     </div>
                     <button onClick={() => setIsOpen(false)} className="text-gray-500 hover:text-white">✕</button>
