@@ -133,6 +133,12 @@ const BoxIcon = () => (
     </svg>
 );
 
+const LiveEventIcon = () => (
+    <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-teal-400 drop-shadow-[0_0_15px_rgba(45,212,191,0.6)]">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+    </svg>
+);
+
 export default function StorePage() {
     const router = useRouter();
     const [user, setUser] = useState(null);
@@ -141,9 +147,11 @@ export default function StorePage() {
     const [allItems, setAllItems] = useState([]);
     const [myInventory, setMyInventory] = useState([]);
     
-    // 🎯 NEW: Layout States
+    // 🎯 Layout States
     const [clientLeagues, setClientLeagues] = useState([]);
     const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+    const [fightWeekCase, setFightWeekCase] = useState(null);
 
     const [selectedCase, setSelectedCase] = useState(null);
     const [isInventoryOpen, setIsInventoryOpen] = useState(false);
@@ -193,9 +201,87 @@ export default function StorePage() {
             setMyInventory(ownedItems);
         }
 
-        // 🎯 NEW: Fetch user's leagues for the rail
+        // Fetch user's leagues for the rail
         const { data: memberships } = await supabase.from('league_members').select('leagues ( id, name, image_url, invite_code )').eq('user_id', currentUser.email);
         if (memberships) setClientLeagues(memberships.map(m => m.leagues).filter(Boolean));
+
+        // 🎯 THE DYNAMIC CASE FETCH
+        const now = new Date().toISOString();
+
+        const { data: latestFights } = await supabase
+            .from('fights')
+            .select('fighter_1_name, fighter_2_name, start_time')
+            .gte('start_time', now)
+            .order('start_time', { ascending: true })
+            .limit(30);
+
+        if (latestFights && latestFights.length > 0) {
+            const firstFightTime = new Date(latestFights[0].start_time).getTime();
+            const currentCardFights = latestFights.filter(f => {
+                const fightTime = new Date(f.start_time).getTime();
+                return (fightTime - firstFightTime) <= (72 * 60 * 60 * 1000); 
+            });
+
+            const mainEventFight = currentCardFights[currentCardFights.length - 1];
+            const mainEventFighters = [
+                mainEventFight.fighter_1_name?.toLowerCase().trim(),
+                mainEventFight.fighter_2_name?.toLowerCase().trim()
+            ];
+
+            const fighterNamesArray = [];
+            currentCardFights.forEach(f => {
+                if (f.fighter_1_name) fighterNamesArray.push(f.fighter_1_name.trim());
+                if (f.fighter_2_name) fighterNamesArray.push(f.fighter_2_name.trim());
+            });
+
+            const titleCaseNamesArray = fighterNamesArray.map(name => 
+                name.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+            );
+            
+            const searchArray = [...new Set([...fighterNamesArray, ...titleCaseNamesArray])];
+
+            const { data: statsData } = await supabase
+                .from('fighter_historical_stats')
+                .select('fighter_name, nickname')
+                .in('fighter_name', searchArray);
+
+            let validDropItems = [];
+
+            if (statsData) {
+                fighterNamesArray.forEach(cardFighter => {
+                    const statMatch = statsData.find(s => 
+                        s.fighter_name.toLowerCase().trim() === cardFighter.toLowerCase().trim() || 
+                        s.fighter_name.toLowerCase().includes(cardFighter.toLowerCase().trim())     
+                    );
+
+                    if (statMatch && statMatch.nickname && statMatch.nickname.trim() !== '' && statMatch.nickname.toLowerCase() !== 'null') {
+                        const cleanNick = statMatch.nickname.replace(/['"]/g, '').trim();
+                        const isMainEvent = mainEventFighters.includes(cardFighter.toLowerCase().trim());
+                        const assignedRarity = isMainEvent ? 'Epic' : 'Rare';
+
+                        if (cleanNick && !validDropItems.some(item => item.name === cleanNick)) {
+                            validDropItems.push({ name: cleanNick, rarity: assignedRarity });
+                        }
+                    }
+                });
+            }
+
+            if (validDropItems.length > 0) {
+                let dynamicVisualItems = [...validDropItems];
+                while (dynamicVisualItems.length < 15) {
+                    dynamicVisualItems = [...dynamicVisualItems, ...validDropItems];
+                }
+
+                setFightWeekCase({
+                    id: 'fight_week_case',
+                    name: 'Fight Week Case',
+                    description: 'Win official nicknames of fighters on this weekend\'s card. Main Event fighters are Epic!',
+                    price: 50, 
+                    isDynamic: true,
+                    visualItems: dynamicVisualItems
+                });
+            }
+        }
     };
 
     useEffect(() => {
@@ -237,11 +323,23 @@ export default function StorePage() {
         tick();
     };
 
+    // 🎯 DYNAMIC DUPLICATE UI CHECKER
+    const isDynamicAllOwned = selectedCase?.isDynamic && 
+        [...new Set(selectedCase.visualItems.map(i => i.name))].every(name => 
+            myInventory.some(invItem => invItem.name === name)
+        );
+
+    const isStaticAllOwned = !selectedCase?.isDynamic && myInventory.length >= allItems.length && allItems.length > 0;
+    const isAllOwned = isDynamicAllOwned || isStaticAllOwned;
+
     const handleOpenCase = async () => {
         if (isSpinning || !selectedCase) return;
         if (!user) return alert("You must be logged in to open cases!");
         if (coins < selectedCase.price) return alert("Not enough coins!");
-        if (myInventory.length >= allItems.length && allItems.length > 0) return alert("You already own everything in this crate!");
+        
+        if (isAllOwned) {
+            return alert("You already own everything in this crate!");
+        }
         
         setIsSpinning(true);
         setSpinComplete(false);
@@ -251,33 +349,57 @@ export default function StorePage() {
 
         const visualPool = selectedCase.visualItems || [];
         const newTape = Array.from({ length: TAPE_LENGTH }, () => visualPool[Math.floor(Math.random() * visualPool.length)]);
-        let actualWonItem = visualPool[8]; 
-        let newBalance = coins - selectedCase.price;
+        let actualWonItem;
+        let newBalance = coins;
 
         try {
-            setCoins(newBalance);
+            // Build the payload depending on if it's dynamic or not
+            const requestBody = selectedCase.isDynamic
+                ? { userEmail: user.email, dynamicPool: visualPool, price: selectedCase.price }
+                : { userEmail: user.email, caseId: selectedCase.id };
+
+            // 🎯 SEND TO THE MERGED BACKEND ROUTE
             const res = await fetch('/api/open-case', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userEmail: user.email, caseId: selectedCase.id })
+                body: JSON.stringify(requestBody)
             });
-            const text = await res.text();
+            
+            const text = await res.text(); 
+            
+            if (!text) {
+                alert("API Error: The server returned an empty response. Check your /api/open-case route!");
+                setIsSpinning(false);
+                return;
+            }
+
             try {
                 const data = JSON.parse(text);
                 if (res.ok) {
                     actualWonItem = data.item;
                     newBalance = data.newBalance;
                 } else {
-                    alert(data.error);
-                    setCoins(newBalance + selectedCase.price);
+                    alert(data.error || "Server error occurred");
                     setIsSpinning(false);
                     return;
                 }
-            } catch (e) {}
-        } catch (err) {}
+            } catch (e) {
+                console.error("JSON Parse Failed. Raw Response:", text);
+                alert("API Error: Server did not return valid data.");
+                setIsSpinning(false);
+                return;
+            }
+        } catch (err) {
+            console.error("Network Error:", err);
+            alert("Network Error: Could not connect to backend.");
+            setIsSpinning(false);
+            return;
+        }
 
+        // Set the winning item at the exact spot where the tape will stop
         newTape[WINNING_INDEX] = actualWonItem;
         setTapeItems(newTape);
+        setCoins(newBalance);
 
         if (tapeRef.current) {
             tapeRef.current.style.transition = 'none';
@@ -297,16 +419,20 @@ export default function StorePage() {
 
             setTimeout(() => {
                 setSpinComplete(true);
-                if (actualWonItem.rarity === 'Legendary') triggerLegendaryConfetti();
-                else if (actualWonItem.rarity === 'Epic') triggerEpicConfetti();
+                
+                if (actualWonItem.rarity === 'Legendary') {
+                    triggerLegendaryConfetti(); 
+                } else if (actualWonItem.rarity === 'Epic') {
+                    triggerEpicConfetti(); 
+                }
+
             }, 7000);
 
             setTimeout(() => {
                 setWonItem(actualWonItem);
-                setCoins(newBalance); 
                 setShowModal(true);
                 setIsSpinning(false);
-                loadData(user);
+                loadData(user); 
             }, 8500); 
 
         }, 100);
@@ -321,6 +447,9 @@ export default function StorePage() {
     };
 
     if (!isMounted) return null;
+
+    // Combine dynamic and static cases
+    const allCasesToDisplay = fightWeekCase ? [fightWeekCase, ...STORE_CASES] : STORE_CASES;
 
     return (
         <div className="flex min-h-screen bg-black text-white overflow-hidden font-sans selection:bg-pink-500 selection:text-white">
@@ -438,26 +567,30 @@ export default function StorePage() {
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {STORE_CASES.map(crate => (
+                                {allCasesToDisplay.map((crate, index) => (
                                     <div 
-                                        key={crate.id}
+                                        key={crate.id || index}
                                         onClick={() => setSelectedCase(crate)}
-                                        className="group cursor-pointer bg-gray-950 border border-gray-800 hover:border-pink-500/50 rounded-2xl p-6 transition-all hover:shadow-[0_0_30px_rgba(236,72,153,0.15)] hover:-translate-y-1 relative overflow-hidden flex flex-col items-center text-center"
+                                        className={`group cursor-pointer bg-gray-950 border border-gray-800 rounded-2xl p-6 transition-all hover:-translate-y-1 relative overflow-hidden flex flex-col items-center text-center ${crate.isDynamic ? 'hover:shadow-[0_0_30px_rgba(45,212,191,0.3)] hover:border-teal-500/50' : 'hover:shadow-[0_0_30px_rgba(236,72,153,0.15)] hover:border-pink-500/50'}`}
                                     >
-                                        <div className="absolute inset-0 bg-gradient-to-b from-pink-600/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                        <div className={`absolute inset-0 transition-opacity opacity-0 group-hover:opacity-100 ${crate.isDynamic ? 'bg-gradient-to-b from-teal-600/5 to-transparent' : 'bg-gradient-to-b from-pink-600/5 to-transparent'}`}></div>
                                         
-                                        <div className="relative w-32 h-32 mb-4 group-hover:scale-110 transition-transform drop-shadow-[0_0_15px_rgba(236,72,153,0.3)] flex items-center justify-center">
-                                            {crate.image ? (
+                                        <div className={`relative w-32 h-32 mb-4 group-hover:scale-110 transition-transform flex items-center justify-center ${crate.isDynamic ? '' : 'drop-shadow-[0_0_15px_rgba(236,72,153,0.3)]'}`}>
+                                            {crate.isDynamic ? (
+                                                <LiveEventIcon />
+                                            ) : crate.image ? (
                                                 <Image src={crate.image} alt={crate.name} fill className="object-contain" sizes="128px" />
                                             ) : (
                                                 <BoxIcon />
                                             )}
                                         </div>
 
-                                        <h3 className="text-2xl font-black italic uppercase tracking-tighter text-white mb-2">{crate.name}</h3>
-                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-6">{crate.description}</p>
+                                        {crate.isDynamic && <span className="absolute top-4 right-4 bg-teal-500/20 border border-teal-500 text-teal-400 text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded animate-pulse">Live Event</span>}
+
+                                        <h3 className="text-2xl font-black italic uppercase tracking-tighter text-white mb-2 z-10">{crate.name}</h3>
+                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-6 z-10">{crate.description}</p>
                                         
-                                        <div className="mt-auto w-full bg-gray-900 border border-gray-800 rounded-lg py-3 flex items-center justify-center gap-2 group-hover:bg-pink-600 group-hover:border-pink-500 transition-colors">
+                                        <div className={`mt-auto w-full border rounded-lg py-3 flex items-center justify-center gap-2 transition-colors z-10 ${crate.isDynamic ? 'bg-gray-900 border-gray-800 group-hover:bg-teal-600 group-hover:border-teal-500' : 'bg-gray-900 border-gray-800 group-hover:bg-pink-600 group-hover:border-pink-500'}`}>
                                             <span className="font-black italic uppercase text-sm tracking-widest">View Case</span>
                                             <div className="w-px h-3 bg-white/30 mx-1"></div>
                                             <span className="font-black text-sm">{crate.price} COINS</span>
@@ -530,8 +663,10 @@ export default function StorePage() {
                             </div>
 
                             <div className="text-center w-full flex flex-col items-center mb-10">
-                                <div className="relative w-40 h-40 mb-4 drop-shadow-[0_0_20px_rgba(236,72,153,0.4)] flex items-center justify-center">
-                                    {selectedCase.image ? (
+                                <div className={`relative w-40 h-40 mb-4 flex items-center justify-center ${selectedCase.isDynamic ? 'drop-shadow-[0_0_20px_rgba(45,212,191,0.4)]' : 'drop-shadow-[0_0_20px_rgba(236,72,153,0.4)]'}`}>
+                                    {selectedCase.isDynamic ? (
+                                        <LiveEventIcon />
+                                    ) : selectedCase.image ? (
                                         <Image src={selectedCase.image} alt={selectedCase.name} fill className="object-contain" sizes="160px" />
                                     ) : (
                                         <BoxIcon />
@@ -579,11 +714,11 @@ export default function StorePage() {
 
                             <button 
                                 onClick={handleOpenCase}
-                                disabled={isSpinning || coins < selectedCase.price || myInventory.length === allItems.length}
-                                className="flex items-center gap-3 bg-pink-600 hover:bg-pink-500 text-white disabled:bg-gray-900 disabled:text-gray-600 disabled:border-gray-800 disabled:cursor-not-allowed border border-pink-400 px-12 py-4 rounded-xl font-black italic uppercase tracking-widest transition-all text-sm shadow-[0_0_20px_rgba(236,72,153,0.3)] disabled:shadow-none hover:scale-105 active:scale-95"
+                                disabled={isSpinning || coins < selectedCase.price || isAllOwned}
+                                className={`flex items-center gap-3 text-white px-12 py-4 rounded-xl font-black italic uppercase tracking-widest transition-all text-sm disabled:bg-gray-900 disabled:text-gray-600 disabled:border-gray-800 disabled:shadow-none disabled:cursor-not-allowed border hover:scale-105 active:scale-95 ${selectedCase.isDynamic ? 'bg-teal-600 hover:bg-teal-500 border-teal-400 shadow-[0_0_20px_rgba(45,212,191,0.3)]' : 'bg-pink-600 hover:bg-pink-500 border-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.3)]'}`}
                             >
                                 {isSpinning ? <span className="animate-pulse">Unlocking Container...</span> : 
-                                    myInventory.length === allItems.length && allItems.length > 0 ? "All Items Owned" :
+                                    isAllOwned ? "All Items Owned" :
                                 ( <><span>Unlock Container</span><div className="w-px h-4 bg-white/30 mx-1"></div><span>{selectedCase.price} COINS</span></> )
                                 }
                             </button>
@@ -593,14 +728,18 @@ export default function StorePage() {
                                     <StatsIcon />
                                     <div>
                                         <h2 className="text-2xl font-black uppercase italic tracking-tighter text-white leading-none">Possible Drops</h2>
-                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-1">Odds: Common (70%) | Rare (20%) | Epic (8%) | Legendary (2%)</p>
+                                        {selectedCase.isDynamic ? (
+                                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-1">Odds: Rare (85%) | Epic (15%)</p>
+                                        ) : (
+                                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-1">Odds: Common (70%) | Rare (20%) | Epic (8%) | Legendary (2%)</p>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="flex flex-wrap gap-3">
-                                    {allItems.map(item => {
-                                        const isOwned = myInventory.some(i => i.id === item.id);
+                                    {(selectedCase.isDynamic ? selectedCase.visualItems.filter((item, index, self) => index === self.findIndex((t) => (t.name === item.name))) : allItems).map((item, index) => {
+                                        const isOwned = myInventory.some(i => i.name === item.name); // Check by name to handle dynamic injection
                                         return (
-                                            <div key={item.id} className={`border border-gray-800 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest ${isOwned ? 'bg-gray-950 text-gray-600 line-through opacity-50' : 'bg-gray-900 text-gray-300'}`}>
+                                            <div key={item.id || index} className={`border border-gray-800 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest ${isOwned ? 'bg-gray-950 text-gray-600 line-through opacity-50' : 'bg-gray-900 text-gray-300'}`}>
                                                 <span style={{ color: !isOwned ? getRarityColor(item.rarity) : undefined }} className={isOwned ? '' : 'drop-shadow-md'}>
                                                     {item.name}
                                                 </span>
