@@ -31,12 +31,22 @@ export default function LeagueRail({ initialLeagues = [] }) {
     
     if (user) {
       setUserEmail(user.email);
-      // We order by sort_order first to preserve their custom layout
-      const { data } = await supabase
+      
+      // 🎯 FIRST ATTEMPT: Try to fetch with the custom sort_order
+      let { data, error } = await supabase
         .from('league_members')
         .select('leagues ( id, name, image_url, invite_code ), sort_order')
         .eq('user_id', user.email)
         .order('sort_order', { ascending: true });
+      
+      // 🎯 FALLBACK: If sort_order column is missing in Supabase, catch the error and do a normal fetch
+      if (error || !data) {
+         const fallback = await supabase
+            .from('league_members')
+            .select('leagues ( id, name, image_url, invite_code )')
+            .eq('user_id', user.email);
+         data = fallback.data;
+      }
       
       if (data) {
         const validLeagues = data.map(item => item.leagues).filter(Boolean);
@@ -47,7 +57,7 @@ export default function LeagueRail({ initialLeagues = [] }) {
 
   // 🎯 THE DRAG AND DROP HANDLER
   const handleDragEnd = async (result) => {
-    if (!result.destination) return; // Dropped outside the list
+    if (!result.destination) return; 
 
     const items = Array.from(leagues);
     const [reorderedItem] = items.splice(result.source.index, 1);
@@ -64,10 +74,13 @@ export default function LeagueRail({ initialLeagues = [] }) {
             sort_order: index
         }));
 
-        // Upsert updates the row if it exists (matching league_id + user_id)
-        await supabase
+        // Fire and forget the update, catch error silently if column is missing
+        supabase
             .from('league_members')
-            .upsert(updates, { onConflict: 'league_id, user_id' });
+            .upsert(updates, { onConflict: 'league_id, user_id' })
+            .then(({ error }) => {
+                if (error) console.warn("To save layout permanently, add 'sort_order' integer column to league_members table.");
+            });
     }
   };
 
@@ -106,11 +119,9 @@ export default function LeagueRail({ initialLeagues = [] }) {
                                             ref={provided.innerRef}
                                             {...provided.draggableProps}
                                             {...provided.dragHandleProps}
-                                            // The style logic prevents the item from shrinking while dragging
                                             style={{ ...provided.draggableProps.style }}
                                             className={`group relative flex items-center justify-center w-full shrink-0 ${snapshot.isDragging ? 'z-50 scale-110 drop-shadow-[0_0_15px_rgba(236,72,153,0.5)]' : ''}`}
                                         >
-                                            {/* Using a standard div instead of a Link so dragging doesn't accidentally trigger a page route */}
                                             <div 
                                                 onClick={() => { if (!snapshot.isDragging) window.location.href = `/league/${league.id}`; }}
                                                 className="cursor-pointer"
@@ -193,13 +204,7 @@ export default function LeagueRail({ initialLeagues = [] }) {
         </>
       )}
 
-      {/* --- CREATE LEAGUE MODAL --- */}
-      <CreateLeagueModal 
-        isOpen={showModal} 
-        onClose={() => setShowModal(false)} 
-        userEmail={userEmail} 
-        onRefresh={fetchData} 
-      />
+      <CreateLeagueModal isOpen={showModal} onClose={() => setShowModal(false)} userEmail={userEmail} onRefresh={fetchData} />
     </>
   );
 }
