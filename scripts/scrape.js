@@ -56,7 +56,7 @@ async function scrapeFullCard() {
             await new Promise(r => setTimeout(r, 2000)); 
         }
 
-        // 2. Update League Leaderboard XP
+        // 2. Update League Leaderboard XP (Now supports LIVE updating!)
         await updateAllUsersLifetimePoints();
 
         // 3. 🎯 PROCESS COIN PAYOUTS
@@ -68,23 +68,20 @@ async function scrapeFullCard() {
     }
 }
 
-// 🎯 NEW FUNCTION: The Global Coin Payout Engine
+// 🎯 The Global Coin Payout Engine
 async function processEconomyPayouts() {
     try {
         console.log("💰 Processing Global Economy Payouts...");
 
-        // 1. Get all recent fights that have a declared winner
         const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
         const { data: recentFights, error: fightError } = await supabase
             .from('fights')
             .select('id, winner')
-            .not('winner', 'is', null)
+            .not('winner', 'is', null) // Only grabs fights that are officially FINISHED
             .gte('start_time', fourteenDaysAgo);
 
         if (fightError || !recentFights) throw new Error("Could not fetch recent fights.");
 
-        // We only care about global picks (league_id is null) that haven't been paid out yet
-        // 🛑 IMPORTANT: You will need to add a boolean column named 'paid_out' to your 'picks' table!
         const { data: unpaidPicks, error: picksError } = await supabase
             .from('picks')
             .select('id, user_id, fight_id, selected_fighter, odds_at_pick')
@@ -92,7 +89,6 @@ async function processEconomyPayouts() {
             .is('paid_out', false);
 
         if (picksError) {
-            // Failsafe: if the column doesn't exist yet, it will error here
             console.error("❌ Error fetching picks. Did you add the 'paid_out' boolean column to your 'picks' table?");
             return;
         }
@@ -105,11 +101,9 @@ async function processEconomyPayouts() {
         const userEarnings = {};
         const picksToMarkPaid = [];
 
-        // 2. Calculate Payouts
         unpaidPicks.forEach(pick => {
             const fight = recentFights.find(f => f.id === pick.fight_id);
             if (fight && fight.winner && fight.winner === pick.selected_fighter) {
-                // They won! Calculate their payout based on Vegas Odds
                 const numericOdds = parseInt(pick.odds_at_pick, 10);
                 if (!isNaN(numericOdds) && numericOdds !== 0) {
                     let profit = 0;
@@ -125,16 +119,13 @@ async function processEconomyPayouts() {
                 }
             }
             
-            // Whether they won or lost, mark the pick as settled so we don't check it again
             if (fight && fight.winner) {
                 picksToMarkPaid.push(pick.id);
             }
         });
 
-        // 3. Deposit Coins into Profiles
         let depositCount = 0;
         for (const [email, earnings] of Object.entries(userEarnings)) {
-            // First, get their current balance
             const { data: profile } = await supabase.from('profiles').select('coins').eq('email', email).single();
             if (profile) {
                 const newBalance = (profile.coins || 0) + earnings;
@@ -146,7 +137,6 @@ async function processEconomyPayouts() {
             }
         }
 
-        // 4. Mark Picks as Settled
         if (picksToMarkPaid.length > 0) {
             const { error } = await supabase
                 .from('picks')
@@ -162,7 +152,7 @@ async function processEconomyPayouts() {
     }
 }
 
-// 🎯 The Idempotent XP Engine (Exploit-Proof & League-Only)
+// 🎯 The Idempotent XP Engine
 async function updateAllUsersLifetimePoints() {
     try {
         console.log("🔄 Recalculating Lifetime XP for all users...");
@@ -243,9 +233,9 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         
         const isFinished = statuses.includes('W') || statuses.includes('L') || statuses.includes('NC') || statuses.includes('D');
 
+        // 🎯 THE FIX: Instead of returning early, we let the script continue so it can grab live stats
         if (!isFinished) {
-            console.log(`⏳ Pending: ${fighters[0]} vs ${fighters[1]}`);
-            return;
+            console.log(`📡 Fight is Live/Pending: ${fighters[0]} vs ${fighters[1]} - Syncing live stats...`);
         }
 
         const getCoreName = (name) => {
@@ -332,9 +322,10 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         const rows = $('.b-fight-details__table-body').first().find('.b-fight-details__table-text');
         const parseStat = (index) => {
             const raw = rows.eq(index).text().trim().split(' of ')[0];
-            return parseInt(raw) || 0;
+            return parseInt(raw) || 0; // Gracefully handles empty tables (0 points)
         };
 
+        // Calculate points based on what has happened so far
         let results = fighters.map((name, i) => {
             const kd = parseStat(2 + i);
             const sig_str = parseStat(4 + i);
@@ -360,11 +351,12 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             };
         });
 
+        // 🛑 FINISH BONUSES - Only trigger if the fight is actually over
         const winnerIndex = results.findIndex(r => r.is_winner);
         let finalBonus = 0;
         let wasEqualized = false; 
 
-        if (winnerIndex !== -1) {
+        if (isFinished && winnerIndex !== -1) {
             const loserIndex = winnerIndex === 0 ? 1 : 0;
 
             if (baseBonus > 0) {
@@ -394,6 +386,7 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
                 results[winnerIndex].fantasy_points += finalBonus;
             }
 
+            // The Equalizer (Only applies at the end of the fight)
             if (results[winnerIndex].fantasy_points < results[loserIndex].fantasy_points) {
                 results[winnerIndex].fantasy_points = results[loserIndex].fantasy_points;
                 wasEqualized = true; 
@@ -404,6 +397,7 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             r.fantasy_points = parseFloat(Math.min(r.fantasy_points, 999.99).toFixed(2));
         });
 
+        // Upsert the live (or final) stats into the database
         const { error } = await supabase.from('fighter_stats').upsert(results, { onConflict: 'fight_id, fighter_name' });
         if (error) throw new Error(`Supabase Stats Error: ${error.message}`);
         
@@ -412,7 +406,8 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             finalMethodString = `${winMethodStr} R${finishRound}`;
         }
 
-        if (statuses.includes('W')) {
+        // Only update the actual fight winner if it's over
+        if (isFinished && statuses.includes('W')) {
             const winnerCore = getCoreName(fighters[winnerIndex]);
             let exactDbWinnerName = fighters[winnerIndex]; 
             
@@ -438,7 +433,11 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         let bonusLabel = finalBonus > 0 ? ` (+${finalBonus} True Odds Bonus)` : "";
         let eqLabel = wasEqualized ? ` ⚠️ [EQUALIZER APPLIED]` : "";
         
-        console.log(`✅ Synced: ${fighters[0]} vs ${fighters[1]} (${statuses.includes('W') ? fighters[winnerIndex] + ' won by ' + finalMethodString + bonusLabel + eqLabel : 'Draw/NC'})`);
+        if (isFinished) {
+            console.log(`✅ Finalized: ${fighters[0]} vs ${fighters[1]} (${statuses.includes('W') ? fighters[winnerIndex] + ' won by ' + finalMethodString + bonusLabel + eqLabel : 'Draw/NC'})`);
+        } else {
+            console.log(`🔄 Live Stats Saved: ${fighters[0]} [${results[0].fantasy_points} pts] vs ${fighters[1]} [${results[1].fantasy_points} pts]`);
+        }
         
     } catch (err) {
         console.error(`❌ Error:`, err.message);
