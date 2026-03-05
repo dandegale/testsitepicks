@@ -1,14 +1,25 @@
-require('dotenv').config();
+// 🎯 Tell dotenv to look for both Next.js standard files
+require('dotenv').config({ path: '.env.local' });
+require('dotenv').config({ path: '.env' });
+
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { createClient } = require('@supabase/supabase-js');
 
 console.log("🚀 Script started! If you see this, Node is reading the file.");
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+// 🎯 Catch the variables no matter what you named them in your .env file
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+    console.error("❌ ERROR: Missing Supabase Environment Variables!");
+    process.exit(1);
+}
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+// ... (keep the rest of your functions exactly the same below this!)
 async function getLatestEventUrl() {
     try {
         console.log("🔍 Searching for the latest UFC event...");
