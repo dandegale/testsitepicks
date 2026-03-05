@@ -3,12 +3,24 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-// 🎯 Helper function to manually shift the API time back exactly 5 hours
 function shiftToEST(utcDateString) {
     const date = new Date(utcDateString);
     date.setHours(date.getHours() - 5);
     return date.toISOString(); 
 }
+
+// 🎯 THE NAME DICTIONARY 
+const NAME_DICTIONARY = {
+    "Javier Reyes Rugeles": "Javier Reyes",
+    "Joseph Pyfer": "Joe Pyfer",
+    "Long Xiao": "Xiao Long",
+    "Sergey Spivak": "Serghei Spivac",
+    "Sulangrangbo": "Sulangrangbo", 
+    "Sumudaerji Sumudaerji": "Su Mudaerji",
+    "Sumerdaji Sumerdaji": "Su Mudaerji",
+    "Richard Turcios": "Ricky Turcios", // 🎯 We catch Richard here!
+    "Yi Zha": "Yizha"
+};
 
 export async function GET() {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -23,14 +35,11 @@ export async function GET() {
   const API_KEY = process.env.ODDS_API_KEY;
 
   try {
-    // ---------------------------------------------------------
-    // 1. FETCH ESPN UFC SCOREBOARD & EVENT NAMES
-    // ---------------------------------------------------------
     let ufcNames = [];
     let fighterEventMap = {}; 
 
+    // 1. Fetch ESPN Data
     try {
-        // 🎯 THE FIX 1: Force ESPN to look 60 days into the future!
         const today = new Date();
         const future = new Date();
         future.setDate(today.getDate() + 60);
@@ -44,13 +53,11 @@ export async function GET() {
         if (espnData && espnData.events) {
             espnData.events.forEach(event => {
                 const realEventName = event.name || event.shortName; 
-
                 event.competitions?.forEach(comp => {
                     comp.competitors?.forEach(c => {
                         if (c.athlete?.displayName) {
                             const fighterName = c.athlete.displayName;
                             ufcNames.push(fighterName);
-                            
                             const cleanName = fighterName.toLowerCase().replace(/['".,-]/g, '').trim();
                             fighterEventMap[cleanName] = realEventName;
                         }
@@ -62,9 +69,7 @@ export async function GET() {
         console.error("ESPN Fetch Error:", e);
     }
 
-    // ---------------------------------------------------------
-    // 2. FETCH THE ODDS API
-    // ---------------------------------------------------------
+    // 2. Fetch Odds API
     const response = await fetch(
       `https://api.the-odds-api.com/v4/sports/mma_mixed_martial_arts/odds/?apiKey=${API_KEY}&regions=us&markets=h2h&oddsFormat=american`
     );
@@ -76,6 +81,10 @@ export async function GET() {
         .from('fights')
         .select('*')
         .is('winner', null); 
+        
+    // 🎯 NEW: Fetch historical stats to act as a Backup Gatekeeper!
+    const { data: dbFighters } = await supabase.from('fighter_historical_stats').select('fighter_name');
+    const knownUfcNames = dbFighters ? dbFighters.map(f => f.fighter_name.toLowerCase().replace(/['".,-]/g, '').trim()) : [];
 
     const logs = [];
     const bookedFighters = new Set();
@@ -89,9 +98,6 @@ export async function GET() {
         const fightDate = new Date(event.commence_time);
         if (fightDate > futureLimit) continue;
 
-        // 🎯 THE FIX 2: Removed the strict "Sat/Sun" Weekend Filter. 
-        // The ESPN Gatekeeper below will stop random regional MMA automatically.
-
         let bestBookmaker = null;
         for (const book of PREFERRED_BOOKS) {
             bestBookmaker = event.bookmakers.find(b => b.key === book);
@@ -103,13 +109,15 @@ export async function GET() {
         const outcome1 = bestBookmaker.markets[0].outcomes[0];
         const outcome2 = bestBookmaker.markets[0].outcomes[1];
         
-        const f1Key = outcome1.name.toLowerCase().trim();
-        const f2Key = outcome2.name.toLowerCase().trim();
+        let f1Name = NAME_DICTIONARY[outcome1.name] || outcome1.name;
+        let f2Name = NAME_DICTIONARY[outcome2.name] || outcome2.name;
+
+        const f1Key = f1Name.toLowerCase().trim();
+        const f2Key = f2Name.toLowerCase().trim();
 
         if (f1Key.includes('tbd') || f2Key.includes('tbd') || f1Key.includes('tba') || f2Key.includes('tba')) continue;
         if (bookedFighters.has(f1Key) || bookedFighters.has(f2Key)) continue;
 
-        // ESPN EVENT MAPPING
         const clean = (str) => str.toLowerCase().replace(/['".,-]/g, '').trim();
         const c1 = clean(f1Key);
         const c2 = clean(f2Key);
@@ -145,7 +153,6 @@ export async function GET() {
             const newFighter1Odds = isReversedMatch ? outcome2.price : outcome1.price;
             const newFighter2Odds = isReversedMatch ? outcome1.price : outcome2.price;
 
-            // Updates Existing Fight (Includes Event Name & Adjusted Time)
             if (match.fighter_1_odds !== newFighter1Odds || match.fighter_2_odds !== newFighter2Odds || match.event_name !== dynamicEventName || match.start_time !== adjustedEstTime) {
                 await supabase
                     .from('fights')
@@ -161,11 +168,25 @@ export async function GET() {
                 logs.push(`Updated Odds/Event/Time: ${match.fighter_1_name} vs ${match.fighter_2_name}`);
             }
         } else {
-            // THE GATEKEEPER
-            const isConfirmedUfc = ufcNames.some(name => {
+            // 🎯 THE UPGRADED GATEKEEPER
+            let isConfirmedUfc = ufcNames.some(name => {
                 const cn = clean(name);
                 return c1 === cn || c2 === cn || c1.includes(cn) || c2.includes(cn);
             });
+
+            // 🎯 BACKUP 1: Check if they are already in our Historical Stats DB
+            if (!isConfirmedUfc) {
+                if (knownUfcNames.includes(c1) || knownUfcNames.includes(c2)) {
+                    isConfirmedUfc = true;
+                }
+            }
+
+            // 🎯 BACKUP 2: Check if they are in our manual Dictionary override
+            if (!isConfirmedUfc) {
+                if (NAME_DICTIONARY[outcome1.name] || NAME_DICTIONARY[outcome2.name]) {
+                    isConfirmedUfc = true;
+                }
+            }
 
             if (isConfirmedUfc && fightDate > new Date()) {
                 bookedFighters.add(f1Key);
@@ -174,19 +195,20 @@ export async function GET() {
                 const { error: insertError } = await supabase.from('fights').insert({
                     event_name: dynamicEventName, 
                     start_time: adjustedEstTime,
-                    fighter_1_name: outcome1.name,
+                    fighter_1_name: f1Name,
                     fighter_1_odds: outcome1.price,
-                    fighter_2_name: outcome2.name,
+                    fighter_2_name: f2Name,
                     fighter_2_odds: outcome2.price,
                     source: bestBookmaker.key
                 });
 
                 if (insertError) {
-                    console.error("Supabase Insert Error:", insertError);
-                    logs.push(`❌ DB REJECTED ${outcome1.name}: ${insertError.message}`);
+                    logs.push(`❌ DB REJECTED ${f1Name}: ${insertError.message}`);
                 } else {
-                    logs.push(`✅ CREATED UFC FIGHT: ${outcome1.name} vs ${outcome2.name}`);
+                    logs.push(`✅ CREATED UFC FIGHT: ${f1Name} vs ${f2Name}`);
                 }
+            } else if (fightDate > new Date()) {
+                logs.push(`🚫 GATEKEEPER BLOCKED: ${f1Name} vs ${f2Name} (Not found in ESPN or DB)`);
             }
         }
     }

@@ -3,7 +3,8 @@
 import { useState } from 'react';
 
 export default function LeagueDraftTable({ fighters, onDraft, draftedFighterNames = [], isDrafting = false }) {
-    const [sortConfig, setSortConfig] = useState({ key: 'fantasy_points', direction: 'desc' });
+    // 🎯 DEFAULT SORT: Fight Order (Main Event at top)
+    const [sortConfig, setSortConfig] = useState({ key: 'start_time', direction: 'desc' });
 
     // 🎯 SORTING ENGINE
     const handleSort = (key) => {
@@ -15,12 +16,25 @@ export default function LeagueDraftTable({ fighters, onDraft, draftedFighterName
     };
 
     const sortedFighters = [...fighters].sort((a, b) => {
+        // 🎯 Handle the Matchup sorting via start_time
+        if (sortConfig.key === 'start_time') {
+            const timeA = new Date(a.start_time || 0).getTime();
+            const timeB = new Date(b.start_time || 0).getTime();
+            
+            // If they are fighting each other (same time), alphabetize so pairs stay together
+            if (timeA === timeB) {
+                return a.fighter_name.localeCompare(b.fighter_name);
+            }
+            return sortConfig.direction === 'asc' ? timeA - timeB : timeB - timeA;
+        }
+
         // Handle text sorting (like names)
         if (typeof a[sortConfig.key] === 'string') {
             return sortConfig.direction === 'asc' 
                 ? a[sortConfig.key].localeCompare(b[sortConfig.key])
                 : b[sortConfig.key].localeCompare(a[sortConfig.key]);
         }
+        
         // Handle number sorting (stats)
         return sortConfig.direction === 'asc'
             ? Number(a[sortConfig.key] || 0) - Number(b[sortConfig.key] || 0)
@@ -63,10 +77,10 @@ export default function LeagueDraftTable({ fighters, onDraft, draftedFighterName
                 <table className="w-full text-sm whitespace-nowrap">
                     <thead className="bg-gray-900/50 text-[10px] font-black text-gray-500 uppercase tracking-widest border-b border-gray-800">
                         <tr>
-                            <HeaderCell label="Fighter" sortKey="fighter_name" />
+                            <HeaderCell label="Matchup" sortKey="start_time" />
                             <HeaderCell label="Record" sortKey="record" />
+                            <HeaderCell label="Avg PTS" sortKey="fantasy_points" align="right" />
                             <HeaderCell label="SLpM" sortKey="slpm" align="right" />
-                            <HeaderCell label="Str. Def" sortKey="str_def" align="right" />
                             <HeaderCell label="TD Avg" sortKey="td_avg" align="right" />
                             <HeaderCell label="Sub Avg" sortKey="sub_avg" align="right" />
                             <th className="px-4 py-4 text-right">Action</th>
@@ -83,12 +97,18 @@ export default function LeagueDraftTable({ fighters, onDraft, draftedFighterName
                                 >
                                     <td className="px-4 py-4">
                                         <div className="flex flex-col">
-                                            <span className="font-bold text-white text-sm">{fighter.fighter_name}</span>
-                                            {fighter.nickname && fighter.nickname !== 'null' && (
-                                                <span className="text-[10px] text-gray-500 font-black italic uppercase tracking-widest">
-                                                    "{fighter.nickname.replace(/['"]/g, '')}"
-                                                </span>
-                                            )}
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-bold text-white text-sm">{fighter.fighter_name}</span>
+                                                {fighter.nickname && fighter.nickname !== 'null' && (
+                                                    <span className="text-[9px] text-gray-500 font-black italic uppercase tracking-widest">
+                                                        "{fighter.nickname.replace(/['"]/g, '')}"
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {/* 🎯 NEW: OPPONENT DISPLAY */}
+                                            <span className="text-[10px] font-bold uppercase tracking-widest text-pink-600 mt-1">
+                                                vs. <span className="text-gray-400">{fighter.opponent}</span>
+                                            </span>
                                         </div>
                                     </td>
                                     
@@ -96,12 +116,12 @@ export default function LeagueDraftTable({ fighters, onDraft, draftedFighterName
                                         {fighter.record || '0-0-0'}
                                     </td>
                                     
-                                    {/* STATS */}
+                                    <td className="px-4 py-4 text-right text-pink-500 font-black italic font-mono text-base drop-shadow-md">
+                                        {fighter.fantasy_points ? parseFloat(fighter.fantasy_points).toFixed(1) : '0.0'}
+                                    </td>
+                                    
                                     <td className="px-4 py-4 text-right text-gray-300 font-mono">
                                         {fighter.slpm ? parseFloat(fighter.slpm).toFixed(2) : '0.00'}
-                                    </td>
-                                    <td className="px-4 py-4 text-right text-gray-300 font-mono">
-                                        {fighter.str_def ? `${fighter.str_def}%` : '0%'}
                                     </td>
                                     <td className="px-4 py-4 text-right text-gray-300 font-mono">
                                         {fighter.td_avg ? parseFloat(fighter.td_avg).toFixed(2) : '0.00'}
@@ -110,7 +130,6 @@ export default function LeagueDraftTable({ fighters, onDraft, draftedFighterName
                                         {fighter.sub_avg ? parseFloat(fighter.sub_avg).toFixed(1) : '0.0'}
                                     </td>
 
-                                    {/* DRAFT BUTTON */}
                                     <td className="px-4 py-4 text-right">
                                         <button
                                             onClick={() => onDraft(fighter)}

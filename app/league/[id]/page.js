@@ -4,7 +4,9 @@ import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import FightDashboard from '../../components/FightDashboard';
+
+// 🎯 IMPORT THE NEW DRAFT TABLE
+import LeagueDraftTable from '../../components/LeagueDraftTable';
 import ChatBox from '../../components/ChatBox';
 import LeagueRail from '../../components/LeagueRail';
 import LogOutButton from '../../components/LogOutButton';
@@ -12,7 +14,6 @@ import MobileNav from '../../components/MobileNav';
 import Toast from '../../components/Toast'; 
 import SocialShareSlip from '../../components/SocialShareSlip';
 
-// 🎯 IMPORT STORE CASES FOR RARITY LOOKUP
 import { STORE_CASES } from '@/lib/cases';
 
 const supabase = createClient(
@@ -20,7 +21,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// 🎯 HELPER TO COLORIZE LEADERBOARD TITLES
 const getRarityTextStyle = (rarity) => {
     switch (rarity) {
         case 'Legendary': return 'text-yellow-500 drop-shadow-[0_0_5px_rgba(234,179,8,0.8)]';
@@ -42,9 +42,7 @@ export default function LeaguePage() {
   
   const [showMobileLeagues, setShowMobileLeagues] = useState(false);
   const [showMobileSlip, setShowMobileSlip] = useState(false);
-  
   const [showChampCelebration, setShowChampCelebration] = useState(false);
-  
   const [expandedUserRoster, setExpandedUserRoster] = useState(null); 
   const [showAllFighters, setShowAllFighters] = useState(false); 
   const [showGlobalBoxScore, setShowGlobalBoxScore] = useState(false);
@@ -56,9 +54,9 @@ export default function LeaguePage() {
   const [allFights, setAllFights] = useState([]); 
   const [cardFilter, setCardFilter] = useState('full'); 
   const [fighterStats, setFighterStats] = useState([]); 
+  const [historicalStats, setHistoricalStats] = useState([]);
 
   const [showOdds, setShowOdds] = useState(false);
-
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false); 
   
@@ -188,6 +186,62 @@ export default function LeaguePage() {
       return { currentEventFights: nextEventFights, visibleFights: filtered, groupedFights: finalGroupedFights, isEventConcluded: allFinished };
   }, [allFights, cardFilter]);
 
+  useEffect(() => {
+      const fetchDraftBoardStats = async () => {
+          if (!visibleFights || visibleFights.length === 0) return;
+          const names = [];
+          visibleFights.forEach(f => {
+              if (f.fighter_1_name) names.push(f.fighter_1_name.trim());
+              if (f.fighter_2_name) names.push(f.fighter_2_name.trim());
+          });
+          const titleCaseNames = names.map(name => 
+              name.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+          );
+          const searchArray = [...new Set([...names, ...titleCaseNames])];
+
+          const { data } = await supabase.from('fighter_historical_stats').select('*').in('fighter_name', searchArray);
+          if (data) setHistoricalStats(data);
+      };
+      fetchDraftBoardStats();
+  }, [visibleFights]);
+
+  const draftBoardFighters = useMemo(() => {
+      if (!visibleFights || visibleFights.length === 0) return [];
+      
+      let list = [];
+      visibleFights.forEach(fight => {
+          // 🎯 THE FIX: Inject the opponent's name and the start time so the table can use them!
+          if (fight.fighter_1_name) list.push({ name: fight.fighter_1_name, opponent: fight.fighter_2_name, fightId: fight.id, odds: fight.fighter_1_odds, start_time: fight.start_time });
+          if (fight.fighter_2_name) list.push({ name: fight.fighter_2_name, opponent: fight.fighter_1_name, fightId: fight.id, odds: fight.fighter_2_odds, start_time: fight.start_time });
+      });
+
+      const squash = (str) => str ? str.toLowerCase().replace(/[^a-z]/g, '') : '';
+
+      return list.map(f => {
+          const statMatch = historicalStats.find(s => {
+              const dbClean = squash(s.fighter_name);
+              const fClean = squash(f.name);
+              return dbClean === fClean || dbClean.includes(fClean) || fClean.includes(dbClean);
+          });
+
+          return {
+              id: `${f.fightId}-${f.name}`,
+              fightId: f.fightId,
+              fighter_name: f.name,
+              opponent: f.opponent,      // 🎯 Added here
+              start_time: f.start_time,  // 🎯 Added here
+              odds: f.odds || 0,
+              nickname: statMatch?.nickname || null,
+              record: statMatch?.record || '0-0-0',
+              slpm: statMatch?.sig_strikes_per_min || statMatch?.slpm || 0,
+              td_avg: statMatch?.takedown_avg || statMatch?.td_avg || 0,
+              sub_avg: statMatch?.submission_avg || statMatch?.sub_avg || 0,
+              fantasy_points: statMatch?.average_fantasy_points || statMatch?.fantasy_points || 0
+          };
+      });
+  }, [visibleFights, historicalStats]);
+
+
   const activeLeaguePicks = useMemo(() => {
       const currentEventFightIds = currentEventFights.map(f => String(f.id));
       return allLeaguePicks.filter(p => 
@@ -204,7 +258,24 @@ export default function LeaguePage() {
       );
   }, [activeLeaguePicks, user, leagueId]);
 
-  const hasLockedRoster = existingPicks.length >= 5;
+  // 🎯 THE COMBINED ROSTER ENGINE
+  const combinedRoster = useMemo(() => {
+      return [
+          ...existingPicks.map(p => ({
+              id: p.id,
+              fightId: p.fight_id,
+              fighterName: p.selected_fighter,
+              odds: p.odds_at_pick,
+              isDb: true
+          })),
+          ...pendingPicks.map(p => ({
+              ...p,
+              isDb: false
+          }))
+      ];
+  }, [existingPicks, pendingPicks]);
+  
+  const myDraftedNames = combinedRoster.map(p => p.fighterName);
 
   const feedItems = useMemo(() => {
       if (!activeLeaguePicks || !allFights || !members) return [];
@@ -350,7 +421,7 @@ export default function LeaguePage() {
                   localStorage.setItem(winKey, 'true');
               }
           } catch (e) {
-              console.warn("Local storage disabled, skipping celebration guard.");
+              console.warn("Local storage disabled.");
           }
       }
   }, [leaderboard, user, leagueId]);
@@ -360,7 +431,15 @@ export default function LeaguePage() {
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         setUser(currentUser);
 
+        // 🎯 RESTORE PENDING PICKS FROM LOCAL STORAGE
         if (currentUser) {
+            const savedPicks = localStorage.getItem(`draft_pending_${leagueId}_${currentUser.email}`);
+            if (savedPicks) {
+                try {
+                    setPendingPicks(JSON.parse(savedPicks));
+                } catch(e) {}
+            }
+            
             const { data: profile } = await supabase.from('profiles').select('show_odds').eq('id', currentUser.id).single();
             if (profile && profile.show_odds === true) setShowOdds(true);
         }
@@ -420,7 +499,6 @@ export default function LeaguePage() {
         const { data: statsData } = await supabase.from('fighter_stats').select('*');
         setFighterStats(statsData || []);
 
-        // 🎯 STRICTLY LOAD PICKS FOR THIS LEAGUE ONLY
         const { data: leaguePicksData } = await supabase
             .from('picks')
             .select('*')
@@ -514,42 +592,75 @@ export default function LeaguePage() {
       }
   };
 
+  // 🎯 SELECTING A DRAFT PICK (SAVES TO LOCAL STORAGE)
   const handlePickSelect = (newPick) => {
-    // 🚀 NEW: AUTH INTERCEPTOR
     if (!user) {
         router.push('/login');
         return;
     }
 
-    if (hasLockedRoster) {
-        alert("Your 5-man roster is already locked in!");
-        return;
-    }
-
     const safePick = { ...newPick, username: user?.user_metadata?.username || user?.email };
+
+    // Prevent drafting 2 fighters from the same fight if one is already saved in the DB
+    const hasDbPickForFight = existingPicks.some(p => String(p.fight_id) === String(safePick.fightId));
+    if (hasDbPickForFight) {
+        return alert("You already drafted a fighter from this match. Drop them first.");
+    }
 
     setPendingPicks(currentPicks => {
         const existingIndex = currentPicks.findIndex(p => p.fightId === safePick.fightId);
+        let newPicks = [...currentPicks];
+
         if (existingIndex >= 0 && currentPicks[existingIndex].fighterName === safePick.fighterName) {
-            return currentPicks.filter((_, i) => i !== existingIndex);
-        }
-        if (currentPicks.length >= 5 && existingIndex === -1) {
-            alert("Roster is full! You must unselect someone before adding another fighter.");
+            newPicks = currentPicks.filter((_, i) => i !== existingIndex);
+        } else if (existingIndex >= 0) {
+            newPicks[existingIndex] = safePick;
+        } else if (existingPicks.length + currentPicks.length >= 5) {
+            alert("Roster is full! Drop a fighter to make room.");
             return currentPicks;
+        } else {
+            newPicks = [...currentPicks, safePick];
         }
-        if (existingIndex >= 0) {
-            const updated = [...currentPicks];
-            updated[existingIndex] = safePick;
-            return updated;
-        }
-        return [...currentPicks, safePick];
+
+        // Cache instantly
+        localStorage.setItem(`draft_pending_${leagueId}_${user.email}`, JSON.stringify(newPicks));
+        return newPicks;
     });
   };
 
-  const handleRemovePick = (fightId) => setPendingPicks(c => c.filter(p => p.fightId !== fightId));
+  // 🎯 REMOVING A PENDING PICK (UPDATES LOCAL STORAGE)
+  const handleRemovePick = (fightId) => {
+      setPendingPicks(c => {
+          const newPicks = c.filter(p => p.fightId !== fightId);
+          if (user) localStorage.setItem(`draft_pending_${leagueId}_${user.email}`, JSON.stringify(newPicks));
+          return newPicks;
+      });
+  };
+
+  // 🎯 DROPPING AN ALREADY LOCKED PICK FROM THE DB
+  const handleDropPick = async (pickDbId, fightId) => {
+      const fightInfo = allFights.find(f => String(f.id) === String(fightId));
+      const hasStarted = fightInfo ? new Date(fightInfo.start_time) <= new Date() : false;
+      
+      if (hasStarted) {
+          return alert("This fight has already started! You cannot drop this pick.");
+      }
+
+      if (!confirm("Are you sure you want to drop this fighter from your roster?")) return;
+
+      const { error } = await supabase.from('picks').delete().eq('id', pickDbId);
+      if (error) {
+          setToast({ message: "Failed to drop pick", type: "error" });
+      } else {
+          setToast({ message: "Fighter dropped from roster!", type: "success" });
+          setAllLeaguePicks(prev => prev.filter(p => p.id !== pickDbId));
+          setIsRosterCollapsed(false); 
+      }
+  };
 
   const handleConfirmAllPicks = async () => {
-    if (pendingPicks.length !== 5) return alert("You must fill all 5 roster slots!");
+    if (combinedRoster.length !== 5) return alert("You must fill all 5 roster slots!");
+    if (pendingPicks.length === 0) return alert("No new picks to lock in.");
     if (!user) return alert("Log in to lock picks!");
     
     setIsSubmitting(true);
@@ -571,6 +682,8 @@ export default function LeaguePage() {
         setToast({ message: "Error saving picks", type: "error" });
     } else {
         setPendingPicks([]); 
+        localStorage.removeItem(`draft_pending_${leagueId}_${user.email}`); 
+        
         setToast({ message: "Picks Locked In!", type: "success" });
         setIsRosterCollapsed(true);
         setTimeout(() => window.location.reload(), 1500); 
@@ -610,7 +723,6 @@ export default function LeaguePage() {
                               <th className="px-1 py-2 sm:p-2 md:p-3 truncate max-w-[60px] sm:max-w-none">Fighter</th>
                               <th className="px-1 py-2 sm:p-2 md:p-3 text-center">Result</th>
                               
-                              {/* DYNAMIC COLUMNS BASED ON LEAGUE FORMAT */}
                               {leagueFormat !== 'Grappling' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-pink-700/50">KD</th>}
                               {leagueFormat !== 'Grappling' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-pink-700/50">SS</th>}
                               {leagueFormat !== 'Striking' && <th className="px-1 py-2 sm:p-2 md:p-3 text-center text-teal-700/50">TD</th>}
@@ -623,7 +735,7 @@ export default function LeaguePage() {
                       <tbody className="divide-y divide-gray-900">
                           {teamPicks.map(pick => {
                               const isMe = user?.email === email;
-                              const canSee = isMe || hasLockedRoster || isEventConcluded;
+                              const canSee = isMe || existingPicks.length >= 5 || isEventConcluded;
                               
                               if (!canSee) {
                                   return (
@@ -681,71 +793,85 @@ export default function LeaguePage() {
   };
 
   const renderRosterSlots = () => {
-    if (hasLockedRoster) {
-        return (
-            <div className="space-y-3">
-                {existingPicks.map((pick, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-teal-950/20 border border-teal-500/30">
-                        <div>
-                            <div className="text-[9px] font-black text-teal-400 uppercase tracking-widest mb-0.5">LOCKED SLOT {index + 1}</div>
-                            <div className="text-sm font-black text-white uppercase truncate">{pick.selected_fighter}</div>
-                        </div>
-                        <img src="/lock.png" alt="Locked" className="w-10 h-10 object-contain animate-pulse drop-shadow-[0_0_15px_rgba(20,184,166,0.6)]" />
-                    </div>
-                ))}
-                <div className="pt-4 mt-4 text-center">
-                    <p className="text-[10px] font-black uppercase text-teal-400 tracking-widest border border-teal-500/50 bg-teal-950/30 py-2 rounded-lg mb-2">Roster Confirmed</p>
-                    <SocialShareSlip 
-                        picks={existingPicks} 
-                        username={user?.user_metadata?.username || user?.email?.split('@')[0]}
-                        eventName={currentEventFights.length > 0 ? currentEventFights[0].event_name : 'UFC Event'}
-                    />
-                </div>
-            </div>
-        );
-    }
-
     const slots = [0, 1, 2, 3, 4];
+    
     return (
         <div className="space-y-3">
             {slots.map(index => {
-                const pick = pendingPicks[index];
-                return (
-                    <div key={index} className={`flex items-center justify-between p-3 rounded-lg border transition-all ${pick ? 'bg-gray-900 border-pink-500/50' : 'bg-gray-950 border-gray-800 border-dashed'}`}>
-                        {pick ? (
-                            <>
+                const pick = combinedRoster[index];
+                
+                if (pick) {
+                    if (pick.isDb) {
+                        const fightInfo = allFights.find(f => String(f.id) === String(pick.fightId));
+                        const hasStarted = fightInfo ? new Date(fightInfo.start_time) <= new Date() : false;
+                        
+                        return (
+                            <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-teal-950/20 border border-teal-500/30">
                                 <div>
-                                    <div className="text-[9px] font-black text-pink-500 uppercase tracking-widest mb-0.5">SLOT {index + 1}</div>
+                                    <div className="text-[9px] font-black text-teal-400 uppercase tracking-widest mb-0.5">LOCKED SLOT {index + 1}</div>
+                                    <div className="text-sm font-black text-white uppercase truncate">{pick.fighterName}</div>
+                                </div>
+                                {hasStarted ? (
+                                    <img src="/lock.png" alt="Locked" className="w-8 h-8 object-contain opacity-80 drop-shadow-[0_0_10px_rgba(20,184,166,0.6)]" title="Fight has started" />
+                                ) : (
+                                    <button onClick={() => handleDropPick(pick.id, pick.fightId)} className="text-gray-500 hover:text-red-500 text-xs font-black px-3 py-1.5 bg-gray-900 rounded-lg border border-gray-800 transition-colors" title="Drop Fighter">
+                                        DROP
+                                    </button>
+                                )}
+                            </div>
+                        )
+                    } else {
+                        return (
+                            <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-gray-900 border border-pink-500/50">
+                                <div>
+                                    <div className="text-[9px] font-black text-pink-500 uppercase tracking-widest mb-0.5">PENDING SLOT {index + 1}</div>
                                     <div className="text-sm font-black text-white uppercase truncate">{pick.fighterName}</div>
                                 </div>
                                 <button onClick={() => handleRemovePick(pick.fightId)} className="text-gray-500 hover:text-red-500 text-xs font-black p-2">✕</button>
-                            </>
-                        ) : (
-                            <div className="flex items-center gap-3 w-full opacity-50">
+                            </div>
+                        )
+                    }
+                } else {
+                    return (
+                        <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-gray-950 border border-gray-800 border-dashed opacity-50">
+                            <div className="flex items-center gap-3 w-full">
                                 <div className="w-6 h-6 rounded-full bg-gray-900 flex items-center justify-center text-[10px] font-black text-gray-500">{index + 1}</div>
                                 <div className="text-xs font-bold text-gray-600 uppercase tracking-widest">Empty Slot</div>
                             </div>
-                        )}
-                    </div>
-                );
+                        </div>
+                    )
+                }
             })}
             
             <div className="pt-4 border-t border-gray-900 mt-4">
                 <div className="flex justify-between items-center mb-2">
                     <span className="text-[10px] font-black uppercase text-gray-500 tracking-widest">Roster Status</span>
-                    <span className={`text-[10px] font-black uppercase ${pendingPicks.length === 5 ? 'text-teal-400' : 'text-pink-500'}`}>{pendingPicks.length} / 5</span>
+                    <span className={`text-[10px] font-black uppercase ${combinedRoster.length === 5 ? 'text-teal-400' : 'text-pink-500'}`}>{combinedRoster.length} / 5</span>
                 </div>
                 <div className="w-full h-1.5 bg-gray-900 rounded-full overflow-hidden mb-6">
-                    <div className="h-full bg-pink-600 transition-all duration-300" style={{ width: `${(pendingPicks.length / 5) * 100}%` }}></div>
+                    <div className={`h-full transition-all duration-300 ${combinedRoster.length === 5 ? 'bg-teal-500' : 'bg-pink-600'}`} style={{ width: `${(combinedRoster.length / 5) * 100}%` }}></div>
                 </div>
                 
-                <button 
-                    disabled={pendingPicks.length !== 5 || isSubmitting}
-                    onClick={handleConfirmAllPicks}
-                    className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-all ${pendingPicks.length === 5 ? 'bg-pink-600 text-white shadow-[0_0_20px_rgba(236,72,153,0.4)] hover:scale-[1.02] active:scale-95' : 'bg-gray-900 text-gray-600 cursor-not-allowed'}`}
-                >
-                    {isSubmitting ? 'Locking...' : pendingPicks.length === 5 ? 'Lock In Roster' : `Select ${5 - pendingPicks.length} More`}
-                </button>
+                {pendingPicks.length > 0 ? (
+                    <button 
+                        disabled={combinedRoster.length !== 5 || isSubmitting}
+                        onClick={handleConfirmAllPicks}
+                        className={`w-full py-4 rounded-xl font-black uppercase tracking-widest transition-all ${combinedRoster.length === 5 ? 'bg-pink-600 text-white shadow-[0_0_20px_rgba(236,72,153,0.4)] hover:scale-[1.02] active:scale-95' : 'bg-gray-900 text-gray-600 cursor-not-allowed'}`}
+                    >
+                        {isSubmitting ? 'Locking...' : combinedRoster.length === 5 ? 'Lock In Roster' : `Select ${5 - combinedRoster.length} More`}
+                    </button>
+                ) : (
+                    combinedRoster.length === 5 && (
+                        <div className="text-center">
+                            <p className="text-[10px] font-black uppercase text-teal-400 tracking-widest border border-teal-500/50 bg-teal-950/30 py-3 rounded-xl mb-2">Roster Confirmed</p>
+                            <SocialShareSlip 
+                                picks={existingPicks} 
+                                username={user?.user_metadata?.username || user?.email?.split('@')[0]}
+                                eventName={currentEventFights.length > 0 ? currentEventFights[0].event_name : 'UFC Event'}
+                            />
+                        </div>
+                    )
+                )}
             </div>
         </div>
     );
@@ -847,7 +973,6 @@ export default function LeaguePage() {
                 >
                     Activity Feed
                 </button>
-                {/* 🎯 NEW: MOBILE CHAT TAB */}
                 <button 
                     onClick={() => setActiveTab('chat')}
                     className={`lg:hidden whitespace-nowrap px-4 md:px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'chat' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}
@@ -878,7 +1003,7 @@ export default function LeaguePage() {
                                     <div className="flex items-center gap-2">
                                         <span className="w-2 h-2 rounded-full bg-pink-600 animate-pulse"></span>
                                         <h2 className="text-xl font-black uppercase italic tracking-tighter text-white">
-                                            {hasLockedRoster ? 'League Event Card' : 'Draft Your Roster'}
+                                            {combinedRoster.length === 5 && pendingPicks.length === 0 ? 'League Event Card' : 'Draft Your Roster'}
                                         </h2>
                                     </div>
                                     <button onClick={handleCopyCode} className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1 rounded transition-all group">
@@ -982,17 +1107,17 @@ export default function LeaguePage() {
                                 </div>
                             </div>
 
-                            <div className={hasLockedRoster ? 'opacity-80' : ''}>
+                            <div>
                                 {visibleFights.length > 0 ? (
-                                    <FightDashboard 
-                                        fights={visibleFights} 
-                                        groupedFights={groupedFights} 
-                                        initialPicks={existingPicks} 
-                                        userPicks={existingPicks} 
-                                        league_id={leagueId} 
-                                        onPickSelect={handlePickSelect} 
-                                        pendingPicks={pendingPicks} 
-                                        showOdds={showOdds} 
+                                    <LeagueDraftTable 
+                                        fighters={draftBoardFighters}
+                                        onDraft={(fighter) => handlePickSelect({ 
+                                            fightId: fighter.fightId, 
+                                            fighterName: fighter.fighter_name, 
+                                            odds: fighter.odds 
+                                        })}
+                                        draftedFighterNames={myDraftedNames}
+                                        isDrafting={isSubmitting}
                                     />
                                 ) : (
                                     <div className="p-12 border border-gray-800 rounded-xl text-center text-gray-500 font-bold uppercase tracking-widest">
@@ -1210,7 +1335,6 @@ export default function LeaguePage() {
                         </div>
                     )}
 
-                    {/* 🎯 NEW: MOBILE CHAT TAB */}
                     {activeTab === 'chat' && (
                         <div className="lg:hidden animate-in fade-in slide-in-from-bottom-4 duration-300">
                              <div className="flex items-center gap-2 mb-6">
@@ -1441,13 +1565,13 @@ export default function LeaguePage() {
                             className="w-full flex items-center justify-between p-6 bg-gray-950 hover:bg-gray-900 transition-colors focus:outline-none border-b border-gray-900"
                         >
                             <div className="flex items-center gap-3 text-left">
-                                <img src={hasLockedRoster ? '/lock.png' : '/trophy.png'} alt="Icon" className="w-10 h-10 object-contain drop-shadow-[0_0_10px_rgba(20,184,166,0.5)]" />
+                                <img src={combinedRoster.length === 5 && pendingPicks.length === 0 ? '/lock.png' : '/trophy.png'} alt="Icon" className="w-10 h-10 object-contain drop-shadow-[0_0_10px_rgba(20,184,166,0.5)]" />
                                 <div>
                                     <h3 className="text-sm font-black text-white uppercase italic tracking-tighter">
-                                        {hasLockedRoster ? 'Locked Roster' : 'Fantasy Roster'}
+                                        {combinedRoster.length === 5 && pendingPicks.length === 0 ? 'Locked Roster' : 'Fantasy Roster'}
                                     </h3>
-                                    <p className={`text-[10px] font-bold uppercase tracking-widest ${hasLockedRoster ? 'text-teal-400' : 'text-gray-500'}`}>
-                                        {hasLockedRoster ? 'Your picks are secured' : 'Select exactly 5 fighters'}
+                                    <p className={`text-[10px] font-bold uppercase tracking-widest ${combinedRoster.length === 5 && pendingPicks.length === 0 ? 'text-teal-400' : 'text-gray-500'}`}>
+                                        {combinedRoster.length === 5 && pendingPicks.length === 0 ? 'Your picks are secured' : 'Select exactly 5 fighters'}
                                     </p>
                                 </div>
                             </div>
@@ -1479,20 +1603,20 @@ export default function LeaguePage() {
         </div>
       </main>
 
-      {(pendingPicks.length > 0 || hasLockedRoster) && (
+      {(combinedRoster.length > 0) && (
           <div className="lg:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
             <button 
               onClick={() => setShowMobileSlip(true)}
-              className={`w-full text-white p-4 rounded-xl shadow-2xl flex justify-between items-center border active:scale-95 transition-all ${pendingPicks.length === 5 || hasLockedRoster ? 'bg-pink-600 border-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.4)]' : 'bg-gray-900 border-gray-700'}`}
+              className={`w-full text-white p-4 rounded-xl shadow-2xl flex justify-between items-center border active:scale-95 transition-all ${combinedRoster.length === 5 ? 'bg-pink-600 border-pink-400 shadow-[0_0_20px_rgba(236,72,153,0.4)]' : 'bg-gray-900 border-gray-700'}`}
             >
               <div className="flex items-center gap-3">
-                <span className={`px-3 py-1 rounded-lg text-xs font-black ${pendingPicks.length === 5 || hasLockedRoster ? 'bg-black/20 text-white' : 'bg-gray-800 text-pink-500'}`}>
-                  {hasLockedRoster ? '5 / 5' : `${pendingPicks.length} / 5`}
+                <span className={`px-3 py-1 rounded-lg text-xs font-black ${combinedRoster.length === 5 ? 'bg-black/20 text-white' : 'bg-gray-800 text-pink-500'}`}>
+                  {combinedRoster.length} / 5
                 </span>
                 <span className="text-sm font-black uppercase italic tracking-tighter">Your Roster</span>
               </div>
               <span className="text-xs font-bold uppercase tracking-widest">
-                  {hasLockedRoster ? 'View Slip ↑' : (pendingPicks.length === 5 ? 'Lock In →' : 'Expand ↑')}
+                  {combinedRoster.length === 5 ? (pendingPicks.length > 0 ? 'Lock In →' : 'View Slip ↑') : 'Expand ↑'}
               </span>
             </button>
           </div>
@@ -1505,7 +1629,7 @@ export default function LeaguePage() {
                   <div>
                     <h3 className="font-black italic text-xl text-white uppercase tracking-tighter">Fantasy Roster</h3>
                     <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">
-                        {hasLockedRoster ? 'Your picks are secured' : 'Select exactly 5 fighters'}
+                        {combinedRoster.length === 5 && pendingPicks.length === 0 ? 'Your picks are secured' : 'Select exactly 5 fighters'}
                     </p>
                   </div>
                   <button onClick={() => setShowMobileSlip(false)} className="text-gray-500 hover:text-white p-2 text-xs font-bold uppercase tracking-widest bg-gray-900 rounded-lg">✕ Close</button>
@@ -1563,7 +1687,6 @@ export default function LeaguePage() {
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-500">
               <div className="relative w-full max-w-md flex flex-col items-center text-center animate-in zoom-in-50 duration-700 delay-100">
                   
-                  {/* Glowing background effect */}
                   <div className="absolute inset-0 bg-yellow-500/20 blur-[100px] rounded-full z-0 pointer-events-none"></div>
 
                   <div className="relative z-10 space-y-6 flex flex-col items-center">
@@ -1602,9 +1725,6 @@ export default function LeaguePage() {
   );
 }
 
-// ----------------------------------------------------------------------
-// 🎯 THE XP MATH ENGINE
-// ----------------------------------------------------------------------
 function calculateLevel(totalPoints) {
     let level = 1;
     let xpNeededForNext = 100;
