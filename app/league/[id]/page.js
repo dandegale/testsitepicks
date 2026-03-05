@@ -4,9 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-
-// 🎯 IMPORT THE NEW DRAFT TABLE INSTEAD OF DASHBOARD
-import LeagueDraftTable from '../../components/LeagueDraftTable';
+import FightDashboard from '../../components/FightDashboard';
 import ChatBox from '../../components/ChatBox';
 import LeagueRail from '../../components/LeagueRail';
 import LogOutButton from '../../components/LogOutButton';
@@ -58,9 +56,6 @@ export default function LeaguePage() {
   const [allFights, setAllFights] = useState([]); 
   const [cardFilter, setCardFilter] = useState('full'); 
   const [fighterStats, setFighterStats] = useState([]); 
-  
-  // 🎯 NEW: Holds historical data strictly for the draft board
-  const [historicalStats, setHistoricalStats] = useState([]);
 
   const [showOdds, setShowOdds] = useState(false);
 
@@ -193,69 +188,6 @@ export default function LeaguePage() {
       return { currentEventFights: nextEventFights, visibleFights: filtered, groupedFights: finalGroupedFights, isEventConcluded: allFinished };
   }, [allFights, cardFilter]);
 
-  // 🎯 FETCH HISTORICAL STATS FOR THE CURRENT DRAFT CARD ONLY
-  useEffect(() => {
-      const fetchDraftBoardStats = async () => {
-          if (!visibleFights || visibleFights.length === 0) return;
-          
-          const names = [];
-          visibleFights.forEach(f => {
-              if (f.fighter_1_name) names.push(f.fighter_1_name.trim());
-              if (f.fighter_2_name) names.push(f.fighter_2_name.trim());
-          });
-
-          // Formatting for casing mismatches
-          const titleCaseNames = names.map(name => 
-              name.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
-          );
-
-          const searchArray = [...new Set([...names, ...titleCaseNames])];
-
-          const { data } = await supabase
-              .from('fighter_historical_stats')
-              .select('*')
-              .in('fighter_name', searchArray);
-
-          if (data) setHistoricalStats(data);
-      };
-
-      fetchDraftBoardStats();
-  }, [visibleFights]);
-
-  // 🎯 MAP VISIBLE FIGHTS INTO A SINGLE ARRAY FOR THE DRAFT TABLE
-  const draftBoardFighters = useMemo(() => {
-      if (!visibleFights || visibleFights.length === 0) return [];
-      
-      let list = [];
-      visibleFights.forEach(fight => {
-          if (fight.fighter_1_name) list.push({ name: fight.fighter_1_name, fightId: fight.id, odds: fight.fighter_1_odds });
-          if (fight.fighter_2_name) list.push({ name: fight.fighter_2_name, fightId: fight.id, odds: fight.fighter_2_odds });
-      });
-
-      return list.map(f => {
-          const statMatch = historicalStats.find(s =>
-              s.fighter_name?.toLowerCase().trim() === f.name.toLowerCase().trim() ||
-              s.fighter_name?.toLowerCase().includes(f.name.toLowerCase().trim())
-          );
-
-          // 🎯 PROPER DB MAPPINGS FOR THE DRAFT TABLE STATS
-          return {
-              id: `${f.fightId}-${f.name}`,
-              fightId: f.fightId,
-              fighter_name: f.name,
-              odds: f.odds || 0,
-              nickname: statMatch?.nickname || null,
-              record: statMatch?.record || '0-0-0',
-              slpm: statMatch?.sig_strikes_per_min || statMatch?.slpm || 0,
-              str_def: parseFloat(statMatch?.strike_defense || statMatch?.str_def || 0), 
-              td_avg: statMatch?.takedown_avg || statMatch?.td_avg || 0,
-              sub_avg: statMatch?.submission_avg || statMatch?.sub_avg || 0,
-              fantasy_points: statMatch?.fantasy_points || 0
-          };
-      });
-  }, [visibleFights, historicalStats]);
-
-
   const activeLeaguePicks = useMemo(() => {
       const currentEventFightIds = currentEventFights.map(f => String(f.id));
       return allLeaguePicks.filter(p => 
@@ -273,12 +205,6 @@ export default function LeaguePage() {
   }, [activeLeaguePicks, user, leagueId]);
 
   const hasLockedRoster = existingPicks.length >= 5;
-  
-  // 🎯 GATHER ALL DRAFTED NAMES FOR THE UI LOCK
-  const myDraftedNames = [
-      ...existingPicks.map(p => p.selected_fighter),
-      ...pendingPicks.map(p => p.fighterName)
-  ];
 
   const feedItems = useMemo(() => {
       if (!activeLeaguePicks || !allFights || !members) return [];
@@ -494,6 +420,7 @@ export default function LeaguePage() {
         const { data: statsData } = await supabase.from('fighter_stats').select('*');
         setFighterStats(statsData || []);
 
+        // 🎯 STRICTLY LOAD PICKS FOR THIS LEAGUE ONLY
         const { data: leaguePicksData } = await supabase
             .from('picks')
             .select('*')
@@ -588,6 +515,7 @@ export default function LeaguePage() {
   };
 
   const handlePickSelect = (newPick) => {
+    // 🚀 NEW: AUTH INTERCEPTOR
     if (!user) {
         router.push('/login');
         return;
@@ -1054,18 +982,17 @@ export default function LeaguePage() {
                                 </div>
                             </div>
 
-                            {/* 🎯 THE NEW DRAFT TABLE ENTERS THE ARENA */}
-                            <div className={hasLockedRoster ? 'opacity-80 pointer-events-none' : ''}>
+                            <div className={hasLockedRoster ? 'opacity-80' : ''}>
                                 {visibleFights.length > 0 ? (
-                                    <LeagueDraftTable 
-                                        fighters={draftBoardFighters}
-                                        onDraft={(fighter) => handlePickSelect({ 
-                                            fightId: fighter.fightId, 
-                                            fighterName: fighter.fighter_name, 
-                                            odds: fighter.odds 
-                                        })}
-                                        draftedFighterNames={myDraftedNames}
-                                        isDrafting={isSubmitting}
+                                    <FightDashboard 
+                                        fights={visibleFights} 
+                                        groupedFights={groupedFights} 
+                                        initialPicks={existingPicks} 
+                                        userPicks={existingPicks} 
+                                        league_id={leagueId} 
+                                        onPickSelect={handlePickSelect} 
+                                        pendingPicks={pendingPicks} 
+                                        showOdds={showOdds} 
                                     />
                                 ) : (
                                     <div className="p-12 border border-gray-800 rounded-xl text-center text-gray-500 font-bold uppercase tracking-widest">
