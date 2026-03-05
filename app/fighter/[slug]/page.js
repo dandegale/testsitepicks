@@ -11,7 +11,8 @@ const SLUG_ALIASES = {
     "long-xiao": "xiao-long",
     "sergey-spivak": "serghei-spivac",
     "sumudaerji-sumudaerji": "su-mudaerji",
-    "sumerdaji-sumerdaji": "su-mudaerji", // Catching your specific spelling just in case!
+    "sumerdaji-sumerdaji": "su-mudaerji", 
+    "sumudaerji": "su-mudaerji", // 🎯 Added this to catch the single-name variant!
     "yi-zha": "yizha"
 };
 
