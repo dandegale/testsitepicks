@@ -96,7 +96,7 @@ export default function LeagueDraftTable({ fighters, onDraft, draftedFighterName
                                         {fighter.record || '0-0-0'}
                                     </td>
                                     
-                                    {/* STATS (Right Aligned for clean numbers) */}
+                                    {/* STATS */}
                                     <td className="px-4 py-4 text-right text-gray-300 font-mono">
                                         {fighter.slpm ? parseFloat(fighter.slpm).toFixed(2) : '0.00'}
                                     </td>

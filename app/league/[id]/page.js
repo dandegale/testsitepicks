@@ -193,7 +193,7 @@ export default function LeaguePage() {
       return { currentEventFights: nextEventFights, visibleFights: filtered, groupedFights: finalGroupedFights, isEventConcluded: allFinished };
   }, [allFights, cardFilter]);
 
-  // 🎯 NEW: FETCH HISTORICAL STATS FOR THE CURRENT DRAFT CARD ONLY (Fast & Secure)
+  // 🎯 FETCH HISTORICAL STATS FOR THE CURRENT DRAFT CARD ONLY
   useEffect(() => {
       const fetchDraftBoardStats = async () => {
           if (!visibleFights || visibleFights.length === 0) return;
@@ -222,7 +222,7 @@ export default function LeaguePage() {
       fetchDraftBoardStats();
   }, [visibleFights]);
 
-  // 🎯 NEW: MAP VISIBLE FIGHTS INTO A SINGLE ARRAY FOR THE DRAFT TABLE
+  // 🎯 MAP VISIBLE FIGHTS INTO A SINGLE ARRAY FOR THE DRAFT TABLE
   const draftBoardFighters = useMemo(() => {
       if (!visibleFights || visibleFights.length === 0) return [];
       
@@ -233,12 +233,12 @@ export default function LeaguePage() {
       });
 
       return list.map(f => {
-          // Cross-reference with historical stats
           const statMatch = historicalStats.find(s =>
               s.fighter_name?.toLowerCase().trim() === f.name.toLowerCase().trim() ||
               s.fighter_name?.toLowerCase().includes(f.name.toLowerCase().trim())
           );
 
+          // 🎯 PROPER DB MAPPINGS FOR THE DRAFT TABLE STATS
           return {
               id: `${f.fightId}-${f.name}`,
               fightId: f.fightId,
@@ -246,10 +246,10 @@ export default function LeaguePage() {
               odds: f.odds || 0,
               nickname: statMatch?.nickname || null,
               record: statMatch?.record || '0-0-0',
-              slpm: statMatch?.slpm || 0,
-              str_def: statMatch?.str_def ? parseFloat(statMatch.str_def) : 0, // Parse to clean number for sorting
-              td_avg: statMatch?.td_avg || 0,
-              sub_avg: statMatch?.sub_avg || 0,
+              slpm: statMatch?.sig_strikes_per_min || statMatch?.slpm || 0,
+              str_def: parseFloat(statMatch?.strike_defense || statMatch?.str_def || 0), 
+              td_avg: statMatch?.takedown_avg || statMatch?.td_avg || 0,
+              sub_avg: statMatch?.submission_avg || statMatch?.sub_avg || 0,
               fantasy_points: statMatch?.fantasy_points || 0
           };
       });
