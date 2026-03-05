@@ -15,8 +15,14 @@ const NAME_DICTIONARY = {
     "Sergey Spivak": "Serghei Spivac",
     "Sulangrangbo": "Sulangrangbo", 
     "Sumudaerji Sumudaerji": "Su Mudaerji",
+    "Sumerdaji Sumerdaji": "Su Mudaerji", // Catching alternate spellings
     "Yi Zha": "Yizha"
 };
+
+// 🎯 REVERSE DICTIONARY: Maps clean names BACK to the raw database names
+const REVERSE_DICT = Object.fromEntries(
+    Object.entries(NAME_DICTIONARY).map(([dbName, cleanName]) => [cleanName.toLowerCase(), dbName])
+);
 
 // 🎯 HELPER: SQUASH NAMES FOR FLAWLESS MATCHING
 const squashName = (name) => name ? name.toLowerCase().replace(/[^a-z]/g, '') : '';
@@ -28,20 +34,25 @@ export async function GET(request, { params }) {
     
     if (!slug) return NextResponse.json({ error: 'No slug provided' }, { status: 400 });
 
-    // Format the name and run it through our dictionary
+    // 1. Format the basic name
     const rawName = slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    const searchName = NAME_DICTIONARY[rawName] || rawName;
     
-    const targetClean = squashName(searchName);
-    const searchParts = searchName.split(' ');
-    const searchLastName = searchParts[searchParts.length - 1];
+    // 2. Identify the "Clean Name" (e.g. "Su Mudaerji") and "DB Name" (e.g. "Sumudaerji Sumudaerji")
+    const cleanName = NAME_DICTIONARY[rawName] || rawName;
+    const dbName = REVERSE_DICT[cleanName.toLowerCase()] || cleanName;
+    
+    const targetClean = squashName(cleanName);
+    const dbParts = dbName.split(' ');
+    const searchFirst = dbParts[0]; 
+    const searchLast = dbParts[dbParts.length - 1];
 
-    // 🎯 1. CHECK SUPABASE FIRST
-    const { data: dbData } = await supabase
+    // 🎯 1. CHECK SUPABASE FIRST (Looking for BOTH clean and weird names)
+    let { data: dbData } = await supabase
         .from('fighter_historical_stats')
         .select('*')
-        .ilike('fighter_name', searchName)
-        .single();
+        .in('fighter_name', [cleanName, dbName]) // Checks both "Su Mudaerji" and "Sumudaerji Sumudaerji"
+        .limit(1)
+        .maybeSingle();
 
     // Data Buckets
     let espn = null;
@@ -55,7 +66,7 @@ export async function GET(request, { params }) {
         
         // 1. ESPN API (Primary for Image & Bio)
         (async () => {
-            const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/mma/ufc/athletes?limit=1&q=${encodeURIComponent(searchName)}`;
+            const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/mma/ufc/athletes?limit=1&q=${encodeURIComponent(cleanName)}`;
             const res = await fetch(espnUrl);
             if (res.ok) {
                 const data = await res.json();
@@ -66,7 +77,7 @@ export async function GET(request, { params }) {
 
         // 2. THE SPORTS DB (Fallback for Image & Country)
         (async () => {
-            const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/searchplayers.php?p=${encodeURIComponent(searchName)}`);
+            const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/searchplayers.php?p=${encodeURIComponent(cleanName)}`);
             if (res.ok) {
                 const data = await res.json();
                 if (data.player && data.player.length > 0) {
@@ -90,23 +101,24 @@ export async function GET(request, { params }) {
                         
                         if (siteClean === targetClean || 
                            (siteClean.length > 4 && targetClean.includes(siteClean)) || 
-                           (targetClean.length > 4 && siteClean.includes(targetClean))) {
+                           (targetClean.length > 4 && siteClean.includes(targetClean)) ||
+                           (siteClean === squashName(dbName))) { // Fallback match
                             link = $search(cols[0]).find('a').attr('href');
-                            return false; // Break loop
+                            return false; 
                         }
                     }
                 });
                 return link;
             };
 
-            // First Pass: Search by Last Name
-            let searchUrl = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(searchLastName)}&page=all`;
+            // First Pass: Search by Last Name (Using the DB's weird last name)
+            let searchUrl = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(searchLast)}&page=all`;
             let searchRes = await fetch(searchUrl);
             let fighterLink = checkRows(await searchRes.text());
 
             // Second Pass (The Sumudaerji Fix): Search by First Name
             if (!fighterLink) {
-                searchUrl = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(searchParts[0])}&page=all`;
+                searchUrl = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(searchFirst)}&page=all`;
                 searchRes = await fetch(searchUrl);
                 fighterLink = checkRows(await searchRes.text());
             }
@@ -160,7 +172,8 @@ export async function GET(request, { params }) {
                         if (fighters.length >= 2) {
                             const f1 = $(fighters[0]).text().trim();
                             const f2 = $(fighters[1]).text().trim();
-                            opponent = (squashName(f1) === targetClean || targetClean.includes(squashName(f1))) ? f2 : f1;
+                            const f1Squash = squashName(f1);
+                            opponent = (f1Squash === targetClean || targetClean.includes(f1Squash) || squashName(dbName).includes(f1Squash)) ? f2 : f1;
                         }
 
                         const event = $(cols[6]).find('a').text().trim() || "UFC Event";
@@ -193,7 +206,7 @@ export async function GET(request, { params }) {
         // 4. UFC.COM (Primary for Official Ranking, Next Fight, & Hero Image)
         (async () => {
             // 🎯 THE FIX: Force UFC.com to use squashed URLs for mononyms
-            const ufcComSlug = (targetClean === 'sumudaerji') ? 'sumudaerji' : slug.toLowerCase();
+            const ufcComSlug = (targetClean.includes('sumudaerji')) ? 'sumudaerji' : slug.toLowerCase();
 
             const ufcRes = await fetch(`https://www.ufc.com/athlete/${ufcComSlug}`);
             if (ufcRes.ok) {
@@ -232,11 +245,11 @@ export async function GET(request, { params }) {
 
         // 5. WIKIPEDIA (Primary for Detailed History)
         (async () => {
-            let searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(searchName + " fighter")}&format=json&origin=*`);
+            let searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanName + " fighter")}&format=json&origin=*`);
             let searchData = await searchRes.json();
             
             if (!searchData.query?.search?.length) {
-                 searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(searchName)}&format=json&origin=*`);
+                 searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanName)}&format=json&origin=*`);
                  searchData = await searchRes.json();
             }
 
@@ -298,7 +311,6 @@ export async function GET(request, { params }) {
 
     // 🧠 3. THE MERGE: Intelligently combine Supabase, ESPN, UFC Stats, etc.
     let bio = {
-        // 🎯 FIX: Prioritize UFC.com image, then DB, then ESPN/TSDB
         image_url: ufcCom.image || dbData?.image_url || (espn?.headshot?.href) || (tsdb?.strCutout) || (tsdb?.strThumb) || null,
         height: dbData?.height || (espn?.displayHeight) || ufcStats.height || '—',
         weight: dbData?.weight || (espn?.displayWeight) || ufcStats.weight || '—',
@@ -326,8 +338,9 @@ export async function GET(request, { params }) {
 
     // 🎯 4. AUTO-SAVE TO SUPABASE
     if (!dbData || !dbData.height || dbData.height === '--') {
+        const targetDbName = dbData?.fighter_name || dbName; // Respect the DB's current name to prevent duplicates
         const newDbEntry = {
-            fighter_name: searchName,
+            fighter_name: targetDbName,
             nickname: bio.nickname,
             record: bio.record,
             age: parseInt(bio.age) || null,
