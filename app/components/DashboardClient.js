@@ -115,6 +115,11 @@ export default function DashboardClient({
       return { cleanFights: validFights, cleanGroups: finalGroupedFights };
   }, [fights]);
 
+  // 🎯 GRAB THE EXACT EVENT NAME FROM THE FIGHT DATA
+  const currentEventName = cleanFights.length > 0 && cleanFights[0].event_name 
+      ? cleanFights[0].event_name 
+      : (mainEvent?.event_name || safeEventName.split('(')[0] || "Upcoming Event");
+
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -314,7 +319,6 @@ export default function DashboardClient({
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between w-full">
                 
                 <div className="flex items-center gap-3 md:gap-4">
-                    {/* 🎯 UPDATED HAMBURGER ICON: TEAL COLOR AND PULSE ANIMATION */}
                     <button 
                         onClick={() => setShowMobileMenu(true)} 
                         className="md:hidden p-1 text-teal-400 hover:text-teal-300 transition-colors drop-shadow-[0_0_5px_rgba(45,212,191,0.5)] animate-pulse"
@@ -377,7 +381,8 @@ export default function DashboardClient({
                 <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row md:items-end justify-between gap-4">
                     <div>
                         <h1 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter mb-1 leading-none">CHOOSE YOUR FIGHTER</h1>
-                        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">{safeEventName.split('(')[0]}</p>
+                        {/* 🎯 UPDATED TO USE THE EXACT DYNAMIC EVENT NAME */}
+                        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">{currentEventName}</p>
                     </div>
                     <div className="pb-1">
                         <p className="text-[9px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2 md:text-right">Lock In Deadline</p>
