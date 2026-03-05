@@ -32,62 +32,54 @@ const NAME_DICTIONARY = {
     "Yi Zha": "Yizha"
 };
 
+// 🎯 THE FIX: SQUASH NAMES TO IGNORE SPACES AND PUNCTUATION
+const squashName = (name) => {
+    if (!name) return "";
+    return name.toLowerCase().replace(/[^a-z]/g, '');
+};
+
 // 1. GOD MODE PROFILE SEARCH 
 async function searchFighterProfile(fighterName) {
     console.log(`🔍 Searching for ${fighterName.trim()}...`);
     
-    const cleanName = fighterName.trim().toLowerCase().replace(/-/g, ' ').replace(/[łŁ]/g, 'l');
-    const nameParts = cleanName.split(/\s+/); 
+    const targetClean = squashName(fighterName);
+    const nameParts = fighterName.trim().toLowerCase().split(/\s+/); 
     
     const dbFirst = nameParts[0];
     const dbLast = nameParts[nameParts.length - 1]; 
     
-    const url = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(dbLast)}&page=all`;
-    
-    const { data } = await axios.get(url, REQUEST_HEADERS);
-    const $ = cheerio.load(data);
-    
-    let profileUrl = null;
-    
-    $('.b-statistics__table-row').each((i, el) => {
-        if (i === 0) return; 
-        
-        const fName = $(el).find('td').eq(0).text().toLowerCase().trim();
-        const lName = $(el).find('td').eq(1).text().toLowerCase().trim();
-        
-        const cleanSiteLast = lName.replace(/[^a-z]/g, '');
-        const cleanDbLast = dbLast.replace(/[^a-z]/g, '');
-        
-        const firstMatch = fName.substring(0, 3) === dbFirst.substring(0, 3);
-        const lastMatch = cleanSiteLast.includes(cleanDbLast) || cleanDbLast.includes(cleanSiteLast);
-        
-        if (firstMatch && lastMatch) {
-            profileUrl = $(el).find('.b-link_style_black').first().attr('href');
-            return false; 
-        }
-    });
+    // Helper to evaluate rows regardless of which URL we are checking
+    const checkRows = (html) => {
+        const $ = cheerio.load(html);
+        let foundUrl = null;
+        $('.b-statistics__table-row').each((i, el) => {
+            if (i === 0) return; 
+            
+            const fName = $(el).find('td').eq(0).text().trim();
+            const lName = $(el).find('td').eq(1).text().trim();
+            const siteClean = squashName(fName + lName);
+            
+            // 🎯 If the names match perfectly when squashed, we found them!
+            if (siteClean === targetClean || 
+               (siteClean.length > 5 && targetClean.includes(siteClean)) || 
+               (targetClean.length > 5 && siteClean.includes(targetClean))) {
+                foundUrl = $(el).find('.b-link_style_black').first().attr('href');
+                return false; // Break loop
+            }
+        });
+        return foundUrl;
+    };
 
+    // First attempt: Search by Last Name
+    const url = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(dbLast)}&page=all`;
+    const { data } = await axios.get(url, REQUEST_HEADERS);
+    let profileUrl = checkRows(data);
+
+    // Second attempt: Search by First Name (Catches fighters like Sumudaerji where last name is blank)
     if (!profileUrl) {
         const backupUrl = `http://ufcstats.com/statistics/fighters/search?query=${encodeURIComponent(dbFirst)}&page=all`;
         const { data: backupData } = await axios.get(backupUrl, REQUEST_HEADERS);
-        const _$ = cheerio.load(backupData);
-        
-        _$('.b-statistics__table-row').each((i, el) => {
-            if (i === 0) return;
-            const fName = _$(el).find('td').eq(0).text().toLowerCase().trim();
-            const lName = _$(el).find('td').eq(1).text().toLowerCase().trim();
-            
-            const cleanSiteLast = lName.replace(/[^a-z]/g, '');
-            const cleanDbLast = dbLast.replace(/[^a-z]/g, '');
-            
-            const firstMatch = fName.substring(0, 3) === dbFirst.substring(0, 3);
-            const lastMatch = cleanSiteLast.includes(cleanDbLast) || cleanDbLast.includes(cleanSiteLast);
-            
-            if (firstMatch && lastMatch) {
-                profileUrl = _$(el).find('.b-link_style_black').first().attr('href');
-                return false;
-            }
-        });
+        profileUrl = checkRows(backupData);
     }
 
     if (!profileUrl) {
@@ -171,18 +163,14 @@ async function scoreHistoricalFight(fightUrl, targetFighterName) {
         $('.b-fight-details__person-name').each((i, el) => fighters.push($(el).text().trim()));
         if (fighters.length < 2) return null;
 
-        const cleanName = targetFighterName.trim().toLowerCase().replace(/-/g, ' ').replace(/[łŁ]/g, 'l');
-        const nameParts = cleanName.split(/\s+/);
-        
-        const dbFirst3 = nameParts[0].substring(0, 3);
-        const dbLast = nameParts[nameParts.length - 1].replace(/[^a-z]/g, '');
+        const targetClean = squashName(targetFighterName);
 
+        // 🎯 THE FIX: Applying the squash match to the scorecard check
         const targetIndex = fighters.findIndex(f => {
-            const fLower = f.toLowerCase().replace(/-/g, ' ').replace(/[łŁ]/g, 'l').trim();
-            const fParts = fLower.split(/\s+/);
-            const fFirst3 = fParts[0].substring(0, 3);
-            const fLast = fParts[fParts.length - 1].replace(/[^a-z]/g, '');
-            return (fFirst3 === dbFirst3) && (fLast.includes(dbLast) || dbLast.includes(fLast));
+            const siteClean = squashName(f);
+            return siteClean === targetClean || 
+                   (siteClean.length > 4 && targetClean.includes(siteClean)) || 
+                   (targetClean.length > 4 && siteClean.includes(targetClean));
         });
 
         if (targetIndex === -1) return null; 
@@ -333,8 +321,8 @@ async function processFighter(fighterName) {
             .upsert({
                 fighter_name: trimmedName,
                 average_fantasy_points: avgTotal,
-                avg_striking_points: avgStriking,     // 🎯 NEW
-                avg_grappling_points: avgGrappling,   // 🎯 NEW
+                avg_striking_points: avgStriking,
+                avg_grappling_points: avgGrappling,
                 total_fights_scored: fightsScored,
                 total_points: parseFloat(totalPoints.toFixed(2)),
                 nickname: stats.nickname,
@@ -368,6 +356,7 @@ async function processFighter(fighterName) {
 async function runBatch() {
     console.log("📥 Fetching current fighters from your database...");
     
+    // 1. Get all fighters from scheduled/past fights
     const { data: fights, error: fightsError } = await supabase
         .from('fights')
         .select('fighter_1_name, fighter_2_name');
@@ -383,9 +372,30 @@ async function runBatch() {
         if (fight.fighter_2_name) fighterSet.add(fight.fighter_2_name.trim());
     });
 
-    const fightersToProcess = Array.from(fighterSet);
+    const allFighters = Array.from(fighterSet);
 
-    console.log(`📋 ${fightersToProcess.length} fighters to process. Commencing Historical Backfill...\n`);
+    // 2. Fetch existing stats to see who is missing an age
+    console.log("📥 Checking existing historical stats for missing ages...");
+    const { data: existingStats, error: statsError } = await supabase
+        .from('fighter_historical_stats')
+        .select('fighter_name, age'); // 🎯 Fetching age this time
+
+    if (statsError) {
+        console.error("❌ Failed to fetch historical stats:", statsError.message);
+        return;
+    }
+
+    // 3. Filter: Only keep fighters with null/undefined age, or who are completely missing
+    const fightersToProcess = allFighters.filter(fighterName => {
+        const statRecord = existingStats.find(s => s.fighter_name.toLowerCase() === fighterName.toLowerCase());
+        
+        // If they don't exist yet, OR if their age is null/missing, we need to scrape them
+        return !statRecord || statRecord.age === null || statRecord.age === undefined;
+    });
+
+    console.log(`📋 Found ${allFighters.length} total fighters attached to fights.`);
+    console.log(`⏩ Skipping fighters with existing age data...`);
+    console.log(`🎯 ${fightersToProcess.length} fighters missing age data. Commencing Historical Backfill...\n`);
 
     for (const fighter of fightersToProcess) {
         await processFighter(fighter);
@@ -393,7 +403,7 @@ async function runBatch() {
         await new Promise(r => setTimeout(r, 3000));
     }
     
-    console.log("🎉 ALL FIGHTERS UPDATED WITH STRIKING/GRAPPLING POINTS!");
+    console.log("🎉 ALL FIGHTERS UPDATED WITH MISSING DATA!");
 }
 
 runBatch();

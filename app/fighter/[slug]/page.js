@@ -4,9 +4,23 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 
+// 🎯 ALIAS DICTIONARY: Intercepts weird UFC names and routes them to our clean database names
+const SLUG_ALIASES = {
+    "javier-reyes-rugeles": "javier-reyes",
+    "joseph-pyfer": "joe-pyfer",
+    "long-xiao": "xiao-long",
+    "sergey-spivak": "serghei-spivac",
+    "sumudaerji-sumudaerji": "su-mudaerji",
+    "sumerdaji-sumerdaji": "su-mudaerji", // Catching your specific spelling just in case!
+    "yi-zha": "yizha"
+};
+
 export default function FighterProfilePage() {
   const params = useParams();
-  const slug = params?.slug;
+  
+  // 🎯 INTERCEPT & NORMALIZE THE SLUG
+  const rawSlug = params?.slug?.toLowerCase() || '';
+  const activeSlug = SLUG_ALIASES[rawSlug] || rawSlug;
 
   const [fighterBio, setFighterBio] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -17,14 +31,16 @@ export default function FighterProfilePage() {
     return s.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
 
-  const displayName = slug ? formatName(slug) : "Loading...";
+  // Use the cleaned slug for the display name so it looks perfect on the screen
+  const displayName = activeSlug ? formatName(activeSlug) : "Loading...";
 
   useEffect(() => {
-    if (!slug) return;
+    if (!activeSlug) return;
 
     async function fetchData() {
       try {
-          const res = await fetch(`/api/fighter/${slug}?t=${Date.now()}`);
+          // 🎯 FETCH USING THE CLEANED ALIAS SLUG
+          const res = await fetch(`/api/fighter/${activeSlug}?t=${Date.now()}`);
           if (!res.ok) throw new Error("Fighter not found");
           const data = await res.json();
           setFighterBio(data);
@@ -37,7 +53,7 @@ export default function FighterProfilePage() {
     }
 
     fetchData();
-  }, [slug]);
+  }, [activeSlug]);
 
   if (error) {
       return (
@@ -48,7 +64,7 @@ export default function FighterProfilePage() {
       );
   }
 
-  if (!slug || loading || !fighterBio) {
+  if (!activeSlug || loading || !fighterBio) {
       return (
         <div className="min-h-screen bg-black text-white flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
