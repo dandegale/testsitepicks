@@ -320,8 +320,7 @@ export default function DashboardClient({
 
   return (
     <div className="flex min-h-screen bg-black text-white overflow-hidden font-sans selection:bg-pink-500 selection:text-white">
-      <OnboardingModal />
-
+<OnboardingModal onOpenShowdown={openShowdownAuthGate} />
       <div className={`hidden md:block transition-all duration-500 ${isFocusMode ? '-ml-20' : 'ml-0'}`}>
         <LeagueRail initialLeagues={clientLeagues} />
       </div>

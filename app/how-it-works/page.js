@@ -90,49 +90,67 @@ export default function HowItWorks() {
 
   const finalScore = totalBasePoints + finalBonus;
 
-  // --- THE 3 PILLARS (NOW WITH SVGS) ---
+  // --- THE 4 PILLARS (SYNCED WITH MODAL) ---
   const steps = [
       {
           icon: (
-              <svg className="w-14 h-14 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <svg className="w-10 h-10 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
           ),
-          title: "Climb The Ranks",
-          subtitle: "Global Picks",
-          description: "Head over to the Global Feed to view the active fight card. Select your winners for every matchup to earn points and rank up the Global Leaderboard.",
+          title: "1. Global Feed",
+          description: "Choose who will win every upcoming fight. The points system is based on a hypothetical $10 bet using Vegas odds. The more points you gain, the further you climb up the Global Leaderboard.",
           accent: "text-pink-500",
           border: "group-hover:border-pink-500/50",
           glow: "bg-pink-600/5 group-hover:bg-pink-600/10",
-          shadow: "group-hover:shadow-[0_0_30px_rgba(236,72,153,0.15)]"
+          shadow: "group-hover:shadow-[0_0_30px_rgba(236,72,153,0.15)]",
+          link: "/",
+          linkText: "Go to Dashboard"
       },
       {
           icon: (
-              <svg className="w-14 h-14 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+              <svg className="w-10 h-10 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
               </svg>
           ),
-          title: "Draft & Unlock",
-          subtitle: "Leagues & The Store",
-          description: "Create private leagues or join public ones. Remember: Leagues are the ONLY way to gain levels and earn coins to spend on exclusive items in the Store!",
-          accent: "text-teal-500",
-          border: "group-hover:border-teal-500/50",
-          glow: "bg-teal-600/5 group-hover:bg-teal-600/10",
-          shadow: "group-hover:shadow-[0_0_30px_rgba(20,184,166,0.15)]"
-      },
-      {
-          icon: (
-              <svg className="w-14 h-14 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-          ),
-          title: "Head-To-Head",
-          subtitle: "1v1 Showdowns",
-          description: "Think your Fight IQ is unmatched? Challenge other managers directly in 1v1 Showdowns to put your prediction skills to the ultimate test.",
+          title: "2. Seasons & Ranks",
+          description: "Your points from the Global Feed determine your rank against the entire community. The leaderboard resets every season (every 3 months), allowing new managers a chance to claim the throne.",
           accent: "text-yellow-500",
           border: "group-hover:border-yellow-500/50",
           glow: "bg-yellow-600/5 group-hover:bg-yellow-600/10",
-          shadow: "group-hover:shadow-[0_0_30px_rgba(234,179,8,0.15)]"
+          shadow: "group-hover:shadow-[0_0_30px_rgba(234,179,8,0.15)]",
+          link: "/leaderboard",
+          linkText: "View Leaderboards"
+      },
+      {
+          icon: (
+              <svg className="w-10 h-10 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+          ),
+          title: "3. Fantasy Leagues",
+          description: "Draft a 5-fighter roster. Fighters gain points based on their in-cage performance (strikes, takedowns, finishes), which are then scaled by Vegas odds to equalize unfair matchups. Taking a risk on an underdog pays off big!",
+          accent: "text-teal-500",
+          border: "group-hover:border-teal-500/50",
+          glow: "bg-teal-600/5 group-hover:bg-teal-600/10",
+          shadow: "group-hover:shadow-[0_0_30px_rgba(20,184,166,0.15)]",
+          link: "/discover",
+          linkText: "Discover Leagues"
+      },
+      {
+          icon: (
+              <svg className="w-10 h-10 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+          ),
+          title: "4. 1v1 Showdowns",
+          description: "Want to settle a debate? Challenge a friend directly to a 1 vs 1 format of the league. You both draft a roster and battle it out using the exact same performance and odds-scaled scoring format.",
+          accent: "text-orange-500",
+          border: "group-hover:border-orange-500/50",
+          glow: "bg-orange-600/5 group-hover:bg-orange-600/10",
+          shadow: "group-hover:shadow-[0_0_30px_rgba(249,115,22,0.15)]",
+          link: "/",
+          linkText: "Go to Dashboard (Click 1v1)"
       }
   ];
 
@@ -241,32 +259,37 @@ export default function HowItWorks() {
         <div className="max-w-5xl mx-auto w-full p-4 md:p-8">
           
           {/* =========================================
-              PART 1: THE CORE PILLARS
+              PART 1: THE CORE PILLARS (2x2 GRID)
           ========================================= */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16 mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-16 mt-4">
               {steps.map((step, idx) => (
-                  <div 
+                  <Link 
+                      href={step.link}
                       key={idx} 
-                      className={`group relative bg-gray-950 border border-gray-800 rounded-3xl p-8 flex flex-col items-center text-center transition-all duration-300 hover:-translate-y-2 ${step.border} ${step.shadow} overflow-hidden`}
+                      className={`group relative bg-gray-950 border border-gray-800 rounded-3xl p-6 md:p-8 flex flex-col items-start text-left transition-all duration-300 hover:-translate-y-2 ${step.border} ${step.shadow} overflow-hidden outline-none`}
                   >
                       <div className={`absolute inset-0 transition-colors duration-500 ${step.glow}`}></div>
                       
-                      <div className="relative z-10 flex flex-col items-center">
-                          <div className="mb-6 transform transition-transform duration-500 group-hover:scale-110 drop-shadow-lg">
-                              {step.icon}
+                      <div className="relative z-10 flex flex-col h-full w-full">
+                          <div className="flex items-center gap-4 mb-4">
+                              <div className="transform transition-transform duration-500 group-hover:scale-110 drop-shadow-lg">
+                                  {step.icon}
+                              </div>
+                              <h2 className="text-xl md:text-2xl font-black italic uppercase text-white tracking-tighter group-hover:text-white/80 transition-colors">
+                                  {step.title}
+                              </h2>
                           </div>
 
-                          <h3 className={`text-[10px] font-black uppercase tracking-[0.2em] mb-2 ${step.accent}`}>
-                              {step.subtitle}
-                          </h3>
-                          <h2 className="text-2xl md:text-3xl font-black italic uppercase text-white tracking-tighter mb-4">
-                              {step.title}
-                          </h2>
-                          <p className="text-xs md:text-sm text-gray-400 font-medium leading-relaxed">
+                          <p className="text-xs md:text-sm text-gray-400 font-medium leading-relaxed mb-6 flex-1">
                               {step.description}
                           </p>
+                          
+                          <div className={`mt-auto pt-4 border-t border-gray-800/50 w-full flex justify-between items-center ${step.accent}`}>
+                              <span className="text-[10px] font-black uppercase tracking-widest">{step.linkText}</span>
+                              <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+                          </div>
                       </div>
-                  </div>
+                  </Link>
               ))}
           </div>
 
