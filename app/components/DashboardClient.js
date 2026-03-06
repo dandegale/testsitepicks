@@ -402,8 +402,9 @@ export default function DashboardClient({
                     <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">FIGHT<span className="text-pink-600">IQ</span></Link>
                     <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
                     <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
+                        {/* 🎯 RESTORED "MY PICKS" TO THE HEADER */}
                         <Link href="/how-it-works" className="text-white hover:text-pink-400 transition-colors">How It Works</Link>
-                        <Link href="/discover" className="hover:text-white transition-colors">Discover</Link>
+                        <Link href="/my-picks" className="hover:text-white transition-colors">My Picks</Link>
                         <span className="text-gray-300 cursor-default">Global Feed</span>
                         <Link href="/leaderboard" className="hover:text-white transition-colors">Leaderboards</Link>
                         <Link href="/store" className="hover:text-pink-400 text-pink-600 transition-colors flex items-center gap-1"><span>STORE</span></Link>
@@ -528,7 +529,6 @@ export default function DashboardClient({
                 </div>
             </div>
 
-            {/* 🎯 FIXED LAYOUT: Uses gap-10 and flex-1 so percentages don't overflow the screen width */}
             <div className="relative flex flex-col xl:flex-row w-full gap-8 xl:gap-10">
                 
                 {/* Left Column (Fight Dashboard) */}
