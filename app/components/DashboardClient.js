@@ -255,7 +255,8 @@ export default function DashboardClient({
         league_id: p.leagueId || null
     }));
     
-    const { error } = await supabase.from('picks').upsert(picksToInsert, { onConflict: 'user_id, fight_id' }); 
+    // 🎯 THE FIX: Reverted back to a standard insert!
+    const { error } = await supabase.from('picks').insert(picksToInsert); 
 
     if (error) { 
         console.error("Submission Error:", error); 
