@@ -61,7 +61,6 @@ export default function DashboardClient({
   const [careerStats, setCareerStats] = useState({ wins: 0, losses: 0 });
 
   const [joiningLeagueId, setJoiningLeagueId] = useState(null);
-
   const [customAlert, setCustomAlert] = useState(null);
 
   const liveWinPercentage = (careerStats.wins + careerStats.losses) > 0 ? (careerStats.wins / (careerStats.wins + careerStats.losses)) * 100 : 0;
@@ -177,31 +176,6 @@ export default function DashboardClient({
 
   const handleInteraction = () => setIsFocusMode(true);
 
-  const handleDropPick = (pickDbId, fightId) => {
-      const fightInfo = cleanFights.find(f => String(f.id) === String(fightId));
-      const hasStarted = fightInfo ? new Date(fightInfo.start_time) <= new Date() : false;
-      
-      if (hasStarted) {
-          return showAlert("Too Late", "This fight has already started! You cannot drop this pick.");
-      }
-
-      setCustomAlert({
-          type: 'confirm',
-          title: 'Drop Fighter',
-          message: 'Are you sure you want to drop this fighter from your global picks?',
-          confirmText: 'Drop',
-          onConfirm: async () => {
-              setCustomAlert(null);
-              const { error } = await supabase.from('picks').delete().eq('id', pickDbId);
-              if (error) {
-                  showAlert("Error", "Failed to drop pick.");
-              } else {
-                  setClientPicks(prev => prev.filter(p => p.id !== pickDbId));
-              }
-          }
-      });
-  };
-
   const handlePickSelect = async (newPick) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -229,7 +203,6 @@ export default function DashboardClient({
             newPicks = [...currentPicks, newPick];
         }
         
-        // 🎯 FIX: Instantly close Focus Mode if we just un-toggled our only pick!
         if (newPicks.length === 0) {
             setIsFocusMode(false);
             setShowMobileSlip(false);
@@ -242,7 +215,6 @@ export default function DashboardClient({
     });
   };
 
-  // 🎯 FIX: Smartly close the UI when the array hits 0 inside the state setter
   const handleRemovePick = (fightId) => {
     setPendingPicks(current => {
         const updated = current.filter(p => p.fightId !== fightId);
@@ -534,8 +506,9 @@ export default function DashboardClient({
                 </div>
             </div>
 
+            {/* 🎯 FIXED LAYOUT: The columns will not disappear or stretch out during Focus Mode anymore! */}
             <div className="relative flex w-full">
-                <div className={`transition-all duration-700 ease-in-out w-full xl:w-[66%] ${isFocusMode ? 'xl:w-full xl:max-w-4xl xl:mx-auto' : ''}`}>
+                <div className="transition-all duration-700 ease-in-out w-full xl:w-[66%]">
                     <div className="flex items-center gap-2 mb-6">
                         <span className={`w-2 h-2 rounded-full bg-teal-500 animate-pulse ${isFocusMode ? 'opacity-0' : ''}`}></span>
                         <h2 className={`text-xl font-black uppercase italic tracking-tighter ${isFocusMode ? 'text-pink-600' : ''}`}>
@@ -557,12 +530,12 @@ export default function DashboardClient({
                     </div>
                 </div>
 
-                <div className={`hidden xl:block ml-10 space-y-8 transition-all duration-700 w-[33%] relative ${isFocusMode ? 'opacity-0 w-0 ml-0 overflow-hidden absolute' : 'opacity-100'}`}>
+                {/* 🎯 FIXED LAYOUT: The right column stays perfectly visible */}
+                <div className="hidden xl:block ml-10 space-y-8 transition-all duration-700 w-[33%] relative">
                     {pendingPicks.length > 0 ? (
                          <div className="sticky top-24 max-h-[calc(100vh-120px)] min-w-[350px] w-full bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto">
                              <BettingSlip 
                                 picks={pendingPicks} 
-                                // 🎯 FIXED: Properly resets Focus Mode when you hit Clear All
                                 onCancelAll={() => { 
                                     setPendingPicks([]); 
                                     localStorage.removeItem(`draft_pending_global_${user?.email}`); 
@@ -575,42 +548,7 @@ export default function DashboardClient({
                          </div>
                     ) : (
                          <div>
-                            {/* 🎯 THE GLOBAL ROSTER DRAWER */}
-                            {clientPicks.length > 0 && (
-                                <div className="min-w-[350px] mb-8 bg-gray-950 border border-gray-900 rounded-xl overflow-hidden shadow-lg transition-all">
-                                    <div className="p-4 border-b border-gray-800 bg-black/20 flex justify-between items-center">
-                                        <div>
-                                            <h3 className="text-xs font-black text-white uppercase tracking-[0.2em] flex items-center gap-2">
-                                                <span className="w-2 h-2 rounded-full bg-pink-600 animate-pulse"></span>
-                                                Global Roster
-                                            </h3>
-                                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Your active picks</p>
-                                        </div>
-                                    </div>
-                                    <div className="p-4 space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar">
-                                        {clientPicks.map((pick, index) => {
-                                            const fightInfo = cleanFights.find(f => String(f.id) === String(pick.fight_id));
-                                            const hasStarted = fightInfo ? new Date(fightInfo.start_time) <= new Date() : false;
-                                            
-                                            return (
-                                                <div key={pick.id} className="flex items-center justify-between p-3 rounded-lg bg-teal-950/20 border border-teal-500/30">
-                                                    <div>
-                                                        <div className="text-[9px] font-black text-teal-400 uppercase tracking-widest mb-0.5">SLOT {index + 1}</div>
-                                                        <div className="text-sm font-black text-white uppercase truncate">{pick.selected_fighter}</div>
-                                                    </div>
-                                                    {hasStarted ? (
-                                                        <img src="/lock.png" alt="Locked" className="w-8 h-8 object-contain opacity-80 drop-shadow-[0_0_10px_rgba(20,184,166,0.6)]" title="Fight has started" />
-                                                    ) : (
-                                                        <button onClick={() => handleDropPick(pick.id, pick.fight_id)} className="text-gray-500 hover:text-red-500 text-xs font-black px-3 py-1.5 bg-gray-900 rounded-lg border border-gray-800 transition-colors" title="Drop Fighter">
-                                                            DROP
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-                                </div>
-                            )}
+                            {/* Global Roster Block Removed */}
 
                             <div className="min-w-[350px] mb-8 bg-gray-950 border border-gray-900 rounded-xl overflow-hidden p-6 shadow-lg">
                                 <div className="flex justify-between items-center mb-6">
@@ -699,7 +637,6 @@ export default function DashboardClient({
                <div className="flex-1 overflow-y-auto p-4">
                   <BettingSlip 
                     picks={pendingPicks} 
-                    // 🎯 FIXED: Properly resets Focus Mode on mobile too
                     onCancelAll={() => { 
                         setPendingPicks([]); 
                         localStorage.removeItem(`draft_pending_global_${user?.email}`); 
@@ -750,6 +687,9 @@ export default function DashboardClient({
           </div>
       )}
 
+      <CreateLeagueModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} onRefresh={() => window.location.reload()} />
+      <ShowdownModal isOpen={showShowdown} onClose={() => setShowShowdown(false)} />
+      <MobileNav />
     </div>
   );
 }
