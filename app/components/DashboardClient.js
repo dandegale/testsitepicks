@@ -62,9 +62,16 @@ export default function DashboardClient({
 
   const [joiningLeagueId, setJoiningLeagueId] = useState(null);
 
+  // 🎯 CUSTOM MODAL STATE
+  const [customAlert, setCustomAlert] = useState(null);
+
   const liveWinPercentage = (careerStats.wins + careerStats.losses) > 0 ? (careerStats.wins / (careerStats.wins + careerStats.losses)) * 100 : 0;
   const eventDate = mainEvent?.start_time || "2026-02-01T22:00:00"; 
   const safeEventName = nextEventName || "Upcoming Event";
+
+  const showAlert = (title, message) => {
+      setCustomAlert({ type: 'alert', title, message });
+  };
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -115,7 +122,6 @@ export default function DashboardClient({
       return { cleanFights: validFights, cleanGroups: finalGroupedFights };
   }, [fights]);
 
-  // 🎯 GRAB THE EXACT EVENT NAME FROM THE FIGHT DATA
   const currentEventName = cleanFights.length > 0 && cleanFights[0].event_name 
       ? cleanFights[0].event_name 
       : (mainEvent?.event_name || safeEventName.split('(')[0] || "Upcoming Event");
@@ -129,6 +135,18 @@ export default function DashboardClient({
     }
 
     if (user && user.email) {
+        // 🎯 RESTORE PENDING PICKS FROM LOCAL STORAGE
+        const savedPicks = localStorage.getItem(`draft_pending_global_${user.email}`);
+        if (savedPicks) {
+            try {
+                const parsed = JSON.parse(savedPicks);
+                if (parsed.length > 0) {
+                    setPendingPicks(parsed);
+                    setIsFocusMode(true);
+                }
+            } catch(e) {}
+        }
+
         const { data: picksData } = await supabase.from('picks').select('*').eq('user_id', user.email).is('league_id', null); 
         if (picksData) {
             setClientPicks(picksData); 
@@ -161,6 +179,33 @@ export default function DashboardClient({
 
   const handleInteraction = () => setIsFocusMode(true);
 
+  // 🎯 DROP FIGHTER LOGIC
+  const handleDropPick = (pickDbId, fightId) => {
+      const fightInfo = cleanFights.find(f => String(f.id) === String(fightId));
+      const hasStarted = fightInfo ? new Date(fightInfo.start_time) <= new Date() : false;
+      
+      if (hasStarted) {
+          return showAlert("Too Late", "This fight has already started! You cannot drop this pick.");
+      }
+
+      setCustomAlert({
+          type: 'confirm',
+          title: 'Drop Fighter',
+          message: 'Are you sure you want to drop this fighter from your global picks?',
+          confirmText: 'Drop',
+          onConfirm: async () => {
+              setCustomAlert(null);
+              const { error } = await supabase.from('picks').delete().eq('id', pickDbId);
+              if (error) {
+                  showAlert("Error", "Failed to drop pick.");
+              } else {
+                  setClientPicks(prev => prev.filter(p => p.id !== pickDbId));
+                  // Optional: trigger a small success toast if you have a global one configured
+              }
+          }
+      });
+  };
+
   const handlePickSelect = async (newPick) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -168,14 +213,29 @@ export default function DashboardClient({
         return;
     }
 
+    // 🎯 PREVENT DUPLICATE MATCHUP PICKS
+    const hasDbPickForFight = clientPicks.some(p => String(p.fight_id) === String(newPick.fightId));
+    if (hasDbPickForFight) {
+        return showAlert("Duplicate Fight", "You already drafted a fighter from this match. Drop them first.");
+    }
+
     setPendingPicks(currentPicks => {
+        let newPicks = [...currentPicks];
         const existingIndex = currentPicks.findIndex(p => p.fightId === newPick.fightId);
+        
         if (existingIndex >= 0) {
             const existingPick = currentPicks[existingIndex];
-            if (existingPick.fighterName === newPick.fighterName) return currentPicks.filter((_, i) => i !== existingIndex);
-            else { const updated = [...currentPicks]; updated[existingIndex] = newPick; return updated; }
+            if (existingPick.fighterName === newPick.fighterName) {
+                newPicks = currentPicks.filter((_, i) => i !== existingIndex);
+            } else { 
+                newPicks[existingIndex] = newPick; 
+            }
+        } else {
+            newPicks = [...currentPicks, newPick];
         }
-        return [...currentPicks, newPick];
+        
+        localStorage.setItem(`draft_pending_global_${user.email}`, JSON.stringify(newPicks));
+        return newPicks;
     });
     setIsFocusMode(true); 
   };
@@ -184,6 +244,11 @@ export default function DashboardClient({
     setPendingPicks(current => {
         const updated = current.filter(p => p.fightId !== fightId);
         if (updated.length === 0) setShowMobileSlip(false);
+        
+        supabase.auth.getUser().then(({ data: { user } }) => {
+            if (user) localStorage.setItem(`draft_pending_global_${user.email}`, JSON.stringify(updated));
+        });
+        
         return updated;
     });
     if (pendingPicks.length <= 1) setIsFocusMode(false);
@@ -194,13 +259,32 @@ export default function DashboardClient({
     setIsSubmitting(true);
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user || !user.email) { router.push('/login'); setIsSubmitting(false); return; }
+    
     const username = user.user_metadata?.username || user.email.split('@')[0];
     const picksToInsert = pendingPicks.map(p => ({
-        user_id: user.email, username: username, fight_id: p.fightId, selected_fighter: p.fighterName, odds_at_pick: parseInt(p.odds, 10), league_id: p.leagueId || null
+        user_id: user.email, 
+        username: username, 
+        fight_id: p.fightId, 
+        selected_fighter: p.fighterName, 
+        odds_at_pick: parseInt(p.odds, 10), 
+        league_id: p.leagueId || null
     }));
-    const { error } = await supabase.from('picks').insert(picksToInsert);
-    if (error) { console.error("Submission Error:", error); alert(`Error saving picks: ${error.message}`); setIsSubmitting(false); }
-    else { setPendingPicks([]); setIsSubmitting(false); setIsFocusMode(false); setShowMobileSlip(false); window.location.reload(); }
+    
+    const { error } = await supabase.from('picks').upsert(picksToInsert, { onConflict: 'user_id, fight_id' }); // Handle upserts gracefully
+
+    if (error) { 
+        console.error("Submission Error:", error); 
+        showAlert("Error", `Error saving picks: ${error.message}`); 
+        setIsSubmitting(false); 
+    }
+    else { 
+        setPendingPicks([]); 
+        localStorage.removeItem(`draft_pending_global_${user.email}`);
+        setIsSubmitting(false); 
+        setIsFocusMode(false); 
+        setShowMobileSlip(false); 
+        window.location.reload(); 
+    }
   };
 
   const handleJoinPublicLeague = async (leagueId, leagueName) => {
@@ -216,10 +300,10 @@ export default function DashboardClient({
 
       if (joinError) {
           if (joinError.code === '23505') {
-              alert(`You are already in "${leagueName}"!`);
+              showAlert("Already Joined", `You are already in "${leagueName}"!`);
               router.push(`/league/${leagueId}`);
           } else {
-              alert("Error joining: " + joinError.message);
+              showAlert("Error", "Error joining: " + joinError.message);
           }
           setJoiningLeagueId(null);
       } else {
@@ -370,7 +454,7 @@ export default function DashboardClient({
         </header>
 
         {isFocusMode && (
-             <button onClick={() => { setIsFocusMode(false); setPendingPicks([]); }} className="fixed top-6 right-6 z-[70] bg-gray-950 text-white px-6 py-3 rounded-full font-bold uppercase text-xs border border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.3)] hover:bg-pink-600 transition-all hidden md:block">
+             <button onClick={() => { setIsFocusMode(false); setPendingPicks([]); localStorage.removeItem(`draft_pending_global_${user?.email}`); }} className="fixed top-6 right-6 z-[70] bg-gray-950 text-white px-6 py-3 rounded-full font-bold uppercase text-xs border border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.3)] hover:bg-pink-600 transition-all hidden md:block">
                 ✕ Close Picks
              </button>
         )}
@@ -381,7 +465,6 @@ export default function DashboardClient({
                 <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row md:items-end justify-between gap-4">
                     <div>
                         <h1 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter mb-1 leading-none">CHOOSE YOUR FIGHTER</h1>
-                        {/* 🎯 UPDATED TO USE THE EXACT DYNAMIC EVENT NAME */}
                         <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">{currentEventName}</p>
                     </div>
                     <div className="pb-1">
@@ -471,11 +554,53 @@ export default function DashboardClient({
                 <div className={`hidden xl:block ml-10 space-y-8 transition-all duration-700 w-[33%] relative ${isFocusMode ? 'opacity-0 w-0 ml-0 overflow-hidden absolute' : 'opacity-100'}`}>
                     {pendingPicks.length > 0 ? (
                          <div className="sticky top-24 max-h-[calc(100vh-120px)] min-w-[350px] w-full bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto">
-                             <BettingSlip picks={pendingPicks} onCancelAll={() => setPendingPicks([])} onRemovePick={handleRemovePick} onConfirm={handleConfirmAllPicks} isSubmitting={isSubmitting} />
+                             <BettingSlip 
+                                picks={pendingPicks} 
+                                onCancelAll={() => { setPendingPicks([]); localStorage.removeItem(`draft_pending_global_${user?.email}`); }} 
+                                onRemovePick={handleRemovePick} 
+                                onConfirm={handleConfirmAllPicks} 
+                                isSubmitting={isSubmitting} 
+                             />
                          </div>
                     ) : (
                          <div>
-                            
+                            {/* 🎯 THE GLOBAL ROSTER DRAWER */}
+                            {clientPicks.length > 0 && (
+                                <div className="min-w-[350px] mb-8 bg-gray-950 border border-gray-900 rounded-xl overflow-hidden shadow-lg transition-all">
+                                    <div className="p-4 border-b border-gray-800 bg-black/20 flex justify-between items-center">
+                                        <div>
+                                            <h3 className="text-xs font-black text-white uppercase tracking-[0.2em] flex items-center gap-2">
+                                                <span className="w-2 h-2 rounded-full bg-pink-600 animate-pulse"></span>
+                                                Global Roster
+                                            </h3>
+                                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Your active picks</p>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar">
+                                        {clientPicks.map((pick, index) => {
+                                            const fightInfo = cleanFights.find(f => String(f.id) === String(pick.fight_id));
+                                            const hasStarted = fightInfo ? new Date(fightInfo.start_time) <= new Date() : false;
+                                            
+                                            return (
+                                                <div key={pick.id} className="flex items-center justify-between p-3 rounded-lg bg-teal-950/20 border border-teal-500/30">
+                                                    <div>
+                                                        <div className="text-[9px] font-black text-teal-400 uppercase tracking-widest mb-0.5">SLOT {index + 1}</div>
+                                                        <div className="text-sm font-black text-white uppercase truncate">{pick.selected_fighter}</div>
+                                                    </div>
+                                                    {hasStarted ? (
+                                                        <img src="/lock.png" alt="Locked" className="w-8 h-8 object-contain opacity-80 drop-shadow-[0_0_10px_rgba(20,184,166,0.6)]" title="Fight has started" />
+                                                    ) : (
+                                                        <button onClick={() => handleDropPick(pick.id, pick.fight_id)} className="text-gray-500 hover:text-red-500 text-xs font-black px-3 py-1.5 bg-gray-900 rounded-lg border border-gray-800 transition-colors" title="Drop Fighter">
+                                                            DROP
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="min-w-[350px] mb-8 bg-gray-950 border border-gray-900 rounded-xl overflow-hidden p-6 shadow-lg">
                                 <div className="flex justify-between items-center mb-6">
                                     <div>
@@ -561,9 +686,50 @@ export default function DashboardClient({
                   <button onClick={() => setShowMobileSlip(false)} className="text-gray-500 hover:text-white p-2 text-xs font-bold uppercase tracking-widest">✕ Close</button>
                </div>
                <div className="flex-1 overflow-y-auto p-4">
-                  <BettingSlip picks={pendingPicks} onCancelAll={() => { setPendingPicks([]); setShowMobileSlip(false); }} onRemovePick={handleRemovePick} onConfirm={handleConfirmAllPicks} isSubmitting={isSubmitting} />
+                  <BettingSlip 
+                    picks={pendingPicks} 
+                    onCancelAll={() => { setPendingPicks([]); localStorage.removeItem(`draft_pending_global_${user?.email}`); setShowMobileSlip(false); }} 
+                    onRemovePick={handleRemovePick} 
+                    onConfirm={handleConfirmAllPicks} 
+                    isSubmitting={isSubmitting} 
+                  />
                </div>
             </div>
+          </div>
+      )}
+
+      {/* 🎯 REUSABLE CUSTOM MODAL FOR ALERTS & CONFIRMATIONS */}
+      {customAlert && (
+          <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+              <div className="bg-gray-950 border border-gray-800 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="p-6">
+                      <h3 className="text-xl font-black italic uppercase tracking-tighter text-white mb-2">
+                          {customAlert.title}
+                      </h3>
+                      <p className="text-gray-400 text-sm font-medium leading-relaxed">
+                          {customAlert.message}
+                      </p>
+                  </div>
+                  <div className="p-4 bg-black/50 border-t border-gray-900 flex gap-3 justify-end">
+                      {customAlert.type === 'confirm' && (
+                          <button
+                              onClick={() => setCustomAlert(null)}
+                              className="px-5 py-2.5 rounded-lg font-bold text-xs uppercase tracking-widest text-gray-500 hover:text-white hover:bg-gray-900 transition-colors"
+                          >
+                              Cancel
+                          </button>
+                      )}
+                      <button
+                          onClick={() => {
+                              if (customAlert.onConfirm) customAlert.onConfirm();
+                              else setCustomAlert(null);
+                          }}
+                          className="px-5 py-2.5 rounded-lg font-black text-xs uppercase tracking-widest bg-pink-600 text-white hover:bg-pink-500 transition-colors shadow-[0_0_15px_rgba(236,72,153,0.3)]"
+                      >
+                          {customAlert.confirmText || 'OK'}
+                      </button>
+                  </div>
+              </div>
           </div>
       )}
 
