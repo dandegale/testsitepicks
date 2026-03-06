@@ -257,7 +257,7 @@ export default function HowItWorks() {
         {/* HERO HEADER */}
         <div className="pt-12 pb-10 px-4 text-center bg-gradient-to-b from-gray-900/50 to-black border-b border-gray-800/50">
           <h1 className="text-4xl md:text-6xl font-black italic uppercase tracking-tighter mb-3 text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-teal-400">
-            Master the Octagon
+            Test Your Fight IQ
           </h1>
           <p className="text-gray-400 font-bold tracking-widest uppercase text-[10px] md:text-xs max-w-2xl mx-auto">
             Your guide to climbing the ranks and building your Fight IQ legacy.
