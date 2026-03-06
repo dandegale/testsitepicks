@@ -16,21 +16,26 @@ export default function FightDashboard({
     league_id = null,    
     isShowdown = false,
     isGlobalFeed = false, 
-    isDraftMode = false // 👈 NEW PROP: Catching it from DashboardClient
+    isDraftMode = false
 }) {
 
   const [fighterStats, setFighterStats] = useState({});
 
   useEffect(() => {
     const fetchHistoricalStats = async () => {
+      // 🎯 ADDED 'record' TO THE SELECT QUERY
       const { data, error } = await supabase
         .from('fighter_historical_stats')
-        .select('fighter_name, average_fantasy_points');
+        .select('fighter_name, average_fantasy_points, record');
 
       if (data && !error) {
         const statsMap = {};
         data.forEach(stat => {
-          statsMap[stat.fighter_name] = stat.average_fantasy_points;
+          // 🎯 UPDATED TO STORE AN OBJECT WITH BOTH DATA POINTS
+          statsMap[stat.fighter_name] = {
+              avg: stat.average_fantasy_points,
+              record: stat.record // Update this if your column name is different!
+          };
         });
         setFighterStats(statsMap);
       }
@@ -38,7 +43,6 @@ export default function FightDashboard({
 
     fetchHistoricalStats();
 
-    // Setup the Real-Time Subscription
     const statsChannel = supabase.channel('fighter-stats-changes')
       .on(
         'postgres_changes',
@@ -82,29 +86,24 @@ export default function FightDashboard({
       );
   }
 
-  // 🎯 THE LOGIC: Only show averages if we are in a League OR a 1v1 Showdown
   const shouldShowAverages = league_id !== null || isShowdown === true;
 
   return (
     <div className="space-y-12 pb-24">
       {Object.entries(groupedFights).map(([groupName, groupFights]) => {
         
-        // 🎯 FIXED: GRAB THE ENTIRE OFFICIAL EVENT NAME
         const firstFight = groupFights && groupFights.length > 0 ? groupFights[0] : null;
         const fullEventName = firstFight?.event_name || 'UFC Event';
         
-        // 🎯 EXTRACT JUST THE DATE FROM THE GROUP NAME (e.g., "(Mar 9)")
         const dateMatch = groupName.match(/\(([^)]+)\)/);
         const displayDate = dateMatch ? dateMatch[0] : '';
 
         return (
           <div key={groupName} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
             
-            {/* HEADER */}
             <div className="flex items-center gap-4 mb-6 sticky top-[64px] md:top-0 bg-gray-900/95 backdrop-blur z-30 py-4 border-b border-gray-800 shadow-xl -mx-4 px-4 md:mx-0 md:px-0 md:rounded-xl">
                <div className="w-1.5 h-10 bg-pink-600 rounded-r-full shadow-[0_0_15px_rgba(236,72,153,0.5)]"></div>
                <div>
-                   {/* 🎯 RENDER THE FULL NAME WITH THE DATE */}
                    <h2 className="text-lg md:text-xl font-black italic uppercase text-white tracking-tighter leading-none">
                      {fullEventName} <span className="text-pink-600 ml-1">{displayDate}</span>
                    </h2>
@@ -114,7 +113,6 @@ export default function FightDashboard({
                </div>
             </div>
 
-            {/* FIGHT LIST */}
             <div className="grid grid-cols-1 gap-4">
               {groupFights.map((fight) => {
                 
@@ -131,9 +129,10 @@ export default function FightDashboard({
                     pendingPick={pendingForThisFight} 
                     onPick={handlePickClick}
                     showOdds={showOdds} 
-                    fighterStats={shouldShowAverages ? fighterStats : null} 
+                    fighterStats={fighterStats} // 🎯 PASSED AS IS: It now contains both avg and record
                     isGlobalFeed={isGlobalFeed} 
-                    isDraftMode={isDraftMode} // 👈 PASSING IT DOWN: Handing the prop to the card!
+                    isDraftMode={isDraftMode}
+                    shouldShowAverages={shouldShowAverages} // Passing this so the card knows when to show the avg pill
                   />
                 );
               })}
