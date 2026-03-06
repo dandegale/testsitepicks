@@ -90,7 +90,7 @@ export default function HowItWorks() {
 
   const finalScore = totalBasePoints + finalBonus;
 
-  // --- THE 4 PILLARS (SYNCED WITH MODAL) ---
+  // --- THE 4 PILLARS ---
   const steps = [
       {
           icon: (
@@ -99,7 +99,9 @@ export default function HowItWorks() {
               </svg>
           ),
           title: "1. Global Feed",
-          description: "Choose who will win every upcoming fight. The points system is based on a hypothetical $10 bet using Vegas odds. The more points you gain, the further you climb up the Global Leaderboard.",
+          description: (
+              <>Choose who will win every upcoming fight. The points system is based on a <span className="text-pink-400 font-bold group-hover:text-pink-300">hypothetical $10 bet using Vegas odds</span>. The more points you gain, the further you climb up the Global Leaderboard.</>
+          ),
           accent: "text-pink-500",
           border: "group-hover:border-pink-500/50",
           glow: "bg-pink-600/5 group-hover:bg-pink-600/10",
@@ -114,7 +116,9 @@ export default function HowItWorks() {
               </svg>
           ),
           title: "2. Seasons & Ranks",
-          description: "Your points from the Global Feed determine your rank against the entire community. The leaderboard resets every season (every 3 months), allowing new managers a chance to claim the throne.",
+          description: (
+              <>Your points from the Global Feed determine your rank against the entire community. The leaderboard <span className="text-yellow-500 font-bold group-hover:text-yellow-400">resets every season (every 3 months)</span>, allowing new managers a chance to claim the throne.</>
+          ),
           accent: "text-yellow-500",
           border: "group-hover:border-yellow-500/50",
           glow: "bg-yellow-600/5 group-hover:bg-yellow-600/10",
@@ -129,7 +133,9 @@ export default function HowItWorks() {
               </svg>
           ),
           title: "3. Fantasy Leagues",
-          description: "Draft a 5-fighter roster. Fighters gain points based on their in-cage performance (strikes, takedowns, finishes), which are then scaled by Vegas odds to equalize unfair matchups. Taking a risk on an underdog pays off big!",
+          description: (
+              <>Draft a 5-fighter roster. Fighters gain points based on <span className="text-teal-400 font-bold group-hover:text-teal-300">in-cage performance</span>, scaled by Vegas odds. <br/><br/><span className="text-white font-black tracking-widest uppercase">Important:</span> Leagues are the <span className="text-teal-400 font-black">ONLY</span> way to gain Level XP and earn Coins for the Store!</>
+          ),
           accent: "text-teal-500",
           border: "group-hover:border-teal-500/50",
           glow: "bg-teal-600/5 group-hover:bg-teal-600/10",
@@ -144,7 +150,9 @@ export default function HowItWorks() {
               </svg>
           ),
           title: "4. 1v1 Showdowns",
-          description: "Want to settle a debate? Challenge a friend directly to a 1 vs 1 format of the league. You both draft a roster and battle it out using the exact same performance and odds-scaled scoring format.",
+          description: (
+              <>Want to settle a debate? Challenge a friend directly to a <span className="text-orange-500 font-bold group-hover:text-orange-400">1 vs 1 format of the league</span>. You both draft a roster and battle it out using the exact same performance and odds-scaled scoring format.</>
+          ),
           accent: "text-orange-500",
           border: "group-hover:border-orange-500/50",
           glow: "bg-orange-600/5 group-hover:bg-orange-600/10",
