@@ -11,7 +11,7 @@ export default function FightCard({
   showOdds = true,
   fighterStats,
   isGlobalFeed = false,
-  isDraftMode = false // 👈 NEW PROP: Listens for the master toggle
+  isDraftMode = false
 }) {
   
   if (!fight || !fight.start_time) {
@@ -31,8 +31,8 @@ export default function FightCard({
   
   const isSelected = pendingPick?.fighterName === fight.fighter_1_name || pendingPick?.fighterName === fight.fighter_2_name;
   
-  // 👈 LOGIC: Show buttons if NOT on global feed, OR if Draft Mode is ON, OR if they already have picks/locks
-  const showPickControls = !isGlobalFeed || isDraftMode || existingPick || pendingPick || isLocked;
+  // 🎯 Cleaned up logic: Buttons only show in leagues OR if Draft Mode is ON
+  const showPickControls = !isGlobalFeed || isDraftMode;
 
   const formatFightTime = (date) => {
     if (!isValidDate) return 'TBD';
@@ -64,11 +64,16 @@ export default function FightCard({
       : "bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]"; 
 
     const avgPoints = fighterStats && fighterStats[name] !== undefined ? fighterStats[name] : null;
+    
+    // 🎯 THE FIX: Check if this fighter is the existing pick AND if we are in draft mode
+    const isThisFighterLocked = existingPick?.selected_fighter === name;
+    const isTeal = isDraftMode && isThisFighterLocked;
 
     return (
       <div className="flex flex-col items-center justify-start w-full text-center">
         <div className="flex flex-wrap items-center justify-center gap-1 w-full">
-          <h3 className="text-sm sm:text-lg md:text-xl font-black text-white uppercase leading-tight line-clamp-2 break-words">
+          {/* Text turns teal if in draft mode and locked */}
+          <h3 className={`text-sm sm:text-lg md:text-xl font-black uppercase leading-tight line-clamp-2 break-words transition-colors ${isTeal ? 'text-teal-400' : 'text-white'}`}>
             <Link 
               href={`/fighter/${createFighterSlug(name)}`}
               className="hover:text-pink-500 hover:underline decoration-pink-500 decoration-2 underline-offset-2 transition-all"
@@ -86,6 +91,14 @@ export default function FightCard({
           )}
         </div>
         
+        {/* The small teal text right under the name */}
+        {isTeal && (
+            <div className="mt-1 text-[9px] font-black text-teal-400 uppercase tracking-widest flex items-center gap-1 bg-teal-950/40 px-2 py-0.5 rounded border border-teal-500/30 animate-in fade-in slide-in-from-bottom-1 duration-300">
+                <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                Locked Pick
+            </div>
+        )}
+
         {avgPoints !== null && (
             <div className="mt-1.5 bg-teal-500/10 border border-teal-500/30 px-1.5 py-[1px] rounded shadow-[0_0_5px_rgba(20,184,166,0.15)] inline-block">
                 <span className="text-[9px] font-black text-teal-400 uppercase tracking-widest leading-none">
@@ -126,16 +139,17 @@ export default function FightCard({
         </span>
       </div>
 
-      <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-1 sm:gap-4 flex-1 h-full w-full">
+      {/* 🎯 Layout changes: Centers items if no pick controls are showing */}
+      <div className={`grid grid-cols-[1fr_auto_1fr] gap-1 sm:gap-4 flex-1 w-full ${showPickControls ? 'items-stretch h-full' : 'items-center py-2'}`}>
         
         {/* FIGHTER 1 COLUMN */}
-        <div className="flex flex-col h-full w-full">
-          <div className="flex-grow flex flex-col justify-start items-center w-full">
+        <div className={`flex flex-col w-full ${showPickControls ? 'h-full justify-between' : 'justify-center gap-2'}`}>
+          <div className={`flex flex-col items-center w-full ${showPickControls ? 'justify-start' : 'justify-center'}`}>
               {renderFighterName(fight.fighter_1_name, fight.fighter_1_badge)}
           </div>
           
-          <div className="mt-auto w-full flex flex-col pt-3">
-              <div className="text-yellow-500 font-mono text-[10px] sm:text-xs mb-2 sm:mb-3 min-h-[16px] leading-none text-center">
+          <div className={`w-full flex flex-col ${showPickControls ? 'mt-auto pt-3' : 'pt-1'}`}>
+              <div className={`text-yellow-500 font-mono text-[10px] sm:text-xs leading-none text-center ${showPickControls ? 'mb-2 sm:mb-3 min-h-[16px]' : ''}`}>
                 {renderOddsText(fight.fighter_1_odds)}
               </div>
               
@@ -143,7 +157,7 @@ export default function FightCard({
                 <button
                     onClick={() => onPick(fight.id, fight.fighter_1_name, fight.fighter_1_odds)}
                     disabled={isLocked}
-                    className={`w-full py-2 rounded font-bold uppercase text-[9px] sm:text-xs tracking-wide transition-all animate-in fade-in zoom-in duration-200
+                    className={`w-full py-2 mt-2 sm:mt-0 rounded font-bold uppercase text-[9px] sm:text-xs tracking-wide transition-all animate-in fade-in zoom-in duration-200
                     ${isLocked 
                         ? (existingPick?.selected_fighter === fight.fighter_1_name ? 'bg-green-800/80 text-white' : 'bg-gray-950 text-gray-700 cursor-not-allowed')
                         : (pendingPick?.fighterName === fight.fighter_1_name 
@@ -172,18 +186,19 @@ export default function FightCard({
         </div>
 
         {/* VS */}
-        <div className="flex flex-col justify-center items-center px-1 sm:px-2 pb-8">
+        {/* 🎯 Removes the huge bottom padding when not in draft mode */}
+        <div className={`flex flex-col justify-center items-center px-1 sm:px-2 ${showPickControls ? 'pb-8' : ''}`}>
             <div className="text-gray-700 font-black text-xs sm:text-lg italic opacity-40 select-none text-center">VS</div>
         </div>
 
         {/* FIGHTER 2 COLUMN */}
-        <div className="flex flex-col h-full w-full">
-           <div className="flex-grow flex flex-col justify-start items-center w-full">
+        <div className={`flex flex-col w-full ${showPickControls ? 'h-full justify-between' : 'justify-center gap-2'}`}>
+           <div className={`flex flex-col items-center w-full ${showPickControls ? 'justify-start' : 'justify-center'}`}>
                {renderFighterName(fight.fighter_2_name, fight.fighter_2_badge)}
            </div>
           
-          <div className="mt-auto w-full flex flex-col pt-3">
-              <div className="text-yellow-500 font-mono text-[10px] sm:text-xs mb-2 sm:mb-3 min-h-[16px] leading-none text-center">
+          <div className={`w-full flex flex-col ${showPickControls ? 'mt-auto pt-3' : 'pt-1'}`}>
+              <div className={`text-yellow-500 font-mono text-[10px] sm:text-xs leading-none text-center ${showPickControls ? 'mb-2 sm:mb-3 min-h-[16px]' : ''}`}>
                  {renderOddsText(fight.fighter_2_odds)}
               </div>
               
@@ -191,7 +206,7 @@ export default function FightCard({
                 <button
                     onClick={() => onPick(fight.id, fight.fighter_2_name, fight.fighter_2_odds)}
                     disabled={isLocked}
-                    className={`w-full py-2 rounded font-bold uppercase text-[9px] sm:text-xs tracking-wide transition-all animate-in fade-in zoom-in duration-200
+                    className={`w-full py-2 mt-2 sm:mt-0 rounded font-bold uppercase text-[9px] sm:text-xs tracking-wide transition-all animate-in fade-in zoom-in duration-200
                     ${isLocked 
                         ? (existingPick?.selected_fighter === fight.fighter_2_name ? 'bg-green-800/80 text-white' : 'bg-gray-950 text-gray-700 cursor-not-allowed')
                         : (pendingPick?.fighterName === fight.fighter_2_name 
