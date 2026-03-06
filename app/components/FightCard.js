@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { createFighterSlug } from '@/utils/slugify';
 
@@ -11,11 +10,10 @@ export default function FightCard({
   onPick, 
   showOdds = true,
   fighterStats,
-  isGlobalFeed = false // 👈 NEW PROP: Tells the card if it's on the global feed
+  isGlobalFeed = false,
+  isDraftMode = false // 👈 NEW PROP: Listens for the master toggle
 }) {
-  // 👈 NEW STATE: Tracks if the user has clicked "Draft Matchup" on the global feed
-  const [isDrafting, setIsDrafting] = useState(false);
-
+  
   if (!fight || !fight.start_time) {
       return null; 
   }
@@ -33,9 +31,8 @@ export default function FightCard({
   
   const isSelected = pendingPick?.fighterName === fight.fighter_1_name || pendingPick?.fighterName === fight.fighter_2_name;
   
-  // 👈 NEW LOGIC: Determines whether to show the individual fighter buttons
-  // It shows them if we are in a league, if the user clicked draft, if they already picked, or if the fight is locked.
-  const showPickControls = !isGlobalFeed || isDrafting || existingPick || pendingPick || isLocked;
+  // 👈 LOGIC: Show buttons if NOT on global feed, OR if Draft Mode is ON, OR if they already have picks/locks
+  const showPickControls = !isGlobalFeed || isDraftMode || existingPick || pendingPick || isLocked;
 
   const formatFightTime = (date) => {
     if (!isValidDate) return 'TBD';
@@ -61,7 +58,6 @@ export default function FightCard({
   };
 
   const renderFighterName = (name, badgeLabel) => {
-    // ... (Kept exactly the same)
     const isBMF = badgeLabel === 'BMF';
     const badgeStyle = isBMF 
       ? "bg-zinc-800 text-white border border-zinc-500 shadow-[0_0_10px_rgba(255,255,255,0.2)]" 
@@ -102,7 +98,6 @@ export default function FightCard({
   };
 
   if (fight.winner) {
-    // ... (Kept exactly the same)
     return (
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 flex justify-between items-center opacity-75 grayscale mb-2">
         <div className="text-gray-500 font-bold text-xs sm:text-sm truncate pr-2 w-[35%]">{fight.fighter_1_name}</div>
@@ -131,7 +126,7 @@ export default function FightCard({
         </span>
       </div>
 
-      <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-1 sm:gap-4 flex-1 w-full">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-1 sm:gap-4 flex-1 h-full w-full">
         
         {/* FIGHTER 1 COLUMN */}
         <div className="flex flex-col h-full w-full">
@@ -144,7 +139,6 @@ export default function FightCard({
                 {renderOddsText(fight.fighter_1_odds)}
               </div>
               
-              {/* 👈 WRAPPED IN showPickControls */}
               {showPickControls && (
                 <button
                     onClick={() => onPick(fight.id, fight.fighter_1_name, fight.fighter_1_odds)}
@@ -193,7 +187,6 @@ export default function FightCard({
                  {renderOddsText(fight.fighter_2_odds)}
               </div>
               
-              {/* 👈 WRAPPED IN showPickControls */}
               {showPickControls && (
                 <button
                     onClick={() => onPick(fight.id, fight.fighter_2_name, fight.fighter_2_odds)}
@@ -226,19 +219,6 @@ export default function FightCard({
           </div>
         </div>
       </div>
-
-      {/* 👈 NEW GLOBAL DRAFT BUTTON: Spans the bottom of the card when controls are hidden */}
-      {!showPickControls && (
-        <div className="mt-4 pt-4 border-t border-gray-800/50 w-full animate-in fade-in duration-200">
-            <button
-                onClick={() => setIsDrafting(true)}
-                className="w-full py-2.5 rounded-lg font-black uppercase text-xs tracking-wider bg-white text-black hover:bg-gray-200 shadow-[0_0_15px_rgba(255,255,255,0.1)] transition-all"
-            >
-                Draft Matchup
-            </button>
-        </div>
-      )}
-
     </div>
   );
 }

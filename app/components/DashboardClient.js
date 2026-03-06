@@ -46,6 +46,7 @@ export default function DashboardClient({
   const router = useRouter();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isFocusMode, setIsFocusMode] = useState(false);
+  const [isDraftMode, setIsDraftMode] = useState(false); // 👈 NEW STATE FOR MASTER TOGGLE
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false); 
@@ -533,11 +534,27 @@ export default function DashboardClient({
                 
                 {/* Left Column (Fight Dashboard) */}
                 <div className="transition-all duration-700 ease-in-out w-full flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-6">
-                        <span className={`w-2 h-2 rounded-full bg-teal-500 animate-pulse ${isFocusMode ? 'opacity-0' : ''}`}></span>
-                        <h2 className={`text-xl font-black uppercase italic tracking-tighter ${isFocusMode ? 'text-pink-600' : ''}`}>
-                            {isFocusMode ? 'Lock Your Picks' : 'Global Fight Card'}
-                        </h2>
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full bg-teal-500 animate-pulse ${isFocusMode ? 'opacity-0' : ''}`}></span>
+                            <h2 className={`text-xl font-black uppercase italic tracking-tighter ${isFocusMode ? 'text-pink-600' : ''}`}>
+                                {isFocusMode ? 'Lock Your Picks' : 'Global Fight Card'}
+                            </h2>
+                        </div>
+                        
+                        {/* 👈 MASTER DRAFT BUTTON */}
+                        {!isFocusMode && pendingPicks.length === 0 && (
+                            <button 
+                                onClick={() => setIsDraftMode(!isDraftMode)}
+                                className={`px-4 py-2 rounded-lg font-black uppercase text-[10px] tracking-widest transition-all ${
+                                    isDraftMode 
+                                    ? 'bg-pink-600 text-white shadow-[0_0_15px_rgba(219,39,119,0.3)] hover:bg-pink-500' 
+                                    : 'bg-white text-black hover:bg-gray-200 shadow-[0_0_15px_rgba(255,255,255,0.1)]'
+                                }`}
+                            >
+                                {isDraftMode ? 'Cancel Draft' : 'Draft Picks'}
+                            </button>
+                        )}
                     </div>
                     
                     <div className={`transition-all ${isFocusMode ? '[&_button]:animate-pulse' : ''}`}>
@@ -550,7 +567,8 @@ export default function DashboardClient({
                             onPickSelect={handlePickSelect} 
                             pendingPicks={pendingPicks}
                             showOdds={showOdds} 
-                            isGlobalFeed={true} // 👈 Added this line right here
+                            isGlobalFeed={true} 
+                            isDraftMode={isDraftMode} // 👈 Passed to the dashboard
                         />
                     </div>
                 </div>
