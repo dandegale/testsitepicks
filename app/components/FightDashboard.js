@@ -14,7 +14,8 @@ export default function FightDashboard({
     pendingPicks = [],
     showOdds = true,
     league_id = null,    
-    isShowdown = false   
+    isShowdown = false,
+    isGlobalFeed = false // 👈 NEW PROP: Catching it from DashboardClient
 }) {
 
   const [fighterStats, setFighterStats] = useState({});
@@ -130,6 +131,7 @@ export default function FightDashboard({
                     onPick={handlePickClick}
                     showOdds={showOdds} 
                     fighterStats={shouldShowAverages ? fighterStats : null} 
+                    isGlobalFeed={isGlobalFeed} // 👈 PASSING IT DOWN: Handing the prop to the card!
                   />
                 );
               })}

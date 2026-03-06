@@ -550,6 +550,7 @@ export default function DashboardClient({
                             onPickSelect={handlePickSelect} 
                             pendingPicks={pendingPicks}
                             showOdds={showOdds} 
+                            isGlobalFeed={true} // 👈 Added this line right here
                         />
                     </div>
                 </div>
