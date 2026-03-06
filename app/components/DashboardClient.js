@@ -83,7 +83,6 @@ export default function DashboardClient({
 
   useEffect(() => { if (myLeagues && myLeagues.length > 0) setClientLeagues(myLeagues); }, [myLeagues]);
 
-  // 🎯 NEW: Process public leagues to only show the Top 3 most popular
   const topPublicLeagues = useMemo(() => {
       if (!publicLeagues) return [];
       return [...publicLeagues]
@@ -184,6 +183,7 @@ export default function DashboardClient({
 
   const handleInteraction = () => setIsFocusMode(true);
 
+  // Still keeping the function around in case you need it later, though not used in UI now
   const handleDropPick = (pickDbId, fightId) => {
       const fightInfo = cleanFights.find(f => String(f.id) === String(fightId));
       const hasStarted = fightInfo ? new Date(fightInfo.start_time) <= new Date() : false;
@@ -218,7 +218,7 @@ export default function DashboardClient({
 
     const hasDbPickForFight = clientPicks.some(p => String(p.fight_id) === String(newPick.fightId));
     if (hasDbPickForFight) {
-        return showAlert("Duplicate Fight", "You already drafted a fighter from this match. Drop them first.");
+        return showAlert("Duplicate Fight", "You already drafted a fighter from this match.");
     }
 
     setPendingPicks(currentPicks => {
@@ -493,7 +493,6 @@ export default function DashboardClient({
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen w-full">
             <div className={`mb-8 transition-all duration-500 origin-top ${isFocusMode ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100'}`}>
                 
-                {/* 🎯 MOBILE TOP LEAGUES SNAP CAROUSEL */}
                 <div className="md:hidden mt-4 mb-2 w-full overflow-hidden">
                     <div className="flex justify-between items-center mb-3 px-1">
                         <div>
@@ -536,7 +535,6 @@ export default function DashboardClient({
                                         </div>
                                     );
                                 })}
-                                {/* 🎯 MOBILE FIND MORE CARD */}
                                 <Link href="/discover" className="min-w-[260px] w-[260px] shrink-0 snap-center bg-gray-950 border border-dashed border-gray-800 hover:border-pink-500/50 p-4 rounded-xl flex flex-col items-center justify-center shadow-lg group transition-all">
                                      <div className="w-12 h-12 rounded-full bg-pink-500/10 text-pink-500 flex items-center justify-center mb-3 group-hover:bg-pink-500 group-hover:text-white transition-colors">
                                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -596,44 +594,6 @@ export default function DashboardClient({
                          </div>
                     ) : (
                          <div>
-                            {/* Global Roster Drawer */}
-                            {clientPicks.length > 0 && (
-                                <div className="min-w-[350px] mb-8 bg-gray-950 border border-gray-900 rounded-xl overflow-hidden shadow-lg transition-all">
-                                    <div className="p-4 border-b border-gray-800 bg-black/20 flex justify-between items-center">
-                                        <div>
-                                            <h3 className="text-xs font-black text-white uppercase tracking-[0.2em] flex items-center gap-2">
-                                                <span className="w-2 h-2 rounded-full bg-pink-600 animate-pulse"></span>
-                                                Global Roster
-                                            </h3>
-                                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Your active picks</p>
-                                        </div>
-                                    </div>
-                                    <div className="p-4 space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar">
-                                        {clientPicks.map((pick, index) => {
-                                            const fightInfo = cleanFights.find(f => String(f.id) === String(pick.fight_id));
-                                            const hasStarted = fightInfo ? new Date(fightInfo.start_time) <= new Date() : false;
-                                            
-                                            return (
-                                                <div key={pick.id} className="flex items-center justify-between p-3 rounded-lg bg-teal-950/20 border border-teal-500/30">
-                                                    <div>
-                                                        <div className="text-[9px] font-black text-teal-400 uppercase tracking-widest mb-0.5">SLOT {index + 1}</div>
-                                                        <div className="text-sm font-black text-white uppercase truncate">{pick.selected_fighter}</div>
-                                                    </div>
-                                                    {hasStarted ? (
-                                                        <img src="/lock.png" alt="Locked" className="w-8 h-8 object-contain opacity-80 drop-shadow-[0_0_10px_rgba(20,184,166,0.6)]" title="Fight has started" />
-                                                    ) : (
-                                                        <button onClick={() => handleDropPick(pick.id, pick.fight_id)} className="text-gray-500 hover:text-red-500 text-xs font-black px-3 py-1.5 bg-gray-900 rounded-lg border border-gray-800 transition-colors" title="Drop Fighter">
-                                                            DROP
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* 🎯 DESKTOP TOP LEAGUES SIDEBAR */}
                             <div className="min-w-[350px] mb-8 bg-gray-950 border border-gray-900 rounded-xl overflow-hidden p-6 shadow-lg flex flex-col">
                                 <div className="flex justify-between items-center mb-6">
                                     <div>
@@ -682,7 +642,6 @@ export default function DashboardClient({
                                     )}
                                 </div>
                                 
-                                {/* 🎯 DESKTOP FIND MORE BUTTON */}
                                 {topPublicLeagues && topPublicLeagues.length > 0 && (
                                     <div className="pt-4 mt-2 border-t border-gray-800">
                                         <Link href="/discover" className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-widest text-[10px] text-pink-500 bg-pink-500/10 hover:bg-pink-500 hover:text-white transition-all border border-pink-500/20 group">
