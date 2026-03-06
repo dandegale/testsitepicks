@@ -52,7 +52,6 @@ export default function FightCard({
       return <>{odds > 0 ? '+' : ''}{odds}</>;
   };
 
-  // 🎯 TIGHTENED UP THE NAME & BADGE CONTAINER
   const renderFighterName = (name, badgeLabel) => {
     const isBMF = badgeLabel === 'BMF';
     const badgeStyle = isBMF 
@@ -62,9 +61,10 @@ export default function FightCard({
     const avgPoints = fighterStats && fighterStats[name] !== undefined ? fighterStats[name] : null;
 
     return (
-      <div className="flex flex-col items-center justify-center">
-        <div className="flex items-center justify-center gap-1.5">
-          <h3 className="text-lg md:text-xl font-black text-white uppercase leading-none truncate max-w-[150px] sm:max-w-none">
+      <div className="flex flex-col items-center justify-center w-full">
+        {/* 🎯 Mobile-optimized: Allows stacking of badges if needed, and wraps text instead of harsh truncate */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 w-full">
+          <h3 className="text-sm sm:text-lg md:text-xl font-black text-white uppercase leading-tight text-center line-clamp-2 break-words w-full">
             <Link 
               href={`/fighter/${createFighterSlug(name)}`}
               className="hover:text-pink-500 hover:underline decoration-pink-500 decoration-2 underline-offset-2 transition-all"
@@ -74,7 +74,7 @@ export default function FightCard({
           </h3>
           {badgeLabel && (
             <span 
-              className={`${badgeStyle} text-[8px] font-black px-1 py-0.5 rounded flex items-center justify-center min-w-[20px] h-4 tracking-tighter`} 
+              className={`${badgeStyle} text-[8px] font-black px-1.5 py-0.5 rounded flex items-center justify-center min-w-[24px] h-4 tracking-tighter shrink-0`} 
               title={isBMF ? "BMF Champion" : "Champion"}
             >
               {badgeLabel}
@@ -83,7 +83,7 @@ export default function FightCard({
         </div>
         
         {avgPoints !== null && (
-            <div className="mt-1 bg-teal-500/10 border border-teal-500/30 px-1.5 py-[1px] rounded shadow-[0_0_5px_rgba(20,184,166,0.15)]">
+            <div className="mt-1.5 bg-teal-500/10 border border-teal-500/30 px-1.5 py-[1px] rounded shadow-[0_0_5px_rgba(20,184,166,0.15)]">
                 <span className="text-[9px] font-black text-teal-400 uppercase tracking-widest leading-none block">
                     Avg: {avgPoints} pts
                 </span>
@@ -96,41 +96,40 @@ export default function FightCard({
   if (fight.winner) {
     return (
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 flex justify-between items-center opacity-75 grayscale mb-2">
-        <div className="text-gray-500 font-bold text-sm">{fight.fighter_1_name}</div>
-        <div className="text-pink-600 font-black uppercase text-lg italic">
+        <div className="text-gray-500 font-bold text-xs sm:text-sm truncate pr-2 w-[35%]">{fight.fighter_1_name}</div>
+        <div className="text-pink-600 font-black uppercase text-xs sm:text-lg italic shrink-0 text-center">
             {fight.winner === fight.fighter_1_name ? 'VICTORY' : ''}
             {fight.winner === fight.fighter_2_name ? 'VICTORY' : ''}
         </div>
-        <div className="text-gray-500 font-bold text-sm">{fight.fighter_2_name}</div>
+        <div className="text-gray-500 font-bold text-xs sm:text-sm truncate pl-2 w-[35%] text-right">{fight.fighter_2_name}</div>
       </div>
     );
   }
 
   return (
     <div className={`
-        bg-gray-900 rounded-lg p-3 md:p-4 shadow-sm transition-all duration-200 border-2
+        bg-gray-900 rounded-xl p-3 md:p-5 shadow-sm transition-all duration-200 border-2
         ${isSelected 
             ? 'border-pink-600 shadow-[0_0_10px_rgba(219,39,119,0.2)]' 
             : 'border-gray-800 hover:border-gray-600'
         }
     `}>
       
-      {/* 🎯 REDUCED MARGIN ON HEADER */}
-      <div className="flex justify-between items-center mb-3 text-gray-500 text-[10px] uppercase tracking-widest font-bold">
-        <span className="truncate pr-2">{fight.event_name || 'UFC Fight Night'}</span>
-        <span className="text-gray-300 font-mono tracking-tighter bg-gray-950 px-1.5 py-0.5 rounded border border-gray-800 shrink-0">
+      {/* 🎯 RESPONSIVE HEADER: Stacks on small phones, side-by-side on desktop */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 text-gray-500 text-[9px] sm:text-[10px] uppercase tracking-widest font-bold border-b border-gray-800/50 pb-2">
+        <span className="line-clamp-1">{fight.event_name || 'UFC Fight Night'}</span>
+        <span className="text-gray-300 font-mono tracking-tighter bg-gray-950 px-2 py-1 rounded border border-gray-800 self-start sm:self-auto shrink-0">
             {formatFightTime(startTime)}
         </span>
       </div>
 
-      <div className="flex justify-between items-stretch gap-2">
+      <div className="flex justify-between items-stretch gap-1 sm:gap-4">
         
         {/* FIGHTER 1 */}
-        <div className="flex-1 text-center group flex flex-col justify-between">
-          <div>
+        <div className="flex-1 w-[45%] flex flex-col justify-between h-full">
+          <div className="flex-1 flex flex-col justify-center">
               {renderFighterName(fight.fighter_1_name, fight.fighter_1_badge)}
-              {/* 🎯 REDUCED ODDS MARGIN */}
-              <div className="text-yellow-500 font-mono text-xs mt-1 mb-2 min-h-[16px] leading-none">
+              <div className="text-yellow-500 font-mono text-[10px] sm:text-xs mt-1 mb-2 sm:mb-3 min-h-[16px] leading-none text-center">
                 {renderOddsText(fight.fighter_1_odds)}
               </div>
           </div>
@@ -138,7 +137,7 @@ export default function FightCard({
           <button
             onClick={() => onPick(fight.id, fight.fighter_1_name, fight.fighter_1_odds)}
             disabled={isLocked}
-            className={`w-full py-1.5 rounded font-bold uppercase text-xs tracking-wide transition-all mt-auto
+            className={`w-full py-2 rounded font-bold uppercase text-[9px] sm:text-xs tracking-wide transition-all mt-auto
               ${isLocked 
                 ? (existingPick?.selected_fighter === fight.fighter_1_name ? 'bg-green-800/80 text-white' : 'bg-gray-950 text-gray-700 cursor-not-allowed')
                 : (pendingPick?.fighterName === fight.fighter_1_name 
@@ -155,9 +154,9 @@ export default function FightCard({
             
             {!isLocked && !pendingPick && (
               <div className="flex flex-col leading-none">
-                <span className="mb-[1px]">Draft</span>
+                <span className="mb-[2px]">Draft</span>
                 {showOdds && (
-                    <span className="text-[8px] opacity-75 font-medium normal-case">
+                    <span className="text-[7px] sm:text-[8px] opacity-75 font-medium normal-case">
                        Ret: {calculatePayout(fight.fighter_1_odds).toFixed(2)}
                     </span>
                 )}
@@ -166,14 +165,16 @@ export default function FightCard({
           </button>
         </div>
 
-        {/* 🎯 SHRUNK THE 'VS' */}
-        <div className="flex items-center justify-center text-gray-700 font-black text-xl italic opacity-40 select-none px-1">VS</div>
+        {/* VS */}
+        <div className="flex flex-col justify-center items-center shrink-0 px-1 sm:px-2">
+            <div className="text-gray-700 font-black text-xs sm:text-lg italic opacity-40 select-none text-center">VS</div>
+        </div>
 
         {/* FIGHTER 2 */}
-        <div className="flex-1 text-center group flex flex-col justify-between">
-           <div>
+        <div className="flex-1 w-[45%] flex flex-col justify-between h-full">
+           <div className="flex-1 flex flex-col justify-center">
                {renderFighterName(fight.fighter_2_name, fight.fighter_2_badge)}
-               <div className="text-yellow-500 font-mono text-xs mt-1 mb-2 min-h-[16px] leading-none">
+               <div className="text-yellow-500 font-mono text-[10px] sm:text-xs mt-1 mb-2 sm:mb-3 min-h-[16px] leading-none text-center">
                  {renderOddsText(fight.fighter_2_odds)}
                </div>
            </div>
@@ -181,7 +182,7 @@ export default function FightCard({
           <button
             onClick={() => onPick(fight.id, fight.fighter_2_name, fight.fighter_2_odds)}
             disabled={isLocked}
-            className={`w-full py-1.5 rounded font-bold uppercase text-xs tracking-wide transition-all mt-auto
+            className={`w-full py-2 rounded font-bold uppercase text-[9px] sm:text-xs tracking-wide transition-all mt-auto
               ${isLocked 
                 ? (existingPick?.selected_fighter === fight.fighter_2_name ? 'bg-green-800/80 text-white' : 'bg-gray-950 text-gray-700 cursor-not-allowed')
                 : (pendingPick?.fighterName === fight.fighter_2_name 
@@ -198,9 +199,9 @@ export default function FightCard({
              
              {!isLocked && !pendingPick && (
               <div className="flex flex-col leading-none">
-                <span className="mb-[1px]">Draft</span>
+                <span className="mb-[2px]">Draft</span>
                 {showOdds && (
-                    <span className="text-[8px] opacity-75 font-medium normal-case">
+                    <span className="text-[7px] sm:text-[8px] opacity-75 font-medium normal-case">
                        Ret: {calculatePayout(fight.fighter_2_odds).toFixed(2)}
                     </span>
                 )}
