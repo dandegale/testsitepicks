@@ -232,7 +232,7 @@ export default function DashboardClient({
     });
   };
 
-  const handleConfirmAllPicks = async () => {
+ const handleConfirmAllPicks = async () => {
     if (pendingPicks.length === 0) return;
     setIsSubmitting(true);
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -248,7 +248,8 @@ export default function DashboardClient({
         league_id: p.leagueId || null
     }));
     
-    const { error } = await supabase.from('picks').upsert(picksToInsert, { onConflict: 'user_id, fight_id' }); 
+    // 🎯 FIX: Reverted to standard insert() since drops handle deletions now
+    const { error } = await supabase.from('picks').insert(picksToInsert); 
 
     if (error) { 
         console.error("Submission Error:", error); 
