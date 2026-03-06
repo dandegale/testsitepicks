@@ -62,7 +62,6 @@ export default function DashboardClient({
 
   const [joiningLeagueId, setJoiningLeagueId] = useState(null);
 
-  // 🎯 CUSTOM MODAL STATE
   const [customAlert, setCustomAlert] = useState(null);
 
   const liveWinPercentage = (careerStats.wins + careerStats.losses) > 0 ? (careerStats.wins / (careerStats.wins + careerStats.losses)) * 100 : 0;
@@ -135,7 +134,6 @@ export default function DashboardClient({
     }
 
     if (user && user.email) {
-        // 🎯 RESTORE PENDING PICKS FROM LOCAL STORAGE
         const savedPicks = localStorage.getItem(`draft_pending_global_${user.email}`);
         if (savedPicks) {
             try {
@@ -179,7 +177,6 @@ export default function DashboardClient({
 
   const handleInteraction = () => setIsFocusMode(true);
 
-  // 🎯 DROP FIGHTER LOGIC
   const handleDropPick = (pickDbId, fightId) => {
       const fightInfo = cleanFights.find(f => String(f.id) === String(fightId));
       const hasStarted = fightInfo ? new Date(fightInfo.start_time) <= new Date() : false;
@@ -200,7 +197,6 @@ export default function DashboardClient({
                   showAlert("Error", "Failed to drop pick.");
               } else {
                   setClientPicks(prev => prev.filter(p => p.id !== pickDbId));
-                  // Optional: trigger a small success toast if you have a global one configured
               }
           }
       });
@@ -213,7 +209,6 @@ export default function DashboardClient({
         return;
     }
 
-    // 🎯 PREVENT DUPLICATE MATCHUP PICKS
     const hasDbPickForFight = clientPicks.some(p => String(p.fight_id) === String(newPick.fightId));
     if (hasDbPickForFight) {
         return showAlert("Duplicate Fight", "You already drafted a fighter from this match. Drop them first.");
@@ -234,16 +229,28 @@ export default function DashboardClient({
             newPicks = [...currentPicks, newPick];
         }
         
+        // 🎯 FIX: Instantly close Focus Mode if we just un-toggled our only pick!
+        if (newPicks.length === 0) {
+            setIsFocusMode(false);
+            setShowMobileSlip(false);
+        } else {
+            setIsFocusMode(true); 
+        }
+
         localStorage.setItem(`draft_pending_global_${user.email}`, JSON.stringify(newPicks));
         return newPicks;
     });
-    setIsFocusMode(true); 
   };
 
+  // 🎯 FIX: Smartly close the UI when the array hits 0 inside the state setter
   const handleRemovePick = (fightId) => {
     setPendingPicks(current => {
         const updated = current.filter(p => p.fightId !== fightId);
-        if (updated.length === 0) setShowMobileSlip(false);
+        
+        if (updated.length === 0) {
+            setShowMobileSlip(false);
+            setIsFocusMode(false);
+        }
         
         supabase.auth.getUser().then(({ data: { user } }) => {
             if (user) localStorage.setItem(`draft_pending_global_${user.email}`, JSON.stringify(updated));
@@ -251,7 +258,6 @@ export default function DashboardClient({
         
         return updated;
     });
-    if (pendingPicks.length <= 1) setIsFocusMode(false);
   };
 
   const handleConfirmAllPicks = async () => {
@@ -270,7 +276,7 @@ export default function DashboardClient({
         league_id: p.leagueId || null
     }));
     
-    const { error } = await supabase.from('picks').upsert(picksToInsert, { onConflict: 'user_id, fight_id' }); // Handle upserts gracefully
+    const { error } = await supabase.from('picks').upsert(picksToInsert, { onConflict: 'user_id, fight_id' }); 
 
     if (error) { 
         console.error("Submission Error:", error); 
@@ -556,7 +562,12 @@ export default function DashboardClient({
                          <div className="sticky top-24 max-h-[calc(100vh-120px)] min-w-[350px] w-full bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto">
                              <BettingSlip 
                                 picks={pendingPicks} 
-                                onCancelAll={() => { setPendingPicks([]); localStorage.removeItem(`draft_pending_global_${user?.email}`); }} 
+                                // 🎯 FIXED: Properly resets Focus Mode when you hit Clear All
+                                onCancelAll={() => { 
+                                    setPendingPicks([]); 
+                                    localStorage.removeItem(`draft_pending_global_${user?.email}`); 
+                                    setIsFocusMode(false); 
+                                }} 
                                 onRemovePick={handleRemovePick} 
                                 onConfirm={handleConfirmAllPicks} 
                                 isSubmitting={isSubmitting} 
@@ -688,7 +699,13 @@ export default function DashboardClient({
                <div className="flex-1 overflow-y-auto p-4">
                   <BettingSlip 
                     picks={pendingPicks} 
-                    onCancelAll={() => { setPendingPicks([]); localStorage.removeItem(`draft_pending_global_${user?.email}`); setShowMobileSlip(false); }} 
+                    // 🎯 FIXED: Properly resets Focus Mode on mobile too
+                    onCancelAll={() => { 
+                        setPendingPicks([]); 
+                        localStorage.removeItem(`draft_pending_global_${user?.email}`); 
+                        setShowMobileSlip(false); 
+                        setIsFocusMode(false); 
+                    }} 
                     onRemovePick={handleRemovePick} 
                     onConfirm={handleConfirmAllPicks} 
                     isSubmitting={isSubmitting} 
@@ -733,9 +750,6 @@ export default function DashboardClient({
           </div>
       )}
 
-      <CreateLeagueModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} onRefresh={() => window.location.reload()} />
-      <ShowdownModal isOpen={showShowdown} onClose={() => setShowShowdown(false)} />
-      <MobileNav />
     </div>
   );
 }
