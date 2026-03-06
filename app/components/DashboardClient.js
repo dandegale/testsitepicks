@@ -46,7 +46,7 @@ export default function DashboardClient({
   const router = useRouter();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isFocusMode, setIsFocusMode] = useState(false);
-  const [isDraftMode, setIsDraftMode] = useState(false); // 👈 NEW STATE FOR MASTER TOGGLE
+  const [isDraftMode, setIsDraftMode] = useState(false);
   const [pendingPicks, setPendingPicks] = useState([]); 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false); 
@@ -128,9 +128,17 @@ export default function DashboardClient({
       return { cleanFights: validFights, cleanGroups: finalGroupedFights };
   }, [fights]);
 
-  const currentEventName = cleanFights.length > 0 && cleanFights[0].event_name 
-      ? cleanFights[0].event_name 
-      : (mainEvent?.event_name || safeEventName.split('(')[0] || "Upcoming Event");
+  // 🎯 THE FIX: Smarter Event Name Extraction
+  // Checks the fights array for a descriptive event name instead of grabbing generic API tags
+  let currentEventName = mainEvent?.event_name || safeEventName.split('(')[0] || "Upcoming Event";
+  if (cleanFights && cleanFights.length > 0) {
+      const validFight = cleanFights.find(f => f.event_name && f.event_name.toUpperCase() !== 'MMA' && f.event_name.toUpperCase() !== 'UFC');
+      if (validFight) {
+          currentEventName = validFight.event_name;
+      } else {
+          currentEventName = cleanFights[0].event_name;
+      }
+  }
 
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -256,7 +264,6 @@ export default function DashboardClient({
         league_id: p.leagueId || null
     }));
     
-    // 🎯 THE FIX: Reverted back to a standard insert!
     const { error } = await supabase.from('picks').insert(picksToInsert); 
 
     if (error) { 
@@ -403,7 +410,6 @@ export default function DashboardClient({
                     <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">FIGHT<span className="text-pink-600">IQ</span></Link>
                     <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
                     <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
-                        {/* 🎯 RESTORED "MY PICKS" TO THE HEADER */}
                         <Link href="/how-it-works" className="text-white hover:text-pink-400 transition-colors">How It Works</Link>
                         <Link href="/my-picks" className="hover:text-white transition-colors">My Picks</Link>
                         <span className="text-gray-300 cursor-default">Global Feed</span>
@@ -456,6 +462,7 @@ export default function DashboardClient({
                 <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row md:items-end justify-between gap-4">
                     <div>
                         <h1 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter mb-1 leading-none">CHOOSE YOUR FIGHTER</h1>
+                        {/* 🎯 Displays the extracted event name instead of MMA */}
                         <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">{currentEventName}</p>
                     </div>
                     <div className="pb-1">
@@ -542,7 +549,6 @@ export default function DashboardClient({
                             </h2>
                         </div>
                         
-                        {/* 👈 MASTER DRAFT BUTTON */}
                         {!isFocusMode && pendingPicks.length === 0 && (
                             <button 
                                 onClick={() => setIsDraftMode(!isDraftMode)}
@@ -568,7 +574,7 @@ export default function DashboardClient({
                             pendingPicks={pendingPicks}
                             showOdds={showOdds} 
                             isGlobalFeed={true} 
-                            isDraftMode={isDraftMode} // 👈 Passed to the dashboard
+                            isDraftMode={isDraftMode}
                         />
                     </div>
                 </div>
