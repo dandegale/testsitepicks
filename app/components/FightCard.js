@@ -61,10 +61,9 @@ export default function FightCard({
     const avgPoints = fighterStats && fighterStats[name] !== undefined ? fighterStats[name] : null;
 
     return (
-      <div className="flex flex-col items-center justify-start w-full">
-        {/* 🎯 FIXED: Natural wrapping keeps heights consistent without forcing stacks */}
+      <div className="flex flex-col items-center justify-start w-full text-center">
         <div className="flex flex-wrap items-center justify-center gap-1 w-full">
-          <h3 className="text-sm sm:text-lg md:text-xl font-black text-white uppercase leading-tight text-center line-clamp-2 break-words">
+          <h3 className="text-sm sm:text-lg md:text-xl font-black text-white uppercase leading-tight line-clamp-2 break-words">
             <Link 
               href={`/fighter/${createFighterSlug(name)}`}
               className="hover:text-pink-500 hover:underline decoration-pink-500 decoration-2 underline-offset-2 transition-all"
@@ -83,8 +82,8 @@ export default function FightCard({
         </div>
         
         {avgPoints !== null && (
-            <div className="mt-1.5 bg-teal-500/10 border border-teal-500/30 px-1.5 py-[1px] rounded shadow-[0_0_5px_rgba(20,184,166,0.15)]">
-                <span className="text-[9px] font-black text-teal-400 uppercase tracking-widest leading-none block">
+            <div className="mt-1.5 bg-teal-500/10 border border-teal-500/30 px-1.5 py-[1px] rounded shadow-[0_0_5px_rgba(20,184,166,0.15)] inline-block">
+                <span className="text-[9px] font-black text-teal-400 uppercase tracking-widest leading-none">
                     Avg: {avgPoints} pts
                 </span>
             </div>
@@ -108,14 +107,13 @@ export default function FightCard({
 
   return (
     <div className={`
-        bg-gray-900 rounded-xl p-3 md:p-5 shadow-sm transition-all duration-200 border-2 flex flex-col
+        bg-gray-900 rounded-xl p-3 md:p-5 shadow-sm transition-all duration-200 border-2 flex flex-col h-full
         ${isSelected 
             ? 'border-pink-600 shadow-[0_0_10px_rgba(219,39,119,0.2)]' 
             : 'border-gray-800 hover:border-gray-600'
         }
     `}>
       
-      {/* RESPONSIVE HEADER */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 text-gray-500 text-[9px] sm:text-[10px] uppercase tracking-widest font-bold border-b border-gray-800/50 pb-2">
         <span className="line-clamp-1">{fight.event_name || 'UFC Fight Night'}</span>
         <span className="text-gray-300 font-mono tracking-tighter bg-gray-950 px-2 py-1 rounded border border-gray-800 self-start sm:self-auto shrink-0">
@@ -123,17 +121,15 @@ export default function FightCard({
         </span>
       </div>
 
-      <div className="flex justify-between items-stretch gap-1 sm:gap-4 flex-1">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-1 sm:gap-4 flex-1 h-full w-full">
         
-        {/* 🎯 FIGHTER 1 COLUMN */}
-        <div className="flex-1 w-[45%] flex flex-col">
-          {/* Top Half: Name & Badge */}
-          <div className="flex flex-col justify-start w-full">
+        {/* FIGHTER 1 COLUMN */}
+        <div className="flex flex-col h-full w-full">
+          <div className="flex-grow flex flex-col justify-start items-center w-full">
               {renderFighterName(fight.fighter_1_name, fight.fighter_1_badge)}
           </div>
           
-          {/* Bottom Half: Odds & Button (Anchored to bottom) */}
-          <div className="mt-auto w-full flex flex-col pt-2">
+          <div className="mt-auto w-full flex flex-col pt-3">
               <div className="text-yellow-500 font-mono text-[10px] sm:text-xs mb-2 sm:mb-3 min-h-[16px] leading-none text-center">
                 {renderOddsText(fight.fighter_1_odds)}
               </div>
@@ -158,11 +154,10 @@ export default function FightCard({
                 {!isLocked && !pendingPick && (
                   <div className="flex flex-col leading-none">
                     <span className="mb-[2px]">Draft</span>
-                    {showOdds && (
-                        <span className="text-[7px] sm:text-[8px] opacity-75 font-medium normal-case">
-                           Ret: {calculatePayout(fight.fighter_1_odds).toFixed(2)}
-                        </span>
-                    )}
+                    {/* 🎯 THE FIX: Payout points are now always visible! */}
+                    <span className="text-[7px] sm:text-[8px] opacity-75 font-medium normal-case">
+                       Ret: {calculatePayout(fight.fighter_1_odds).toFixed(2)}
+                    </span>
                   </div>
                 )}
               </button>
@@ -170,19 +165,17 @@ export default function FightCard({
         </div>
 
         {/* VS */}
-        <div className="flex flex-col justify-center items-center shrink-0 px-1 sm:px-2 pb-6">
+        <div className="flex flex-col justify-center items-center px-1 sm:px-2 pb-8">
             <div className="text-gray-700 font-black text-xs sm:text-lg italic opacity-40 select-none text-center">VS</div>
         </div>
 
-        {/* 🎯 FIGHTER 2 COLUMN */}
-        <div className="flex-1 w-[45%] flex flex-col">
-           {/* Top Half: Name & Badge */}
-           <div className="flex flex-col justify-start w-full">
+        {/* FIGHTER 2 COLUMN */}
+        <div className="flex flex-col h-full w-full">
+           <div className="flex-grow flex flex-col justify-start items-center w-full">
                {renderFighterName(fight.fighter_2_name, fight.fighter_2_badge)}
            </div>
           
-          {/* Bottom Half: Odds & Button (Anchored to bottom) */}
-          <div className="mt-auto w-full flex flex-col pt-2">
+          <div className="mt-auto w-full flex flex-col pt-3">
               <div className="text-yellow-500 font-mono text-[10px] sm:text-xs mb-2 sm:mb-3 min-h-[16px] leading-none text-center">
                  {renderOddsText(fight.fighter_2_odds)}
               </div>
@@ -207,11 +200,10 @@ export default function FightCard({
                  {!isLocked && !pendingPick && (
                   <div className="flex flex-col leading-none">
                     <span className="mb-[2px]">Draft</span>
-                    {showOdds && (
-                        <span className="text-[7px] sm:text-[8px] opacity-75 font-medium normal-case">
-                           Ret: {calculatePayout(fight.fighter_2_odds).toFixed(2)}
-                        </span>
-                    )}
+                    {/* 🎯 THE FIX: Payout points are now always visible! */}
+                    <span className="text-[7px] sm:text-[8px] opacity-75 font-medium normal-case">
+                       Ret: {calculatePayout(fight.fighter_2_odds).toFixed(2)}
+                    </span>
                   </div>
                 )}
               </button>
