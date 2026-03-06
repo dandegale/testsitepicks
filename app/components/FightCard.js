@@ -11,7 +11,8 @@ export default function FightCard({
   showOdds = true,
   fighterStats,
   isGlobalFeed = false,
-  isDraftMode = false
+  isDraftMode = false,
+  shouldShowAverages = true 
 }) {
   
   if (!fight || !fight.start_time) {
@@ -31,7 +32,6 @@ export default function FightCard({
   
   const isSelected = pendingPick?.fighterName === fight.fighter_1_name || pendingPick?.fighterName === fight.fighter_2_name;
   
-  // Controls if we are in the clean view or active picking view
   const showPickControls = !isGlobalFeed || isDraftMode;
 
   const formatFightTime = (date) => {
@@ -57,20 +57,20 @@ export default function FightCard({
       return <>{odds > 0 ? '+' : ''}{odds}</>;
   };
 
-  // 🎯 Upgraded renderer: Now handles Red (Pink) vs Blue (Teal) corners and Records
-  const renderFighterName = (name, badgeLabel, record, cornerColor) => {
+  const renderFighterName = (name, badgeLabel, cornerColor) => {
     const isBMF = badgeLabel === 'BMF';
     const badgeStyle = isBMF 
       ? "bg-zinc-800 text-white border border-zinc-500 shadow-[0_0_10px_rgba(255,255,255,0.2)]" 
       : "bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]"; 
 
-    const avgPoints = fighterStats && fighterStats[name] !== undefined ? fighterStats[name] : null;
+    // 🎯 THE FIX IS HERE: We extract 'avg' and 'record' from the object safely
+    const statsObj = fighterStats?.[name] || {};
+    const avgPoints = shouldShowAverages && statsObj.avg !== undefined ? statsObj.avg : null;
+    const record = statsObj.record || null;
     
-    // Check if this fighter is locked while outside of draft mode
     const isThisFighterLocked = existingPick?.selected_fighter === name;
     const showLockedState = !showPickControls && isThisFighterLocked;
 
-    // Set corner-specific theme colors
     const isPink = cornerColor === 'pink';
     const colorClass = isPink ? 'text-pink-500' : 'text-teal-400';
     const borderClass = isPink ? 'border-pink-500/30' : 'border-teal-500/30';
@@ -98,14 +98,12 @@ export default function FightCard({
           )}
         </div>
 
-        {/* 🎯 NEW: Fighter Record displays here if available */}
         {record && (
             <span className="text-[9px] sm:text-[10px] font-mono text-gray-500 tracking-widest mt-0.5 opacity-80">
                 {record}
             </span>
         )}
 
-        {/* 🎯 Locked Pick Badge: Now matches the corner color! */}
         {showLockedState && (
             <div className={`mt-1 text-[9px] font-black uppercase tracking-widest flex items-center gap-1 px-2 py-0.5 rounded border animate-in fade-in slide-in-from-bottom-1 duration-300 shadow-lg ${colorClass} ${bgClass} ${borderClass}`}>
                 <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
@@ -114,7 +112,7 @@ export default function FightCard({
         )}
         
         {avgPoints !== null && (
-            <div className={`bg-gray-800/50 border border-gray-700 px-1.5 py-[1px] rounded shadow-sm inline-block ${showLockedState ? 'mt-1' : 'mt-1.5'}`}>
+            <div className={`bg-gray-800/50 border border-gray-700 px-1.5 py-[1px] rounded shadow-sm inline-block ${showLockedState || record ? 'mt-1' : 'mt-1.5'}`}>
                 <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none">
                     Avg: <span className="text-white">{avgPoints}</span> pts
                 </span>
@@ -125,7 +123,6 @@ export default function FightCard({
   };
 
   if (fight.winner) {
-    // Kept standard victory display exactly the same
     return (
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 flex justify-between items-center opacity-75 grayscale mb-2">
         <div className="text-gray-500 font-bold text-xs sm:text-sm truncate pr-2 w-[35%]">{fight.fighter_1_name}</div>
@@ -148,7 +145,6 @@ export default function FightCard({
         }
     `}>
       
-      {/* 🎯 NEW: The Ambient Red vs Blue Background Glow */}
       <div className="absolute inset-0 bg-gradient-to-r from-pink-600/10 via-gray-900/50 to-teal-600/10 z-0 pointer-events-none opacity-60 group-hover:opacity-100 transition-opacity duration-500"></div>
 
       <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4 text-gray-500 text-[9px] sm:text-[10px] uppercase tracking-widest font-bold border-b border-gray-800/50 pb-2">
@@ -163,8 +159,7 @@ export default function FightCard({
         {/* FIGHTER 1 COLUMN (PINK CORNER) */}
         <div className={`flex flex-col w-full ${showPickControls ? 'h-full justify-between' : 'justify-center items-center'}`}>
           <div className={`flex flex-col items-center w-full ${showPickControls ? 'justify-start' : 'justify-center'}`}>
-              {/* Passed 'pink' and fighter record into renderer */}
-              {renderFighterName(fight.fighter_1_name, fight.fighter_1_badge, fight.fighter_1_record, 'pink')}
+              {renderFighterName(fight.fighter_1_name, fight.fighter_1_badge, 'pink')}
           </div>
           
           <div className={`w-full flex flex-col ${showPickControls ? 'mt-auto pt-4' : 'pt-2'}`}>
@@ -204,10 +199,9 @@ export default function FightCard({
           </div>
         </div>
 
-        {/* 🎯 NEW: Upgraded VS Focal Point Badge */}
+        {/* VS Focal Point */}
         <div className={`flex flex-col justify-center items-center px-1 sm:px-3 z-10 ${showPickControls ? 'pb-8' : ''}`}>
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-950 border border-gray-800 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(0,0,0,0.5)] relative">
-                {/* Subtle inner glow for the VS circle */}
                 <div className="absolute inset-0 rounded-full bg-gradient-to-br from-pink-500/10 to-teal-500/10"></div>
                 <span className="text-gray-400 font-black text-[9px] sm:text-[11px] italic select-none relative z-10">VS</span>
             </div>
@@ -216,8 +210,7 @@ export default function FightCard({
         {/* FIGHTER 2 COLUMN (TEAL CORNER) */}
         <div className={`flex flex-col w-full ${showPickControls ? 'h-full justify-between' : 'justify-center items-center'}`}>
            <div className={`flex flex-col items-center w-full ${showPickControls ? 'justify-start' : 'justify-center'}`}>
-               {/* Passed 'teal' and fighter record into renderer */}
-               {renderFighterName(fight.fighter_2_name, fight.fighter_2_badge, fight.fighter_2_record, 'teal')}
+               {renderFighterName(fight.fighter_2_name, fight.fighter_2_badge, 'teal')}
            </div>
           
           <div className={`w-full flex flex-col ${showPickControls ? 'mt-auto pt-4' : 'pt-2'}`}>
