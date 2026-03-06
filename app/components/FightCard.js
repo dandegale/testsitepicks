@@ -9,15 +9,13 @@ export default function FightCard({
   pendingPick, 
   onPick, 
   showOdds = true,
-  fighterStats // 🎯 NEW: Accept the historical stats mapping
+  fighterStats 
 }) {
   
-  // 1. SAFETY GUARD
   if (!fight || !fight.start_time) {
       return null; 
   }
 
-  // 2. FIXED TIME PARSING
   const rawTime = fight.start_time;
   let startTime = new Date(rawTime);
 
@@ -31,7 +29,6 @@ export default function FightCard({
   
   const isSelected = pendingPick?.fighterName === fight.fighter_1_name || pendingPick?.fighterName === fight.fighter_2_name;
   
-  // 3. FORMATTING HELPERS
   const formatFightTime = (date) => {
     if (!isValidDate) return 'TBD';
     return new Intl.DateTimeFormat('en-US', {
@@ -55,30 +52,29 @@ export default function FightCard({
       return <>{odds > 0 ? '+' : ''}{odds}</>;
   };
 
-  // 🎯 UPDATED: Now checks the stats dictionary and renders a TEAL badge
+  // 🎯 TIGHTENED UP THE NAME & BADGE CONTAINER
   const renderFighterName = (name, badgeLabel) => {
     const isBMF = badgeLabel === 'BMF';
     const badgeStyle = isBMF 
       ? "bg-zinc-800 text-white border border-zinc-500 shadow-[0_0_10px_rgba(255,255,255,0.2)]" 
       : "bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]"; 
 
-    // Check if we have historical data for this specific fighter
     const avgPoints = fighterStats && fighterStats[name] !== undefined ? fighterStats[name] : null;
 
     return (
-      <div className="flex flex-col items-center justify-center mb-2">
-        <div className="flex items-center justify-center gap-2">
-          <h3 className="text-xl md:text-2xl font-black text-white uppercase leading-none">
+      <div className="flex flex-col items-center justify-center">
+        <div className="flex items-center justify-center gap-1.5">
+          <h3 className="text-lg md:text-xl font-black text-white uppercase leading-none truncate max-w-[150px] sm:max-w-none">
             <Link 
               href={`/fighter/${createFighterSlug(name)}`}
-              className="hover:text-pink-500 hover:underline decoration-pink-500 decoration-2 underline-offset-4 transition-all"
+              className="hover:text-pink-500 hover:underline decoration-pink-500 decoration-2 underline-offset-2 transition-all"
             >
               {name}
             </Link>
           </h3>
           {badgeLabel && (
             <span 
-              className={`${badgeStyle} text-[9px] font-black px-1.5 py-0.5 rounded flex items-center justify-center min-w-[24px] h-5 tracking-tighter transform translate-y-[-1px]`} 
+              className={`${badgeStyle} text-[8px] font-black px-1 py-0.5 rounded flex items-center justify-center min-w-[20px] h-4 tracking-tighter`} 
               title={isBMF ? "BMF Champion" : "Champion"}
             >
               {badgeLabel}
@@ -86,10 +82,9 @@ export default function FightCard({
           )}
         </div>
         
-        {/* 🎯 NEW: The Average Points Badge in Teal */}
         {avgPoints !== null && (
-            <div className="mt-1.5 bg-teal-500/10 border border-teal-500/30 px-2 py-0.5 rounded shadow-[0_0_10px_rgba(20,184,166,0.15)]">
-                <span className="text-[10px] font-black text-teal-400 uppercase tracking-widest">
+            <div className="mt-1 bg-teal-500/10 border border-teal-500/30 px-1.5 py-[1px] rounded shadow-[0_0_5px_rgba(20,184,166,0.15)]">
+                <span className="text-[9px] font-black text-teal-400 uppercase tracking-widest leading-none block">
                     Avg: {avgPoints} pts
                 </span>
             </div>
@@ -100,53 +95,55 @@ export default function FightCard({
 
   if (fight.winner) {
     return (
-      <div className="bg-gray-900 border-2 border-gray-800 rounded-lg p-4 flex justify-between items-center opacity-75 grayscale mb-4">
-        <div className="text-gray-500 font-bold">{fight.fighter_1_name}</div>
-        <div className="text-pink-600 font-black uppercase text-xl italic">
+      <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 flex justify-between items-center opacity-75 grayscale mb-2">
+        <div className="text-gray-500 font-bold text-sm">{fight.fighter_1_name}</div>
+        <div className="text-pink-600 font-black uppercase text-lg italic">
             {fight.winner === fight.fighter_1_name ? 'VICTORY' : ''}
             {fight.winner === fight.fighter_2_name ? 'VICTORY' : ''}
         </div>
-        <div className="text-gray-500 font-bold">{fight.fighter_2_name}</div>
+        <div className="text-gray-500 font-bold text-sm">{fight.fighter_2_name}</div>
       </div>
     );
   }
 
   return (
     <div className={`
-        bg-gray-900 rounded-lg p-6 mb-4 shadow-lg transition-all duration-200 border-2
+        bg-gray-900 rounded-lg p-3 md:p-4 shadow-sm transition-all duration-200 border-2
         ${isSelected 
-            ? 'border-pink-600 shadow-[0_0_15px_rgba(219,39,119,0.3)]' 
-            : 'border-gray-800 hover:border-gray-500'
+            ? 'border-pink-600 shadow-[0_0_10px_rgba(219,39,119,0.2)]' 
+            : 'border-gray-800 hover:border-gray-600'
         }
     `}>
       
-      {/* HEADER SECTION */}
-      <div className="flex justify-between items-center mb-6 text-gray-400 text-xs uppercase tracking-widest font-bold">
-        <span>{fight.event_name || 'UFC Fight Night'}</span>
-        <span className="text-white font-mono tracking-tighter bg-gray-800 px-2 py-1 rounded">
+      {/* 🎯 REDUCED MARGIN ON HEADER */}
+      <div className="flex justify-between items-center mb-3 text-gray-500 text-[10px] uppercase tracking-widest font-bold">
+        <span className="truncate pr-2">{fight.event_name || 'UFC Fight Night'}</span>
+        <span className="text-gray-300 font-mono tracking-tighter bg-gray-950 px-1.5 py-0.5 rounded border border-gray-800 shrink-0">
             {formatFightTime(startTime)}
         </span>
       </div>
 
-      <div className="flex justify-between items-center gap-4">
+      <div className="flex justify-between items-stretch gap-2">
         
         {/* FIGHTER 1 */}
-        <div className="flex-1 text-center group">
-          {renderFighterName(fight.fighter_1_name, fight.fighter_1_badge)}
-          
-          <div className="text-yellow-500 font-mono text-sm mb-4 min-h-[20px]">
-            {renderOddsText(fight.fighter_1_odds)}
+        <div className="flex-1 text-center group flex flex-col justify-between">
+          <div>
+              {renderFighterName(fight.fighter_1_name, fight.fighter_1_badge)}
+              {/* 🎯 REDUCED ODDS MARGIN */}
+              <div className="text-yellow-500 font-mono text-xs mt-1 mb-2 min-h-[16px] leading-none">
+                {renderOddsText(fight.fighter_1_odds)}
+              </div>
           </div>
           
           <button
             onClick={() => onPick(fight.id, fight.fighter_1_name, fight.fighter_1_odds)}
             disabled={isLocked}
-            className={`w-full py-3 rounded font-bold uppercase text-sm tracking-wider transition-all
+            className={`w-full py-1.5 rounded font-bold uppercase text-xs tracking-wide transition-all mt-auto
               ${isLocked 
-                ? (existingPick?.selected_fighter === fight.fighter_1_name ? 'bg-green-800 text-white' : 'bg-gray-800 text-gray-600 cursor-not-allowed')
+                ? (existingPick?.selected_fighter === fight.fighter_1_name ? 'bg-green-800/80 text-white' : 'bg-gray-950 text-gray-700 cursor-not-allowed')
                 : (pendingPick?.fighterName === fight.fighter_1_name 
-                    ? 'bg-gray-700 text-white border border-gray-500 shadow-inner' 
-                    : 'bg-pink-600 hover:bg-pink-500 text-white shadow-lg shadow-pink-900/20' 
+                    ? 'bg-gray-800 text-white border border-gray-600 shadow-inner' 
+                    : 'bg-pink-600/90 hover:bg-pink-500 text-white shadow-sm shadow-pink-900/20' 
                   )
               }`}
           >
@@ -157,35 +154,39 @@ export default function FightCard({
             {!isLocked && pendingPick?.fighterName === fight.fighter_1_name && 'SELECTED'}
             
             {!isLocked && !pendingPick && (
-              <div className="flex flex-col leading-tight">
-                <span>Pick to Win</span>
-                <span className="text-[9px] opacity-75 font-medium normal-case mt-0.5">
-                   Returns {calculatePayout(fight.fighter_1_odds).toFixed(2)}
-                </span>
+              <div className="flex flex-col leading-none">
+                <span className="mb-[1px]">Draft</span>
+                {showOdds && (
+                    <span className="text-[8px] opacity-75 font-medium normal-case">
+                       Ret: {calculatePayout(fight.fighter_1_odds).toFixed(2)}
+                    </span>
+                )}
               </div>
             )}
           </button>
         </div>
 
-        <div className="text-gray-700 font-black text-2xl italic opacity-50 select-none">VS</div>
+        {/* 🎯 SHRUNK THE 'VS' */}
+        <div className="flex items-center justify-center text-gray-700 font-black text-xl italic opacity-40 select-none px-1">VS</div>
 
         {/* FIGHTER 2 */}
-        <div className="flex-1 text-center group">
-           {renderFighterName(fight.fighter_2_name, fight.fighter_2_badge)}
-          
-          <div className="text-yellow-500 font-mono text-sm mb-4 min-h-[20px]">
-             {renderOddsText(fight.fighter_2_odds)}
-          </div>
+        <div className="flex-1 text-center group flex flex-col justify-between">
+           <div>
+               {renderFighterName(fight.fighter_2_name, fight.fighter_2_badge)}
+               <div className="text-yellow-500 font-mono text-xs mt-1 mb-2 min-h-[16px] leading-none">
+                 {renderOddsText(fight.fighter_2_odds)}
+               </div>
+           </div>
           
           <button
             onClick={() => onPick(fight.id, fight.fighter_2_name, fight.fighter_2_odds)}
             disabled={isLocked}
-            className={`w-full py-3 rounded font-bold uppercase text-sm tracking-wider transition-all
+            className={`w-full py-1.5 rounded font-bold uppercase text-xs tracking-wide transition-all mt-auto
               ${isLocked 
-                ? (existingPick?.selected_fighter === fight.fighter_2_name ? 'bg-green-800 text-white' : 'bg-gray-800 text-gray-600 cursor-not-allowed')
+                ? (existingPick?.selected_fighter === fight.fighter_2_name ? 'bg-green-800/80 text-white' : 'bg-gray-950 text-gray-700 cursor-not-allowed')
                 : (pendingPick?.fighterName === fight.fighter_2_name 
-                    ? 'bg-gray-700 text-white border border-gray-500 shadow-inner' 
-                    : 'bg-teal-600 hover:bg-teal-500 text-white shadow-lg shadow-teal-900/20' 
+                    ? 'bg-gray-800 text-white border border-gray-600 shadow-inner' 
+                    : 'bg-teal-600/90 hover:bg-teal-500 text-white shadow-sm shadow-teal-900/20' 
                   )
               }`}
           >
@@ -196,11 +197,13 @@ export default function FightCard({
              {!isLocked && pendingPick?.fighterName === fight.fighter_2_name && 'SELECTED'}
              
              {!isLocked && !pendingPick && (
-              <div className="flex flex-col leading-tight">
-                <span>Pick to Win</span>
-                <span className="text-[9px] opacity-75 font-medium normal-case mt-0.5">
-                   Returns {calculatePayout(fight.fighter_2_odds).toFixed(2)}
-                </span>
+              <div className="flex flex-col leading-none">
+                <span className="mb-[1px]">Draft</span>
+                {showOdds && (
+                    <span className="text-[8px] opacity-75 font-medium normal-case">
+                       Ret: {calculatePayout(fight.fighter_2_odds).toFixed(2)}
+                    </span>
+                )}
               </div>
             )}
           </button>
