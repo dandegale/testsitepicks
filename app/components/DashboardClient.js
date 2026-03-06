@@ -183,32 +183,6 @@ export default function DashboardClient({
 
   const handleInteraction = () => setIsFocusMode(true);
 
-  // Still keeping the function around in case you need it later, though not used in UI now
-  const handleDropPick = (pickDbId, fightId) => {
-      const fightInfo = cleanFights.find(f => String(f.id) === String(fightId));
-      const hasStarted = fightInfo ? new Date(fightInfo.start_time) <= new Date() : false;
-      
-      if (hasStarted) {
-          return showAlert("Too Late", "This fight has already started! You cannot drop this pick.");
-      }
-
-      setCustomAlert({
-          type: 'confirm',
-          title: 'Drop Fighter',
-          message: 'Are you sure you want to drop this fighter from your global picks?',
-          confirmText: 'Drop',
-          onConfirm: async () => {
-              setCustomAlert(null);
-              const { error } = await supabase.from('picks').delete().eq('id', pickDbId);
-              if (error) {
-                  showAlert("Error", "Failed to drop pick.");
-              } else {
-                  setClientPicks(prev => prev.filter(p => p.id !== pickDbId));
-              }
-          }
-      });
-  };
-
   const handlePickSelect = async (newPick) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -554,8 +528,11 @@ export default function DashboardClient({
                 </div>
             </div>
 
-            <div className="relative flex w-full">
-                <div className="transition-all duration-700 ease-in-out w-full xl:w-[66%]">
+            {/* 🎯 FIXED LAYOUT: Uses gap-10 and flex-1 so percentages don't overflow the screen width */}
+            <div className="relative flex flex-col xl:flex-row w-full gap-8 xl:gap-10">
+                
+                {/* Left Column (Fight Dashboard) */}
+                <div className="transition-all duration-700 ease-in-out w-full flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-6">
                         <span className={`w-2 h-2 rounded-full bg-teal-500 animate-pulse ${isFocusMode ? 'opacity-0' : ''}`}></span>
                         <h2 className={`text-xl font-black uppercase italic tracking-tighter ${isFocusMode ? 'text-pink-600' : ''}`}>
@@ -577,9 +554,10 @@ export default function DashboardClient({
                     </div>
                 </div>
 
-                <div className="hidden xl:block ml-10 space-y-8 transition-all duration-700 w-[33%] relative">
+                {/* Right Column (Sidebar) */}
+                <div className="hidden xl:flex flex-col w-[350px] shrink-0 space-y-8 transition-all duration-700 relative">
                     {pendingPicks.length > 0 ? (
-                         <div className="sticky top-24 max-h-[calc(100vh-120px)] min-w-[350px] w-full bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto">
+                         <div className="sticky top-24 max-h-[calc(100vh-120px)] w-full bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto">
                              <BettingSlip 
                                 picks={pendingPicks} 
                                 onCancelAll={() => { 
@@ -593,8 +571,8 @@ export default function DashboardClient({
                              />
                          </div>
                     ) : (
-                         <div>
-                            <div className="min-w-[350px] mb-8 bg-gray-950 border border-gray-900 rounded-xl overflow-hidden p-6 shadow-lg flex flex-col">
+                         <div className="space-y-8 w-full">
+                            <div className="w-full bg-gray-950 border border-gray-900 rounded-xl overflow-hidden p-6 shadow-lg flex flex-col">
                                 <div className="flex justify-between items-center mb-6">
                                     <div>
                                         <h3 className="text-xs font-black text-white uppercase tracking-[0.2em] flex items-center gap-2">
@@ -652,12 +630,12 @@ export default function DashboardClient({
                                 )}
                             </div>
 
-                            <div className="h-[600px] min-w-[350px] flex flex-col">
+                            <div className="h-[600px] w-full flex flex-col">
                                 <div className="flex justify-between items-center mb-4 px-2">
                                     <h3 className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">Global Trash Talk</h3>
                                     <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                                 </div>
-                                <div className="flex-1 shadow-2xl shadow-black overflow-hidden rounded-xl border border-gray-900">
+                                <div className="flex-1 shadow-2xl shadow-black overflow-hidden rounded-xl border border-gray-900 w-full">
                                     <ChatBox league_id={null} />
                                 </div>
                             </div>
