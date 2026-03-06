@@ -31,7 +31,7 @@ export default function FightCard({
   
   const isSelected = pendingPick?.fighterName === fight.fighter_1_name || pendingPick?.fighterName === fight.fighter_2_name;
   
-  // 🎯 Cleaned up logic: Buttons only show in leagues OR if Draft Mode is ON
+  // 🎯 Cleaned up logic: Buttons ONLY show in leagues OR if the master Draft Mode toggle is ON.
   const showPickControls = !isGlobalFeed || isDraftMode;
 
   const formatFightTime = (date) => {
@@ -65,15 +65,14 @@ export default function FightCard({
 
     const avgPoints = fighterStats && fighterStats[name] !== undefined ? fighterStats[name] : null;
     
-    // 🎯 THE FIX: Check if this fighter is the existing pick AND if we are in draft mode
+    // 🎯 THE FIX: Teal text and badge ONLY show if they locked this fighter AND Draft Mode is OFF.
     const isThisFighterLocked = existingPick?.selected_fighter === name;
-    const isTeal = isDraftMode && isThisFighterLocked;
+    const isTeal = !showPickControls && isThisFighterLocked;
 
     return (
-      <div className="flex flex-col items-center justify-start w-full text-center">
+      <div className="flex flex-col items-center justify-center w-full text-center">
         <div className="flex flex-wrap items-center justify-center gap-1 w-full">
-          {/* Text turns teal if in draft mode and locked */}
-          <h3 className={`text-sm sm:text-lg md:text-xl font-black uppercase leading-tight line-clamp-2 break-words transition-colors ${isTeal ? 'text-teal-400' : 'text-white'}`}>
+          <h3 className={`text-sm sm:text-lg md:text-xl font-black uppercase leading-tight line-clamp-2 break-words transition-colors duration-300 ${isTeal ? 'text-teal-400' : 'text-white'}`}>
             <Link 
               href={`/fighter/${createFighterSlug(name)}`}
               className="hover:text-pink-500 hover:underline decoration-pink-500 decoration-2 underline-offset-2 transition-all"
@@ -90,17 +89,17 @@ export default function FightCard({
             </span>
           )}
         </div>
-        
-        {/* The small teal text right under the name */}
+
+        {/* 🎯 THE BADGE: Small text under the name for locked picks outside of draft mode */}
         {isTeal && (
-            <div className="mt-1 text-[9px] font-black text-teal-400 uppercase tracking-widest flex items-center gap-1 bg-teal-950/40 px-2 py-0.5 rounded border border-teal-500/30 animate-in fade-in slide-in-from-bottom-1 duration-300">
+            <div className="mt-1 text-[9px] font-black text-teal-400 uppercase tracking-widest flex items-center gap-1 bg-teal-950/40 px-2 py-0.5 rounded border border-teal-500/30 animate-in fade-in slide-in-from-bottom-1 duration-300 shadow-[0_0_10px_rgba(20,184,166,0.1)]">
                 <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
                 Locked Pick
             </div>
         )}
-
+        
         {avgPoints !== null && (
-            <div className="mt-1.5 bg-teal-500/10 border border-teal-500/30 px-1.5 py-[1px] rounded shadow-[0_0_5px_rgba(20,184,166,0.15)] inline-block">
+            <div className={`bg-teal-500/10 border border-teal-500/30 px-1.5 py-[1px] rounded shadow-[0_0_5px_rgba(20,184,166,0.15)] inline-block ${isTeal ? 'mt-1' : 'mt-1.5'}`}>
                 <span className="text-[9px] font-black text-teal-400 uppercase tracking-widest leading-none">
                     Avg: {avgPoints} pts
                 </span>
@@ -125,7 +124,8 @@ export default function FightCard({
 
   return (
     <div className={`
-        bg-gray-900 rounded-xl p-3 md:p-5 shadow-sm transition-all duration-200 border-2 flex flex-col h-full
+        bg-gray-900 rounded-xl shadow-sm transition-all duration-300 border-2 flex flex-col
+        ${showPickControls ? 'p-3 md:p-5 h-full' : 'p-3 md:p-4'} 
         ${isSelected 
             ? 'border-pink-600 shadow-[0_0_10px_rgba(219,39,119,0.2)]' 
             : 'border-gray-800 hover:border-gray-600'
@@ -139,17 +139,17 @@ export default function FightCard({
         </span>
       </div>
 
-      {/* 🎯 Layout changes: Centers items if no pick controls are showing */}
-      <div className={`grid grid-cols-[1fr_auto_1fr] gap-1 sm:gap-4 flex-1 w-full ${showPickControls ? 'items-stretch h-full' : 'items-center py-2'}`}>
+      {/* 🎯 Grid no longer forces flex-1 when closed, eliminating vertical empty space */}
+      <div className={`grid grid-cols-[1fr_auto_1fr] gap-1 sm:gap-4 w-full ${showPickControls ? 'items-stretch flex-1' : 'items-center'}`}>
         
         {/* FIGHTER 1 COLUMN */}
-        <div className={`flex flex-col w-full ${showPickControls ? 'h-full justify-between' : 'justify-center gap-2'}`}>
+        <div className={`flex flex-col w-full ${showPickControls ? 'h-full justify-between' : 'justify-center items-center'}`}>
           <div className={`flex flex-col items-center w-full ${showPickControls ? 'justify-start' : 'justify-center'}`}>
               {renderFighterName(fight.fighter_1_name, fight.fighter_1_badge)}
           </div>
           
-          <div className={`w-full flex flex-col ${showPickControls ? 'mt-auto pt-3' : 'pt-1'}`}>
-              <div className={`text-yellow-500 font-mono text-[10px] sm:text-xs leading-none text-center ${showPickControls ? 'mb-2 sm:mb-3 min-h-[16px]' : ''}`}>
+          <div className={`w-full flex flex-col ${showPickControls ? 'mt-auto pt-3' : 'pt-1.5'}`}>
+              <div className={`text-yellow-500 font-mono text-center leading-none ${showPickControls ? 'text-[10px] sm:text-xs mb-2 sm:mb-3 min-h-[16px]' : 'text-[9px] sm:text-[10px]'}`}>
                 {renderOddsText(fight.fighter_1_odds)}
               </div>
               
@@ -186,19 +186,19 @@ export default function FightCard({
         </div>
 
         {/* VS */}
-        {/* 🎯 Removes the huge bottom padding when not in draft mode */}
+        {/* 🎯 Padding removed entirely when closed */}
         <div className={`flex flex-col justify-center items-center px-1 sm:px-2 ${showPickControls ? 'pb-8' : ''}`}>
             <div className="text-gray-700 font-black text-xs sm:text-lg italic opacity-40 select-none text-center">VS</div>
         </div>
 
         {/* FIGHTER 2 COLUMN */}
-        <div className={`flex flex-col w-full ${showPickControls ? 'h-full justify-between' : 'justify-center gap-2'}`}>
+        <div className={`flex flex-col w-full ${showPickControls ? 'h-full justify-between' : 'justify-center items-center'}`}>
            <div className={`flex flex-col items-center w-full ${showPickControls ? 'justify-start' : 'justify-center'}`}>
                {renderFighterName(fight.fighter_2_name, fight.fighter_2_badge)}
            </div>
           
-          <div className={`w-full flex flex-col ${showPickControls ? 'mt-auto pt-3' : 'pt-1'}`}>
-              <div className={`text-yellow-500 font-mono text-[10px] sm:text-xs leading-none text-center ${showPickControls ? 'mb-2 sm:mb-3 min-h-[16px]' : ''}`}>
+          <div className={`w-full flex flex-col ${showPickControls ? 'mt-auto pt-3' : 'pt-1.5'}`}>
+              <div className={`text-yellow-500 font-mono text-center leading-none ${showPickControls ? 'text-[10px] sm:text-xs mb-2 sm:mb-3 min-h-[16px]' : 'text-[9px] sm:text-[10px]'}`}>
                  {renderOddsText(fight.fighter_2_odds)}
               </div>
               
