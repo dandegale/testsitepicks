@@ -19,7 +19,6 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-// ... (keep the rest of your functions exactly the same below this!)
 async function getLatestEventUrl() {
     try {
         console.log("🔍 Searching for the latest UFC event...");
@@ -244,7 +243,17 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         
         const isFinished = statuses.includes('W') || statuses.includes('L') || statuses.includes('NC') || statuses.includes('D');
 
-        // 🎯 THE FIX: Instead of returning early, we let the script continue so it can grab live stats
+        // 🎯 THE FIX: Check if the table actually contains fight stats.
+        // If it doesn't, we are looking at the "Tale of the Tape" (Height/Weight/Reach)
+        const tableText = $('.b-fight-details__table').text() || '';
+        const hasFightStats = tableText.includes('Sig. str') || tableText.includes('Ctrl') || tableText.includes('Td');
+
+        if (!hasFightStats && !isFinished) {
+            console.log(`⏳ Fight hasn't started yet: ${fighters[0]} vs ${fighters[1]} - Skipping...`);
+            return; // 🛑 ABORT HERE! Prevents reading Weight/Height as strikes!
+        }
+
+        // Just in case UFCStats ever implements live data mid-fight
         if (!isFinished) {
             console.log(`📡 Fight is Live/Pending: ${fighters[0]} vs ${fighters[1]} - Syncing live stats...`);
         }
