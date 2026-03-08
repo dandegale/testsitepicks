@@ -19,6 +19,38 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+// ============================================================================
+// 🎯 BULLETPROOF NAME MATCHING ENGINE
+// ============================================================================
+
+// Add any future typos or API mismatches you find right here!
+const NAME_FIXES = {
+    "roass": "rosas",         // Fixes UFCStats typo for Raul Rosas Jr.
+    "sumudaerji": "mudaerji", // Fixes Su Mudaerji spacing
+    "weili": "zhang",         // Fixes Zhang Weili first/last flip
+    "stpreux": "st-preux"     // Example for Ovince St. Preux
+};
+
+const getSearchKey = (name) => {
+    if (!name) return "";
+    let clean = name.toLowerCase().trim();
+    
+    // Safely strip out suffixes like Jr., Sr., II, III (with or without periods)
+    clean = clean.replace(/\s+(jr\.?|sr\.?|ii|iii)$/g, '');
+    
+    const parts = clean.split(/\s+/);
+    let lastName = parts[parts.length - 1].replace(/[^a-z]/g, '');
+    
+    // Route it through the typo fixer dictionary
+    return NAME_FIXES[lastName] || lastName;
+};
+
+const sanitizeForMatch = (str) => {
+    return str ? str.toLowerCase().replace(/[^a-z]/g, '') : '';
+};
+
+// ============================================================================
+
 async function getLatestEventUrl() {
     try {
         console.log("🔍 Searching for the latest UFC event...");
@@ -66,10 +98,10 @@ async function scrapeFullCard() {
             await new Promise(r => setTimeout(r, 2000)); 
         }
 
-        // 2. Update League Leaderboard XP (Now supports LIVE updating!)
+        // 2. Update League Leaderboard XP
         await updateAllUsersLifetimePoints();
 
-        // 3. PROCESS COIN PAYOUTS
+        // 3. Process Coin Payouts
         await processEconomyPayouts();
 
         console.log("🏆 Card update complete!");
@@ -78,7 +110,6 @@ async function scrapeFullCard() {
     }
 }
 
-// 🎯 The Global Coin Payout Engine
 async function processEconomyPayouts() {
     try {
         console.log("💰 Processing Global Economy Payouts...");
@@ -162,7 +193,6 @@ async function processEconomyPayouts() {
     }
 }
 
-// 🎯 The Idempotent XP Engine
 async function updateAllUsersLifetimePoints() {
     try {
         console.log("🔄 Recalculating Lifetime XP for all users...");
@@ -177,14 +207,6 @@ async function updateAllUsersLifetimePoints() {
             .select('fight_id, fighter_name, fantasy_points');
 
         if (picksError || statsError) throw new Error("Database fetch error during XP calculation");
-
-        // Uses the same bulletproof matching logic for XP mapping
-        const getSearchKey = (name) => {
-            if (!name) return "";
-            let clean = name.toLowerCase().replace(/ (jr\.?|sr\.?|ii|iii)$/g, '');
-            const parts = clean.trim().split(' ');
-            return parts[parts.length - 1].replace(/[^a-z]/g, '');
-        };
 
         const statMap = {};
         stats.forEach(s => {
@@ -257,23 +279,11 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             console.log(`📡 Fight is Live/Pending: ${fighters[0]} vs ${fighters[1]} - Syncing live stats...`);
         }
 
-        // 🎯 BULLETPROOF MATCHING LOGIC
-        // 1. Removes suffixes (Jr, Sr) and extracts purely the alphabetical last name from UFCStats
-        const getSearchKey = (name) => {
-            let clean = name.toLowerCase().replace(/ (jr\.?|sr\.?|ii|iii)$/g, '');
-            const parts = clean.trim().split(' ');
-            return parts[parts.length - 1].replace(/[^a-z]/g, '');
-        };
-
-        // 2. Completely strips spaces and characters from Database names
-        const sanitizeForMatch = (str) => str ? str.toLowerCase().replace(/[^a-z]/g, '') : '';
-
         const key1 = getSearchKey(fighters[0]);
         const key2 = getSearchKey(fighters[1]);
 
         const dbFight = dbFights.find(f => {
             const combinedDbNames = sanitizeForMatch(f.fighter_1_name) + sanitizeForMatch(f.fighter_2_name);
-            // It will easily find "mudaerji" hidden inside "sumudaerjijesussantosaguilar"
             return combinedDbNames.includes(key1) && combinedDbNames.includes(key2);
         });
 
@@ -384,7 +394,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             const loserIndex = winnerIndex === 0 ? 1 : 0;
 
             if (baseBonus > 0) {
-                // Uses the new matching system to find odds
                 const winnerKey = getSearchKey(fighters[winnerIndex]);
                 let winnerOdds = 0;
 
@@ -433,7 +442,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         }
 
         if (isFinished && statuses.includes('W')) {
-            // Uses the new matching system to write the EXACT database name
             const winnerKey = getSearchKey(fighters[winnerIndex]);
             let exactDbWinnerName = fighters[winnerIndex]; 
             

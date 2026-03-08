@@ -72,7 +72,7 @@ export default function Profile() {
   // XP State
   const [lifetimePoints, setLifetimePoints] = useState(0);
 
-  // 🎯 TITLE INVENTORY STATE
+  // TITLE INVENTORY STATE
   const [equippedTitle, setEquippedTitle] = useState(null);
   const [ownedTitles, setOwnedTitles] = useState([]);
   const [titleModalOpen, setTitleModalOpen] = useState(false);
@@ -114,7 +114,7 @@ export default function Profile() {
     setAvatarUrl(profile?.avatar_url || null);
     setBackgroundUrl(profile?.background_url || null); 
     setLifetimePoints(profile?.lifetime_points || 0);
-    setEquippedTitle(profile?.equipped_title || null); // Load equipped title
+    setEquippedTitle(profile?.equipped_title || null); 
     
     if (profile) {
         setShowOdds(profile.show_odds === true);
@@ -162,7 +162,6 @@ export default function Profile() {
     setSaving(false);
   };
 
-  // 🎯 CHANGE TITLE HANDLER
   const handleEquipTitle = async (titleName) => {
     setEquippedTitle(titleName);
     await supabase.from('profiles').update({ equipped_title: titleName }).eq('id', user.id);
@@ -184,24 +183,42 @@ export default function Profile() {
     if (error) setPrivacy(prev => ({ ...prev, [field]: !newValue })); 
   };
 
+  // 🎯 UPDATED STATS ENGINE: DE-DUPLICATES FIGHTS FOR THE RECORD
   const calculateStats = (picks, fights, missingLeagues) => {
     let wins = 0, losses = 0, pending = 0, netProfit = 0;
     const historyData = [];
+    const processedFightIds = new Set(); // Tracks unique fights
+
     picks.forEach(pick => {
         const fight = fights.find(f => f.id == pick.fight_id);
         const fightName = fight ? `${fight.fighter_1_name} vs ${fight.fighter_2_name}` : `Fight #${pick.fight_id}`;
         let result = 'Pending', profitChange = 0;
+
+        // Figure out if this specific pick won or lost
         if (fight && fight.winner) {
             if (fight.winner === pick.selected_fighter) {
-                result = 'Win'; wins++;
+                result = 'Win'; 
                 const odds = parseInt(pick.odds_at_pick || -110, 10);
                 profitChange = (odds > 0 ? (odds / 100) * 10 : (100 / Math.abs(odds)) * 10) + 10; 
             } else {
-                result = 'Loss'; losses++;
+                result = 'Loss'; 
                 profitChange = -10; 
             }
-        } else { result = 'Pending'; pending++; }
-        if (result !== 'Pending') netProfit += profitChange;
+        } 
+
+        // 🎯 ONLY INCREMENT RECORD ONCE PER UNIQUE FIGHT
+        if (!processedFightIds.has(pick.fight_id)) {
+            if (result === 'Win') wins++;
+            else if (result === 'Loss') losses++;
+            else pending++;
+            
+            processedFightIds.add(pick.fight_id);
+        }
+
+        // We still calculate net profit for EVERY pick (League + Global pays out twice)
+        if (result !== 'Pending') {
+            netProfit += profitChange;
+        }
         
         let leagueName = 'Global';
         if (!missingLeagues && pick.leagues) {
@@ -209,7 +226,18 @@ export default function Profile() {
         }
         historyData.push({ id: pick.id, fightName, selection: pick.selected_fighter, odds: pick.odds_at_pick, result, profitChange, leagueName });
     });
-    setStats({ totalBets: picks.length, wins, losses, pending, netProfit: parseFloat(netProfit.toFixed(1)) });
+
+    // The total number of UNIQUE fights they bet on
+    const uniqueFightsBet = wins + losses + pending;
+
+    setStats({ 
+        totalBets: uniqueFightsBet, 
+        wins, 
+        losses, 
+        pending, 
+        netProfit: parseFloat(netProfit.toFixed(1)) 
+    });
+    
     setHistory(historyData);
   };
 
@@ -269,7 +297,6 @@ export default function Profile() {
 
   const levelStats = useMemo(() => calculateLevel(lifetimePoints), [lifetimePoints]);
 
-  // Find the object of the currently equipped title to get its rarity
   const equippedTitleObj = ownedTitles.find(t => t.name === equippedTitle);
 
   if (loading) return (
@@ -282,7 +309,7 @@ export default function Profile() {
   return (
     <main className="min-h-screen bg-[#050505] text-white pb-24 font-sans selection:bg-teal-500 selection:text-white relative overflow-hidden">
       
-      {/* 🎯 TITLE SELECTION MODAL */}
+      {/* TITLE SELECTION MODAL */}
       {titleModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in duration-200">
               <div className="relative w-full max-w-4xl flex flex-col animate-in zoom-in-95 duration-300 bg-gray-950 border border-gray-800 rounded-3xl p-6 md:p-10 shadow-2xl max-h-[85vh] overflow-y-auto">
@@ -449,7 +476,6 @@ export default function Profile() {
                     </div>
                 )}
                 
-                {/* 🎯 UPDATED: CLICKABLE EQUIPPED TITLE BADGE */}
                 <div className="flex items-center justify-center md:justify-start gap-3 mb-6">
                     <div 
                         onClick={() => setTitleModalOpen(true)}
