@@ -69,7 +69,7 @@ async function scrapeFullCard() {
         // 2. Update League Leaderboard XP (Now supports LIVE updating!)
         await updateAllUsersLifetimePoints();
 
-        // 3. 🎯 PROCESS COIN PAYOUTS
+        // 3. PROCESS COIN PAYOUTS
         await processEconomyPayouts();
 
         console.log("🏆 Card update complete!");
@@ -87,7 +87,7 @@ async function processEconomyPayouts() {
         const { data: recentFights, error: fightError } = await supabase
             .from('fights')
             .select('id, winner')
-            .not('winner', 'is', null) // Only grabs fights that are officially FINISHED
+            .not('winner', 'is', null) 
             .gte('start_time', fourteenDaysAgo);
 
         if (fightError || !recentFights) throw new Error("Could not fetch recent fights.");
@@ -99,7 +99,7 @@ async function processEconomyPayouts() {
             .is('paid_out', false);
 
         if (picksError) {
-            console.error("❌ Error fetching picks. Did you add the 'paid_out' boolean column to your 'picks' table?");
+            console.error("❌ Error fetching picks.");
             return;
         }
 
@@ -178,23 +178,25 @@ async function updateAllUsersLifetimePoints() {
 
         if (picksError || statsError) throw new Error("Database fetch error during XP calculation");
 
-        const getCoreName = (name) => {
+        // Uses the same bulletproof matching logic for XP mapping
+        const getSearchKey = (name) => {
             if (!name) return "";
-            const parts = name.trim().split(' ');
-            return parts[parts.length - 1].replace(/[^a-zA-Z]/g, '').toLowerCase().substring(0, 4);
+            let clean = name.toLowerCase().replace(/ (jr\.?|sr\.?|ii|iii)$/g, '');
+            const parts = clean.trim().split(' ');
+            return parts[parts.length - 1].replace(/[^a-z]/g, '');
         };
 
         const statMap = {};
         stats.forEach(s => {
-            const coreName = getCoreName(s.fighter_name);
-            statMap[`${s.fight_id}-${coreName}`] = s.fantasy_points || 0;
+            const searchKey = getSearchKey(s.fighter_name);
+            statMap[`${s.fight_id}-${searchKey}`] = s.fantasy_points || 0;
         });
 
         const userFightScores = {};
         
         picks.forEach(pick => {
-            const corePick = getCoreName(pick.selected_fighter);
-            const pointsScored = statMap[`${pick.fight_id}-${corePick}`] || 0;
+            const pickKey = getSearchKey(pick.selected_fighter);
+            const pointsScored = statMap[`${pick.fight_id}-${pickKey}`] || 0;
             
             if (!userFightScores[pick.user_id]) {
                 userFightScores[pick.user_id] = {};
@@ -243,33 +245,36 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         
         const isFinished = statuses.includes('W') || statuses.includes('L') || statuses.includes('NC') || statuses.includes('D');
 
-        // 🎯 THE FIX: Check if the table actually contains fight stats.
-        // If it doesn't, we are looking at the "Tale of the Tape" (Height/Weight/Reach)
         const tableText = $('.b-fight-details__table').text() || '';
         const hasFightStats = tableText.includes('Sig. str') || tableText.includes('Ctrl') || tableText.includes('Td');
 
         if (!hasFightStats && !isFinished) {
             console.log(`⏳ Fight hasn't started yet: ${fighters[0]} vs ${fighters[1]} - Skipping...`);
-            return; // 🛑 ABORT HERE! Prevents reading Weight/Height as strikes!
+            return; 
         }
 
-        // Just in case UFCStats ever implements live data mid-fight
         if (!isFinished) {
             console.log(`📡 Fight is Live/Pending: ${fighters[0]} vs ${fighters[1]} - Syncing live stats...`);
         }
 
-        const getCoreName = (name) => {
-            const parts = name.trim().split(' ');
-            const last = parts[parts.length - 1].replace(/[^a-zA-Z]/g, '').toLowerCase();
-            return last.substring(0, 4); 
+        // 🎯 BULLETPROOF MATCHING LOGIC
+        // 1. Removes suffixes (Jr, Sr) and extracts purely the alphabetical last name from UFCStats
+        const getSearchKey = (name) => {
+            let clean = name.toLowerCase().replace(/ (jr\.?|sr\.?|ii|iii)$/g, '');
+            const parts = clean.trim().split(' ');
+            return parts[parts.length - 1].replace(/[^a-z]/g, '');
         };
 
-        const core1 = getCoreName(fighters[0]);
-        const core2 = getCoreName(fighters[1]);
+        // 2. Completely strips spaces and characters from Database names
+        const sanitizeForMatch = (str) => str ? str.toLowerCase().replace(/[^a-z]/g, '') : '';
+
+        const key1 = getSearchKey(fighters[0]);
+        const key2 = getSearchKey(fighters[1]);
 
         const dbFight = dbFights.find(f => {
-            const dbNamesStr = `${f.fighter_1_name} ${f.fighter_2_name}`.toLowerCase().replace(/[^a-z ]/g, '');
-            return dbNamesStr.includes(core1) && dbNamesStr.includes(core2);
+            const combinedDbNames = sanitizeForMatch(f.fighter_1_name) + sanitizeForMatch(f.fighter_2_name);
+            // It will easily find "mudaerji" hidden inside "sumudaerjijesussantosaguilar"
+            return combinedDbNames.includes(key1) && combinedDbNames.includes(key2);
         });
 
         if (!dbFight) return;
@@ -342,10 +347,9 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         const rows = $('.b-fight-details__table-body').first().find('.b-fight-details__table-text');
         const parseStat = (index) => {
             const raw = rows.eq(index).text().trim().split(' of ')[0];
-            return parseInt(raw) || 0; // Gracefully handles empty tables (0 points)
+            return parseInt(raw) || 0; 
         };
 
-        // Calculate points based on what has happened so far
         let results = fighters.map((name, i) => {
             const kd = parseStat(2 + i);
             const sig_str = parseStat(4 + i);
@@ -371,7 +375,7 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             };
         });
 
-        // 🛑 FINISH BONUSES - Only trigger if the fight is actually over
+        // 🛑 FINISH BONUSES
         const winnerIndex = results.findIndex(r => r.is_winner);
         let finalBonus = 0;
         let wasEqualized = false; 
@@ -380,12 +384,16 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             const loserIndex = winnerIndex === 0 ? 1 : 0;
 
             if (baseBonus > 0) {
-                const winnerCore = getCoreName(fighters[winnerIndex]);
+                // Uses the new matching system to find odds
+                const winnerKey = getSearchKey(fighters[winnerIndex]);
                 let winnerOdds = 0;
 
-                if (dbFight.fighter_1_name && dbFight.fighter_1_name.toLowerCase().includes(winnerCore)) {
+                const f1Clean = sanitizeForMatch(dbFight.fighter_1_name);
+                const f2Clean = sanitizeForMatch(dbFight.fighter_2_name);
+
+                if (f1Clean.includes(winnerKey)) {
                     winnerOdds = parseInt(dbFight.fighter_1_odds) || 0;
-                } else if (dbFight.fighter_2_name && dbFight.fighter_2_name.toLowerCase().includes(winnerCore)) {
+                } else if (f2Clean.includes(winnerKey)) {
                     winnerOdds = parseInt(dbFight.fighter_2_odds) || 0;
                 }
 
@@ -406,7 +414,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
                 results[winnerIndex].fantasy_points += finalBonus;
             }
 
-            // The Equalizer (Only applies at the end of the fight)
             if (results[winnerIndex].fantasy_points < results[loserIndex].fantasy_points) {
                 results[winnerIndex].fantasy_points = results[loserIndex].fantasy_points;
                 wasEqualized = true; 
@@ -417,7 +424,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             r.fantasy_points = parseFloat(Math.min(r.fantasy_points, 999.99).toFixed(2));
         });
 
-        // Upsert the live (or final) stats into the database
         const { error } = await supabase.from('fighter_stats').upsert(results, { onConflict: 'fight_id, fighter_name' });
         if (error) throw new Error(`Supabase Stats Error: ${error.message}`);
         
@@ -426,14 +432,17 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             finalMethodString = `${winMethodStr} R${finishRound}`;
         }
 
-        // Only update the actual fight winner if it's over
         if (isFinished && statuses.includes('W')) {
-            const winnerCore = getCoreName(fighters[winnerIndex]);
+            // Uses the new matching system to write the EXACT database name
+            const winnerKey = getSearchKey(fighters[winnerIndex]);
             let exactDbWinnerName = fighters[winnerIndex]; 
             
-            if (dbFight.fighter_1_name && dbFight.fighter_1_name.toLowerCase().includes(winnerCore)) {
+            const f1Clean = sanitizeForMatch(dbFight.fighter_1_name);
+            const f2Clean = sanitizeForMatch(dbFight.fighter_2_name);
+            
+            if (f1Clean.includes(winnerKey)) {
                 exactDbWinnerName = dbFight.fighter_1_name;
-            } else if (dbFight.fighter_2_name && dbFight.fighter_2_name.toLowerCase().includes(winnerCore)) {
+            } else if (f2Clean.includes(winnerKey)) {
                 exactDbWinnerName = dbFight.fighter_2_name;
             }
 
