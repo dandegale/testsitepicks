@@ -28,6 +28,14 @@ const getRarityTextStyle = (rarity) => {
     }
 };
 
+// 🎯 NAME FIXES DICTIONARY (Keeps League page in sync with the scraper)
+const NAME_FIXES = {
+    "roass": "rosas",
+    "sumudaerji": "mudaerji",
+    "weili": "zhang",
+    "stpreux": "st-preux"
+};
+
 export default function LeaguePage() {
   const params = useParams();
   const router = useRouter();
@@ -83,20 +91,27 @@ export default function LeaguePage() {
       setCustomAlert({ type: 'alert', title, message });
   };
 
-  // 🎯 UPGRADED: BULLETPROOF MATCHING LOGIC (Mirrors the scraper fix)
+  // 🎯 UPGRADED: BULLETPROOF MATCHING LOGIC
   const isFighterMatch = (pickName, statName) => {
       if (!pickName || !statName) return false;
       
-      const sanitizeForMatch = (str) => {
-          let clean = str.toLowerCase().replace(/ (jr\.?|sr\.?|ii|iii)$/g, '');
-          return clean.replace(/[^a-z]/g, '');
+      const getSearchKey = (name) => {
+          let clean = name.toLowerCase().replace(/\s+(jr\.?|sr\.?|ii|iii)$/g, '');
+          const parts = clean.trim().split(/\s+/);
+          let lastName = parts[parts.length - 1].replace(/[^a-z]/g, '');
+          return NAME_FIXES[lastName] || lastName;
       };
-      
+
+      const sanitizeForMatch = (str) => str ? str.toLowerCase().replace(/[^a-z]/g, '') : '';
+
+      const pickKey = getSearchKey(pickName);
+      const statKey = getSearchKey(statName);
+
       const cleanPick = sanitizeForMatch(pickName);
       const cleanStat = sanitizeForMatch(statName);
-      
-      // If the fully cleaned names include each other, it's a match!
-      return cleanPick.includes(cleanStat) || cleanStat.includes(cleanPick);
+
+      // Now it just looks for "aguilar" inside "jesussantosaguilar" - which works perfectly!
+      return cleanPick.includes(statKey) || cleanStat.includes(pickKey);
   };
 
   const getCustomPoints = useCallback((pick, stats, fightInfo, format) => {
