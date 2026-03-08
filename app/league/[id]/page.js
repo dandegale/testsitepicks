@@ -12,7 +12,6 @@ import MobileNav from '../../components/MobileNav';
 import Toast from '../../components/Toast'; 
 import SocialShareSlip from '../../components/SocialShareSlip';
 
-// 🎯 IMPORT STORE CASES FOR RARITY LOOKUP
 import { STORE_CASES } from '@/lib/cases';
 
 const supabase = createClient(
@@ -20,7 +19,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// 🎯 HELPER TO COLORIZE LEADERBOARD TITLES
 const getRarityTextStyle = (rarity) => {
     switch (rarity) {
         case 'Legendary': return 'text-yellow-500 drop-shadow-[0_0_5px_rgba(234,179,8,0.8)]';
@@ -45,7 +43,6 @@ export default function LeaguePage() {
   
   const [showChampCelebration, setShowChampCelebration] = useState(false);
   
-  // 🎯 NEW: CUSTOM MODAL STATE
   const [customAlert, setCustomAlert] = useState(null);
 
   const [expandedUserRoster, setExpandedUserRoster] = useState(null); 
@@ -82,29 +79,32 @@ export default function LeaguePage() {
     fetchLeagueData();
   }, [leagueId]);
 
-  // 🎯 HELPER TO SHOW CUSTOM ALERTS
   const showAlert = (title, message) => {
       setCustomAlert({ type: 'alert', title, message });
   };
 
+  // 🎯 UPGRADED: BULLETPROOF MATCHING LOGIC (Mirrors the scraper fix)
   const isFighterMatch = (pickName, statName) => {
       if (!pickName || !statName) return false;
-      const cleanName = (str) => str.toLowerCase().replace(/\b(jr\.?|sr\.?|iii|ii)\b/gi, '').trim();
-      const getCore = (str) => {
-          const parts = cleanName(str).split(' ');
-          return parts[parts.length - 1].replace(/[^a-z]/g, '').substring(0, 4);
+      
+      const sanitizeForMatch = (str) => {
+          let clean = str.toLowerCase().replace(/ (jr\.?|sr\.?|ii|iii)$/g, '');
+          return clean.replace(/[^a-z]/g, '');
       };
-      return getCore(pickName) === getCore(statName);
+      
+      const cleanPick = sanitizeForMatch(pickName);
+      const cleanStat = sanitizeForMatch(statName);
+      
+      // If the fully cleaned names include each other, it's a match!
+      return cleanPick.includes(cleanStat) || cleanStat.includes(cleanPick);
   };
 
-  // 🎯 CUSTOM LEAGUE SCORING ENGINE
   const getCustomPoints = useCallback((pick, stats, fightInfo, format) => {
       if (!stats) return 0;
       if (format === 'MMA' || !format) return stats.fantasy_points || 0;
 
       let pts = 0;
       
-      // 1. Base Stats
       if (format === 'Striking') {
           pts = ((stats.sig_strikes || 0) * 0.25) + ((stats.knockdowns || 0) * 5);
       } else if (format === 'Grappling') {
@@ -112,7 +112,6 @@ export default function LeaguePage() {
           pts = ((stats.takedowns || 0) * 2.5) + ((stats.sub_attempts || 0) * 3) + (ctrlMins * 1.8);
       }
 
-      // 2. Finish Bonuses (Only applied if the finish matches the skill-set)
       if (stats.is_winner && fightInfo && fightInfo.method) {
           const method = fightInfo.method.toLowerCase();
           const isKO = method.includes('ko');
@@ -134,7 +133,7 @@ export default function LeaguePage() {
               else if (odds < 0) oddsMult = 100 / Math.abs(odds);
 
               let finBonus = baseBonus * oddsMult;
-              if (odds < 0) finBonus += 10; // Fav Flat Bonus
+              if (odds < 0) finBonus += 10; 
 
               pts += finBonus;
           }
@@ -389,7 +388,6 @@ export default function LeaguePage() {
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         setUser(currentUser);
 
-        // 🎯 RESTORE PENDING PICKS FROM LOCAL STORAGE
         if (currentUser) {
             const savedPicks = localStorage.getItem(`draft_pending_${leagueId}_${currentUser.email}`);
             if (savedPicks) {
@@ -559,7 +557,6 @@ export default function LeaguePage() {
       }
   };
 
-  // 🎯 SELECTING A DRAFT PICK (SAVES TO LOCAL STORAGE + CUSTOM ALERTS)
   const handlePickSelect = (newPick) => {
     if (!user) {
         router.push('/login');
@@ -572,13 +569,11 @@ export default function LeaguePage() {
 
     const safePick = { ...newPick, username: user?.user_metadata?.username || user?.email };
 
-    // Prevent drafting 2 fighters from the same fight if one is already saved in the DB
     const hasDbPickForFight = existingPicks.some(p => String(p.fight_id) === String(safePick.fightId));
     if (hasDbPickForFight) {
         return showAlert("Duplicate Fight", "You already drafted a fighter from this match. Drop them first.");
     }
 
-    // Pre-check for full roster before updating state
     const existingIndex = pendingPicks.findIndex(p => p.fightId === safePick.fightId);
     if (existingIndex === -1 && existingPicks.length + pendingPicks.length >= 5) {
         return showAlert("Roster Full", "Roster is full! Drop a fighter to make room.");
@@ -596,7 +591,6 @@ export default function LeaguePage() {
             newPicks = [...currentPicks, safePick];
         }
 
-        // Cache instantly
         localStorage.setItem(`draft_pending_${leagueId}_${user.email}`, JSON.stringify(newPicks));
         return newPicks;
     });
@@ -610,7 +604,6 @@ export default function LeaguePage() {
       });
   };
 
-  // 🎯 DROPPING AN ALREADY LOCKED PICK FROM THE DB (WITH CUSTOM CONFIRM)
   const handleDropPick = (pickDbId, fightId) => {
       const fightInfo = allFights.find(f => String(f.id) === String(fightId));
       const hasStarted = fightInfo ? new Date(fightInfo.start_time) <= new Date() : false;
@@ -1096,7 +1089,7 @@ export default function LeaguePage() {
                                         userPicks={existingPicks} 
                                         league_id={leagueId} 
                                         onPickSelect={handlePickSelect} 
-                                        pendingPicks={pendingPicks} 
+                                        pendingPicks={pendingPicks}
                                         showOdds={showOdds} 
                                     />
                                 ) : (
@@ -1662,7 +1655,6 @@ export default function LeaguePage() {
         />
       )}
 
-      {/* 🎯 NEW: REUSABLE CUSTOM MODAL FOR ALERTS & CONFIRMATIONS */}
       {customAlert && (
           <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
               <div className="bg-gray-950 border border-gray-800 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -1697,7 +1689,6 @@ export default function LeaguePage() {
           </div>
       )}
 
-      {/* 🏆 CHAMPIONSHIP CELEBRATION MODAL 🏆 */}
       {showChampCelebration && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-500">
               <div className="relative w-full max-w-md flex flex-col items-center text-center animate-in zoom-in-50 duration-700 delay-100">
