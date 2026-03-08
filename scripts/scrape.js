@@ -23,30 +23,80 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 // 🎯 BULLETPROOF NAME MATCHING ENGINE
 // ============================================================================
 
-// Add any future typos or API mismatches you find right here!
 const NAME_FIXES = {
-    "roass": "rosas",         // Fixes UFCStats typo for Raul Rosas Jr.
-    "sumudaerji": "mudaerji", // Fixes Su Mudaerji spacing
-    "weili": "zhang",         // Fixes Zhang Weili first/last flip
-    "stpreux": "st-preux"     // Example for Ovince St. Preux
+    "roass": "rosas",         
+    "sumudaerji": "mudaerji", 
+    "weili": "zhang",         
+    "stpreux": "st-preux"     
 };
 
 const getSearchKey = (name) => {
     if (!name) return "";
     let clean = name.toLowerCase().trim();
-    
-    // Safely strip out suffixes like Jr., Sr., II, III (with or without periods)
     clean = clean.replace(/\s+(jr\.?|sr\.?|ii|iii)$/g, '');
-    
     const parts = clean.split(/\s+/);
     let lastName = parts[parts.length - 1].replace(/[^a-z]/g, '');
-    
-    // Route it through the typo fixer dictionary
     return NAME_FIXES[lastName] || lastName;
 };
 
 const sanitizeForMatch = (str) => {
     return str ? str.toLowerCase().replace(/[^a-z]/g, '') : '';
+};
+
+const isFighterMatch = (name1, name2) => {
+    if (!name1 || !name2) return false;
+    const key1 = getSearchKey(name1);
+    const key2 = getSearchKey(name2);
+    const clean1 = sanitizeForMatch(name1);
+    const clean2 = sanitizeForMatch(name2);
+    return clean1.includes(key2) || clean2.includes(key1);
+};
+
+// ============================================================================
+// 🎯 THE DFS SCORING ENGINE (Replicates your LeaguePage math perfectly)
+// ============================================================================
+
+const getCustomPoints = (pick, stats, fightInfo, format) => {
+    if (!stats) return 0;
+    if (format === 'MMA' || !format) return stats.fantasy_points || 0;
+
+    let pts = 0;
+    
+    if (format === 'Striking') {
+        pts = ((stats.sig_strikes || 0) * 0.25) + ((stats.knockdowns || 0) * 5);
+    } else if (format === 'Grappling') {
+        const ctrlMins = (stats.control_time_seconds || 0) / 60;
+        pts = ((stats.takedowns || 0) * 2.5) + ((stats.sub_attempts || 0) * 3) + (ctrlMins * 1.8);
+    }
+
+    if (stats.is_winner && fightInfo && fightInfo.method) {
+        const method = fightInfo.method.toLowerCase();
+        const isKO = method.includes('ko');
+        const isSub = method.includes('sub');
+
+        if ((format === 'Striking' && isKO) || (format === 'Grappling' && isSub)) {
+            let baseBonus = 0;
+            const r = parseInt(fightInfo.round) || 1;
+            if (r === 1) baseBonus = 35;
+            else if (r === 2) baseBonus = 25;
+            else if (r === 3) baseBonus = 20;
+            else if (r === 4) baseBonus = 25;
+            else if (r === 5) baseBonus = 40;
+            else baseBonus = 10;
+
+            let oddsMult = 1;
+            const odds = parseInt(pick.odds_at_pick) || 0;
+            if (odds > 0) oddsMult = odds / 100;
+            else if (odds < 0) oddsMult = 100 / Math.abs(odds);
+
+            let finBonus = baseBonus * oddsMult;
+            if (odds < 0) finBonus += 10; 
+
+            pts += finBonus;
+        }
+    }
+
+    return parseFloat(pts.toFixed(1));
 };
 
 // ============================================================================
@@ -92,16 +142,12 @@ async function scrapeFullCard() {
 
         console.log(`🥊 Found ${fightUrls.length} fights. Commencing balanced scrape...`);
 
-        // 1. Scrape Results & Stats
         for (const url of fightUrls) {
             await scrapeAndScoreFight(url, dbFights);
             await new Promise(r => setTimeout(r, 2000)); 
         }
 
-        // 2. Update League Leaderboard XP
         await updateAllUsersLifetimePoints();
-
-        // 3. Process Coin Payouts
         await processEconomyPayouts();
 
         console.log("🏆 Card update complete!");
@@ -112,12 +158,12 @@ async function scrapeFullCard() {
 
 async function processEconomyPayouts() {
     try {
-        console.log("💰 Processing Global Economy Payouts...");
+        console.log("\n💰 Processing Economy Payouts based on FANTASY POINTS...");
 
         const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
         const { data: recentFights, error: fightError } = await supabase
             .from('fights')
-            .select('id, winner')
+            .select('id, winner, method, round')
             .not('winner', 'is', null) 
             .gte('start_time', fourteenDaysAgo);
 
@@ -125,54 +171,83 @@ async function processEconomyPayouts() {
 
         const { data: unpaidPicks, error: picksError } = await supabase
             .from('picks')
-            .select('id, user_id, fight_id, selected_fighter, odds_at_pick')
-            .is('league_id', null)
+            .select('id, user_id, fight_id, selected_fighter, odds_at_pick, league_id')
+            .not('league_id', 'is', null)
             .is('paid_out', false);
 
-        if (picksError) {
-            console.error("❌ Error fetching picks.");
-            return;
-        }
+        if (picksError) return console.error("❌ Error fetching picks.");
+        if (!unpaidPicks || unpaidPicks.length === 0) return console.log("✅ No pending payouts found.");
 
-        if (!unpaidPicks || unpaidPicks.length === 0) {
-            console.log("✅ No pending payouts found.");
-            return;
-        }
+        console.log(`🔎 Found ${unpaidPicks.length} unpaid LEAGUE picks to process. Analyzing matches...`);
+
+        // We need the stats for these fights to know how many points they scored
+        const fightIds = recentFights.map(f => f.id);
+        const { data: statsData } = await supabase
+            .from('fighter_stats')
+            .select('*')
+            .in('fight_id', fightIds);
+
+        // We need to know what kind of league they picked in (Striking, Grappling, MMA)
+        const leagueIds = [...new Set(unpaidPicks.map(p => p.league_id))];
+        const { data: leaguesData } = await supabase
+            .from('leagues')
+            .select('id, scoring_format')
+            .in('id', leagueIds);
 
         const userEarnings = {};
         const picksToMarkPaid = [];
 
         unpaidPicks.forEach(pick => {
             const fight = recentFights.find(f => f.id === pick.fight_id);
-            if (fight && fight.winner && fight.winner === pick.selected_fighter) {
-                const numericOdds = parseInt(pick.odds_at_pick, 10);
-                if (!isNaN(numericOdds) && numericOdds !== 0) {
-                    let profit = 0;
-                    if (numericOdds > 0) {
-                        profit = (numericOdds / 100) * 10;
-                    } else {
-                        profit = (100 / Math.abs(numericOdds)) * 10;
-                    }
-                    const totalPayout = parseFloat((profit + 10).toFixed(1));
-
-                    if (!userEarnings[pick.user_id]) userEarnings[pick.user_id] = 0;
-                    userEarnings[pick.user_id] += totalPayout;
-                }
-            }
             
-            if (fight && fight.winner) {
+            // Only process if the fight is officially finished
+            if (fight) {
+                const league = leaguesData?.find(l => String(l.id) === String(pick.league_id));
+                const format = league?.scoring_format || 'MMA';
+
+                // Find the exact stat row for the picked fighter using the smart matcher
+                const statRow = statsData?.find(s => 
+                    String(s.fight_id) === String(pick.fight_id) && 
+                    isFighterMatch(s.fighter_name, pick.selected_fighter)
+                );
+
+                let earnedPoints = 0;
+                if (statRow) {
+                    earnedPoints = getCustomPoints(pick, statRow, fight, format);
+                }
+
+                console.log(`   🎫 Pick: [${pick.selected_fighter}] | Format: [${format}] | DFS Points Scored: ${earnedPoints}`);
+
+                if (!userEarnings[pick.user_id]) userEarnings[pick.user_id] = 0;
+                // Add the fantasy points directly to their earnings!
+                userEarnings[pick.user_id] += earnedPoints;
+
                 picksToMarkPaid.push(pick.id);
             }
         });
 
         let depositCount = 0;
         for (const [email, earnings] of Object.entries(userEarnings)) {
-            const { data: profile } = await supabase.from('profiles').select('coins').eq('email', email).single();
-            if (profile) {
-                const newBalance = (profile.coins || 0) + earnings;
-                const { error } = await supabase.from('profiles').update({ coins: newBalance }).eq('email', email);
-                if (!error) {
-                    console.log(`   💸 Paid ${earnings} coins to ${email}`);
+            const { data: profileData, error: profileErr } = await supabase
+                .from('profiles')
+                .select('coins')
+                .eq('email', email)
+                .limit(1);
+            
+            const profile = profileData && profileData.length > 0 ? profileData[0] : null;
+
+            if (profileErr || !profile) {
+                console.log(`   ❌ ERROR: Could not find profile for [${email}].`);
+            } else {
+                // Round the final combined points to a clean integer for the database
+                const newBalance = Math.round((profile.coins || 0) + earnings);
+                
+                const { error: updateErr } = await supabase.from('profiles').update({ coins: newBalance }).eq('email', email);
+                
+                if (updateErr) {
+                    console.log(`   ❌ ERROR: Failed to update balance for [${email}]. Reason: ${updateErr.message}`);
+                } else {
+                    console.log(`   🏦 Deposited ${Math.round(earnings)} coins into ${email}'s account. (New Balance: ${newBalance})`);
                     depositCount++;
                 }
             }
@@ -187,7 +262,7 @@ async function processEconomyPayouts() {
             if (error) console.error("❌ Failed to mark picks as paid.", error.message);
         }
 
-        console.log(`✅ Economy Payout Complete! Processed ${depositCount} winning bettors.`);
+        console.log(`✅ Economy Payout Complete! Processed ${depositCount} winning bettors.\n`);
     } catch (err) {
         console.error("❌ Failed during economy payout:", err.message);
     }
@@ -195,7 +270,7 @@ async function processEconomyPayouts() {
 
 async function updateAllUsersLifetimePoints() {
     try {
-        console.log("🔄 Recalculating Lifetime XP for all users...");
+        console.log("🔄 Recalculating Global Lifetime XP...");
         
         const { data: picks, error: picksError } = await supabase
             .from('picks')

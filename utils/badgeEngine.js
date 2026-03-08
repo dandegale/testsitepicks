@@ -2,8 +2,42 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY // Use Service Role for backend engine overrides
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+  // Use Service Role for backend engine overrides
 );
+
+// ============================================================================
+// 🎯 BULLETPROOF NAME MATCHING ENGINE (Keeps Badges in sync with Payouts)
+// ============================================================================
+const NAME_FIXES = {
+    "roass": "rosas",         
+    "sumudaerji": "mudaerji", 
+    "weili": "zhang",         
+    "stpreux": "st-preux"     
+};
+
+const getSearchKey = (name) => {
+    if (!name) return "";
+    let clean = name.toLowerCase().trim();
+    clean = clean.replace(/\s+(jr\.?|sr\.?|ii|iii)$/g, '');
+    const parts = clean.split(/\s+/);
+    let lastName = parts[parts.length - 1].replace(/[^a-z]/g, '');
+    return NAME_FIXES[lastName] || lastName;
+};
+
+const sanitizeForMatch = (str) => {
+    return str ? str.toLowerCase().replace(/[^a-z]/g, '') : '';
+};
+
+const isFighterMatch = (name1, name2) => {
+    if (!name1 || !name2) return false;
+    const key1 = getSearchKey(name1);
+    const key2 = getSearchKey(name2);
+    const clean1 = sanitizeForMatch(name1);
+    const clean2 = sanitizeForMatch(name2);
+    return clean1.includes(key2) || clean2.includes(key1);
+};
+// ============================================================================
 
 // 👇 CHANGED: Now accepts targetDate instead of eventId
 export async function awardEventBadges(targetDate) {
@@ -31,10 +65,10 @@ export async function awardEventBadges(targetDate) {
       let f2Odds = parseInt(f.fighter_2_odds) || -9999;
       let isUnderdogWin = false;
 
-      if (f.winner === f.fighter_1_name && f1Odds > 0) {
+      if (isFighterMatch(f.winner, f.fighter_1_name) && f1Odds > 0) {
           isUnderdogWin = true;
           if (f1Odds > highestOdds) { highestOdds = f1Odds; biggestUnderdogFightId = f.id; }
-      } else if (f.winner === f.fighter_2_name && f2Odds > 0) {
+      } else if (isFighterMatch(f.winner, f.fighter_2_name) && f2Odds > 0) {
           isUnderdogWin = true;
           if (f2Odds > highestOdds) { highestOdds = f2Odds; biggestUnderdogFightId = f.id; }
       }
@@ -58,14 +92,12 @@ export async function awardEventBadges(targetDate) {
     userPicks[pick.user_id][pick.fight_id] = pick;
   });
 
-  // 🎯 THE FIX: Fetch existing badges so we don't try to award them twice
   const userEmails = Object.keys(userPicks);
   const { data: existingBadgesData } = await supabase
     .from('user_badges')
     .select('user_id, badge_id')
     .in('user_id', userEmails);
 
-  // Store existing badges in a quick-lookup Set (e.g., "dandegale@gmail.com-b1")
   const existingBadgesSet = new Set();
   if (existingBadgesData) {
       existingBadgesData.forEach(b => existingBadgesSet.add(`${b.user_id}-${b.badge_id}`));
@@ -73,23 +105,22 @@ export async function awardEventBadges(targetDate) {
 
   const newlyEarnedBadges = [];
 
-  // 💥 THE NUCLEAR FIX: Safely add a badge with a manually generated random UUID
   const grantBadge = (email, badgeId) => {
       const lookupKey = `${email}-${badgeId}`;
       if (!existingBadgesSet.has(lookupKey)) {
           newlyEarnedBadges.push({ 
-              id: crypto.randomUUID(), // Force a unique ID directly from Node
+              id: crypto.randomUUID(), 
               user_id: email, 
               badge_id: badgeId 
           });
-          existingBadgesSet.add(lookupKey); // Add to set immediately to prevent duplicates in same run
+          existingBadgesSet.add(lookupKey); 
       }
   };
 
   // 5. THE MATRIX: Evaluate each user's performance
   for (const [userEmail, uPicksObject] of Object.entries(userPicks)) {
     
-    const uPicks = Object.values(uPicksObject); // Convert deduplicated object back into an array
+    const uPicks = Object.values(uPicksObject); 
 
     let koWins = 0;
     let subWins = 0;
@@ -103,23 +134,21 @@ export async function awardEventBadges(targetDate) {
     uPicks.forEach(pick => {
       const fight = fights.find(f => f.id === pick.fight_id);
       if (fight) {
-          if (fight.winner === pick.selected_fighter) {
+          // 🎯 THE FIX: Use isFighterMatch to determine if the pick won!
+          if (isFighterMatch(fight.winner, pick.selected_fighter)) {
             totalWins++;
             
             const method = fight.method ? fight.method.toUpperCase() : '';
             const round = parseInt(fight.round, 10);
 
-            if (method.includes('KO') || method.includes('TKO')) {
+            if (method.includes('KO') || method.includes('TKO') || method.includes('KNOCKOUT')) {
                 koWins++;
                 if (round === 1) hasRound1KO = true;
             }
             if (method.includes('SUB')) subWins++;
             if (method.includes('DEC')) decWins++;
 
-            // Whale Hunter Check
             if (pick.fight_id === biggestUnderdogFightId) hasBiggestUnderdog = true;
-            
-            // The Underdog Check
             if (winningUnderdogFightIds.has(pick.fight_id)) pickedUnderdogWins++;
 
           } else {
@@ -128,7 +157,6 @@ export async function awardEventBadges(targetDate) {
       }
     });
 
-    // --- BADGE LOGIC CONDITIONS ---
     if (koWins >= 5) grantBadge(userEmail, 'b1'); // BMF
     if (subWins >= 5) grantBadge(userEmail, 'b2'); // Sub Artist
     if (hasRound1KO) grantBadge(userEmail, 'b3'); // Flashbang
@@ -137,7 +165,6 @@ export async function awardEventBadges(targetDate) {
         grantBadge(userEmail, 'b4'); // Decision Merchant
     }
 
-    // 💥 THE BOSS FIX: Count totalWins instead of picks to protect against No Contests
     if (isPerfectCard && totalWins === totalEventFights && totalEventFights >= 5) {
         grantBadge(userEmail, 'b5'); // The Boss
     }
@@ -146,7 +173,6 @@ export async function awardEventBadges(targetDate) {
         grantBadge(userEmail, 'b13'); // Whale Hunter
     }
 
-    // 💥 THE UNDERDOG FIX: They just need to correctly pick 2 underdogs!
     if (pickedUnderdogWins >= 2) {
         grantBadge(userEmail, 'b14'); // The Underdog
     }
@@ -195,20 +221,17 @@ export async function evaluateUserStreaks(userEmail) {
 
   const gradedPicks = picksData.filter(p => p.fights && p.fights.winner !== null);
   
-  // 🔍 CATCHING THE SILENT BAILOUT
   if (gradedPicks.length === 0) {
       console.log(`⚠️ WARNING: Found picks, but NO graded fights for ${userEmail}.`);
       return { success: true, message: 'No graded fights found for user.' };
   }
 
-  // 🎯 ANTI-SHUFFLE FIX: Sort by start time, but if timestamps are identical, sort by fight ID!
   gradedPicks.sort((a, b) => {
     const timeDiff = new Date(a.fights.start_time) - new Date(b.fights.start_time);
     if (timeDiff !== 0) return timeDiff;
     return String(a.fight_id).localeCompare(String(b.fight_id)); 
   });
 
-  // 💥 THE DEDUPLICATION FILTER (Stop multi-league double counting!)
   const uniqueGradedPicks = [];
   const seenFightIds = new Set();
   
@@ -225,11 +248,11 @@ export async function evaluateUserStreaks(userEmail) {
 
   // Loop over UNIQUE picks now
   uniqueGradedPicks.forEach(pick => {
-    // 🎯 STRING SAFETY FIX: Trim invisible spaces and convert to lowercase
-    const pickName = (pick.selected_fighter || "").trim().toLowerCase();
-    const winnerName = (pick.fights.winner || "").trim().toLowerCase();
+    
+    // 🎯 THE FIX: Use isFighterMatch to protect streaks from spelling variations!
+    const isWin = isFighterMatch(pick.fights.winner, pick.selected_fighter);
 
-    if (pickName === winnerName && pickName !== "") {
+    if (isWin) {
       currentWinStreak++;
       winningPicks.push(pick); 
       if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak;
@@ -238,10 +261,8 @@ export async function evaluateUserStreaks(userEmail) {
     }
   });
 
-  // 🔍 DEBUG LOG: This will tell you EXACTLY what the computer sees!
   console.log(`   ➔ ${userEmail} | Unique Real-World Fights Picked: ${uniqueGradedPicks.length} | True Max Streak: ${maxWinStreak}`);
 
-  // 🎯 Fetch existing badges so we don't try to award them twice
   const { data: existingBadgesData } = await supabase
       .from('user_badges')
       .select('badge_id')
@@ -250,7 +271,6 @@ export async function evaluateUserStreaks(userEmail) {
   const existingBadgesSet = new Set(existingBadgesData?.map(b => b.badge_id) || []);
   const newlyEarnedBadges = [];
 
-  // 💥 THE NUCLEAR FIX
   const grantBadge = (badgeId) => {
       if (!existingBadgesSet.has(badgeId)) {
           newlyEarnedBadges.push({ 
