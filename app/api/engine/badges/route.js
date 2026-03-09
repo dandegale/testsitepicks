@@ -13,8 +13,6 @@ export async function GET() {
   );
 
   try {
-    // 1. Find ANY fight in the database that has been graded (winner is not null)
-    // 🚨 Notice: We are selecting 'start_time' now, NOT 'event_id'
     const { data: recentFights, error: fightError } = await supabase
         .from('fights')
         .select('start_time, id, winner')
@@ -30,18 +28,23 @@ export async function GET() {
         return NextResponse.json({ message: 'No graded fights found in the entire database. Run your scraper first!' });
     }
 
-    // 2. Extract the exact DATE (YYYY-MM-DD) from the most recent graded fight
-    const targetDate = recentFights[0].start_time.split('T')[0]; 
-
-    // Filter recentFights to ONLY include fights that happened on that exact same day
-    const targetEventFights = recentFights.filter(f => f.start_time.startsWith(targetDate));
+    // 🎯 THE MIDNIGHT BUG FIX: Use a 48-hour time window instead of a strict Date string
+    const latestFightTime = new Date(recentFights[0].start_time).getTime();
     
-    // 3. RUN THE EVENT BADGE ENGINE (Passing the Date instead of an ID)
-    console.log(`🎯 Running Event Badges for Date: ${targetDate} (${targetEventFights.length} fights)`);
-    const eventBadgeResult = await awardEventBadges(targetDate);
+    const targetEventFights = recentFights.filter(f => {
+        const fightTime = new Date(f.start_time).getTime();
+        // If the fight happened within 48 hours of the most recent fight, it's part of the same event!
+        return Math.abs(latestFightTime - fightTime) < (48 * 60 * 60 * 1000);
+    });
+    
+    // We extract the IDs of all the fights in this event
+    const targetFightIds = targetEventFights.map(f => f.id);
+
+    // 3. RUN THE EVENT BADGE ENGINE (Passing the Array of IDs instead of a date string)
+    console.log(`🎯 Running Event Badges for ${targetFightIds.length} fights in this event window.`);
+    const eventBadgeResult = await awardEventBadges(targetFightIds);
 
     // 4. Find all users who made picks on these specific fights
-    const targetFightIds = targetEventFights.map(f => f.id);
     const { data: recentPicks } = await supabase
         .from('picks')
         .select('user_id')

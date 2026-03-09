@@ -1,13 +1,16 @@
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
+dotenv.config({ path: '.env' });
+
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-  // Use Service Role for backend engine overrides
-);
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 // ============================================================================
-// 🎯 BULLETPROOF NAME MATCHING ENGINE (Keeps Badges in sync with Payouts)
+// 🎯 BULLETPROOF NAME MATCHING ENGINE
 // ============================================================================
 const NAME_FIXES = {
     "roass": "rosas",         
@@ -39,23 +42,21 @@ const isFighterMatch = (name1, name2) => {
 };
 // ============================================================================
 
-// 👇 CHANGED: Now accepts targetDate instead of eventId
-export async function awardEventBadges(targetDate) {
-  console.log(`🏆 Running Badge Engine for Date: ${targetDate}`);
+// 👇 CHANGED: Now accepts an array of targetFightIds instead of a date string!
+export async function awardEventBadges(targetFightIds) {
+  console.log(`🏆 Running Badge Engine for ${targetFightIds.length} event fights...`);
 
-  // 1. Get all graded fights for this date
+  // 1. Get all graded fights for these IDs
   const { data: fights } = await supabase
     .from('fights')
     .select('*')
-    .like('start_time', `${targetDate}%`) 
+    .in('id', targetFightIds) 
     .not('winner', 'is', null);
 
   if (!fights || fights.length === 0) return { success: true, message: 'No graded fights found.' };
 
-  const fightIds = fights.map(f => f.id);
   const totalEventFights = fights.length;
 
-  // 2. ADVANCED ODDS TRACKING: Find the biggest underdog AND all winning underdogs
   let biggestUnderdogFightId = null;
   let highestOdds = 0;
   const winningUnderdogFightIds = new Set();
@@ -76,19 +77,16 @@ export async function awardEventBadges(targetDate) {
       if (isUnderdogWin) winningUnderdogFightIds.add(f.id);
   });
 
-  // 3. Get all picks for these fights
   const { data: picks } = await supabase
     .from('picks')
     .select('*')
-    .in('fight_id', fightIds);
+    .in('fight_id', targetFightIds);
 
   if (!picks || picks.length === 0) return { success: true, message: 'No picks found for this event.' };
 
-  // 4. Group picks by user EMAIL (user_id) - 💥 DEDUPLICATION FIX
   const userPicks = {};
   picks.forEach(pick => {
     if (!userPicks[pick.user_id]) userPicks[pick.user_id] = {};
-    // Overwrites duplicate fight_ids. They only get 1 vote per real-world fight!
     userPicks[pick.user_id][pick.fight_id] = pick;
   });
 
@@ -117,7 +115,6 @@ export async function awardEventBadges(targetDate) {
       }
   };
 
-  // 5. THE MATRIX: Evaluate each user's performance
   for (const [userEmail, uPicksObject] of Object.entries(userPicks)) {
     
     const uPicks = Object.values(uPicksObject); 
@@ -134,12 +131,12 @@ export async function awardEventBadges(targetDate) {
     uPicks.forEach(pick => {
       const fight = fights.find(f => f.id === pick.fight_id);
       if (fight) {
-          // 🎯 THE FIX: Use isFighterMatch to determine if the pick won!
           if (isFighterMatch(fight.winner, pick.selected_fighter)) {
             totalWins++;
             
             const method = fight.method ? fight.method.toUpperCase() : '';
-            const round = parseInt(fight.round, 10);
+            // 🎯 SAFETY FIX: Defaults to 0 instead of NaN if database round is missing
+            const round = parseInt(fight.round, 10) || 0; 
 
             if (method.includes('KO') || method.includes('TKO') || method.includes('KNOCKOUT')) {
                 koWins++;
@@ -178,7 +175,6 @@ export async function awardEventBadges(targetDate) {
     }
   }
 
-  // 6. Save the earned badges to the database
   if (newlyEarnedBadges.length > 0) {
     console.log(`🏆 Found ${newlyEarnedBadges.length} Event Badges to award! Saving to DB...`);
     
@@ -198,7 +194,7 @@ export async function awardEventBadges(targetDate) {
 }
 
 // ----------------------------------------------------------------------------------
-// 🎯 STREAK ENGINE (Checks Career History via Email)
+// 🎯 STREAK ENGINE 
 // ----------------------------------------------------------------------------------
 
 export async function evaluateUserStreaks(userEmail) {
@@ -246,10 +242,7 @@ export async function evaluateUserStreaks(userEmail) {
   let maxWinStreak = 0; 
   const winningPicks = [];
 
-  // Loop over UNIQUE picks now
   uniqueGradedPicks.forEach(pick => {
-    
-    // 🎯 THE FIX: Use isFighterMatch to protect streaks from spelling variations!
     const isWin = isFighterMatch(pick.fights.winner, pick.selected_fighter);
 
     if (isWin) {
@@ -257,7 +250,7 @@ export async function evaluateUserStreaks(userEmail) {
       winningPicks.push(pick); 
       if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak;
     } else {
-      currentWinStreak = 0; // Streak broken!
+      currentWinStreak = 0; 
     }
   });
 
