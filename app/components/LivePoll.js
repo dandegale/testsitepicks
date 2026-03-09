@@ -5,31 +5,40 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-export default function LivePoll({ userEmail }) {
+export default function LivePoll() {
     const [poll, setPoll] = useState(null);
     const [votes, setVotes] = useState([]);
     const [userVote, setUserVote] = useState(null);
     const [timeLeft, setTimeLeft] = useState('');
+    const [myEmail, setMyEmail] = useState(null);
 
     useEffect(() => {
-        fetchActivePoll();
+        // 1. Grab the user directly from Supabase to ensure we have the email
+        const initPoll = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && user.email) {
+                setMyEmail(user.email);
+                fetchActivePoll(user.email);
+            }
+        };
+
+        initPoll();
         
+        // 2. Real-time listener for new votes
         const channel = supabase.channel('live-votes')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'poll_votes' }, (payload) => {
-                // Ensure we only update votes for the currently displayed poll
                 setVotes(current => {
-                    if (poll && payload.new.poll_id === poll.id) {
-                        return [...current, payload.new];
-                    }
-                    return current;
+                    // Only update if it belongs to the current poll
+                    if (current.length > 0 && current[0].poll_id !== payload.new.poll_id) return current;
+                    return [...current, payload.new];
                 });
             })
             .subscribe();
 
         return () => supabase.removeChannel(channel);
-    }, [poll?.id]);
+    }, []);
 
-    // ⏳ THE TIMER ENGINE: Calculates time remaining and self-destructs when 0
+    // ⏳ THE TIMER ENGINE
     useEffect(() => {
         if (!poll || !poll.expires_at) return;
 
@@ -40,13 +49,11 @@ export default function LivePoll({ userEmail }) {
 
             if (distance <= 0) {
                 clearInterval(timer);
-                setPoll(null); // 💥 Destroys the component from the UI!
+                setPoll(null); // Destroys the component from the UI
             } else {
                 const h = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
                 const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
                 const s = Math.floor((distance % (1000 * 60)) / 1000);
-                
-                // Formats it neatly, omitting hours if less than 1 hour remains
                 setTimeLeft(h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`);
             }
         }, 1000);
@@ -54,52 +61,62 @@ export default function LivePoll({ userEmail }) {
         return () => clearInterval(timer);
     }, [poll]);
 
-    async function fetchActivePoll() {
+    async function fetchActivePoll(userEmail) {
         const now = new Date().toISOString();
         
         const { data } = await supabase
             .from('polls')
             .select('*')
             .eq('is_active', true)
-            .gte('expires_at', now) // 🎯 Supabase strictly filters out expired polls
+            .gte('expires_at', now)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle(); 
             
         if (data) {
             setPoll(data);
-            fetchVotes(data.id);
-        } else {
-            setPoll(null);
+            fetchVotes(data.id, userEmail);
         }
     }
 
-    async function fetchVotes(pollId) {
+    async function fetchVotes(pollId, userEmail) {
         const { data } = await supabase.from('poll_votes').select('*').eq('poll_id', pollId);
         setVotes(data || []);
-        const mine = data?.find(v => v.user_email === userEmail);
-        if (mine) setUserVote(mine.selected_option);
+        
+        if (userEmail) {
+            const mine = data?.find(v => v.user_email === userEmail);
+            if (mine) setUserVote(mine.selected_option);
+        }
     }
 
     const castVote = async (option) => {
-        if (userVote || !userEmail) return;
+        if (userVote) return;
+        if (!myEmail) {
+            console.error("No user email found. Cannot vote.");
+            alert("You must be logged in to vote!");
+            return;
+        }
         
+        // Optimistic UI update
         setUserVote(option);
-        setVotes(current => [...current, { poll_id: poll.id, user_email: userEmail, selected_option: option }]);
+        setVotes(current => [...current, { poll_id: poll.id, user_email: myEmail, selected_option: option }]);
 
+        // Send to Database
         const { error } = await supabase.from('poll_votes').insert({ 
             poll_id: poll.id, 
-            user_email: userEmail, 
+            user_email: myEmail, 
             selected_option: option 
         });
 
         if (error) {
+            console.error("❌ Vote Database Error:", error.message);
+            alert("Vote failed to save. " + error.message);
+            // Revert optimistic update
             setUserVote(null);
-            setVotes(current => current.filter(v => v.user_email !== userEmail));
+            setVotes(current => current.filter(v => v.user_email !== myEmail));
         }
     };
 
-    // 🎯 If no poll exists OR the timer expired, it renders absolutely nothing!
     if (!poll) return null;
 
     return (
@@ -109,7 +126,6 @@ export default function LivePoll({ userEmail }) {
                     <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse"></span>
                     <h3 className="text-xs font-black text-white uppercase tracking-[0.2em]">Community Poll</h3>
                 </div>
-                {/* Display the Live Countdown */}
                 <div className="bg-gray-900 border border-gray-800 px-3 py-1 rounded-md">
                     <span className="text-[10px] font-mono text-pink-500 font-bold">{timeLeft || 'Loading...'}</span>
                 </div>
