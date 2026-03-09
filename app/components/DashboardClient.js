@@ -55,7 +55,6 @@ export default function DashboardClient({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showShowdown, setShowShowdown] = useState(false);
   
-  // 🎯 NEW DRAFT SELECTION STATE
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [draftStep, setDraftStep] = useState('select'); // 'select' | 'copy'
   const [draftTargetLeague, setDraftTargetLeague] = useState(null); // null = Global, UUID = Specific League
@@ -106,7 +105,6 @@ export default function DashboardClient({
 
       validFights.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
       
-      // Store future fight IDs so we know what matches can be "copied" over to leagues
       const futureIds = validFights.filter(f => !f.winner).map(f => String(f.id));
 
       let finalGroupedFights = {};
@@ -140,13 +138,17 @@ export default function DashboardClient({
       else currentEventName = cleanFights[0].event_name;
   }
 
-  // 🎯 FIXED: Proper User Data Initialization
+  // 🎯 DYNAMIC PICK FILTERING: This ensures picks don't look locked when switching contexts
+  const currentContextPicks = useMemo(() => {
+      return clientPicks.filter(p => String(p.league_id || null) === String(draftTargetLeague || null));
+  }, [clientPicks, draftTargetLeague]);
+
+
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.replace('/login'); return; }
 
     if (user && user.email) {
-        // Fetch ALL picks so the client knows what exists across global & leagues
         const { data: picksData } = await supabase.from('picks').select('*').eq('user_id', user.email); 
         if (picksData) {
             setClientPicks(picksData); 
@@ -174,7 +176,6 @@ export default function DashboardClient({
         const { data: profile } = await supabase.from('profiles').select('show_odds').eq('id', user.id).single();
         if (profile && profile.show_odds === true) setShowOdds(true);
 
-        // Resume an existing global draft if it exists in memory
         const savedPicks = localStorage.getItem(`draft_pending_global_${user.email}`);
         if (savedPicks) {
             try {
@@ -203,10 +204,10 @@ export default function DashboardClient({
       setDraftTargetLeague(targetLeagueId);
 
       if (targetLeagueId) {
-          // Check if they have ANY existing global picks for the upcoming fights
-          const globalUpcomingPicks = clientPicks.filter(p => p.league_id === null && upcomingFightIds.includes(String(p.fight_id)));
+          // Look for ANY picks made in *other* leagues for this upcoming event
+          const otherLeaguePicks = clientPicks.filter(p => p.league_id !== null && String(p.league_id) !== String(targetLeagueId) && upcomingFightIds.includes(String(p.fight_id)));
           
-          if (globalUpcomingPicks.length > 0) {
+          if (otherLeaguePicks.length > 0) {
               setDraftStep('copy');
               setSelectedLeagueForDraft(targetLeagueId);
               return;
@@ -225,22 +226,26 @@ export default function DashboardClient({
   };
 
   const handleCopyPicks = () => {
-      const globalUpcomingPicks = clientPicks.filter(p => p.league_id === null && upcomingFightIds.includes(String(p.fight_id)));
+      // Find picks from other leagues again
+      const otherLeaguePicks = clientPicks.filter(p => p.league_id !== null && String(p.league_id) !== String(selectedLeagueForDraft) && upcomingFightIds.includes(String(p.fight_id)));
       
-      // Safely slice down to 5 to enforce the League Roster constraint!
-      const copied = globalUpcomingPicks.slice(0, 5).map(p => ({
-          fightId: p.fight_id,
-          fighterName: p.selected_fighter,
-          odds: p.odds_at_pick,
-          leagueId: selectedLeagueForDraft
-      }));
-      
-      executeStartDraft(selectedLeagueForDraft, copied);
-      
-      if (globalUpcomingPicks.length > 5) {
-          setTimeout(() => showAlert("Roster Adjusted", "You had more than 5 Global picks. We copied the first 5 to fit the League roster rules."), 600);
+      if (otherLeaguePicks.length > 0) {
+          // Grab the ID of the first league we find that has picks, and isolate just that team
+          const sourceLeagueId = otherLeaguePicks[0].league_id;
+          const picksToCopy = otherLeaguePicks.filter(p => String(p.league_id) === String(sourceLeagueId));
+
+          // Map them to the new slip
+          const copied = picksToCopy.slice(0, 5).map(p => ({
+              fightId: p.fight_id,
+              fighterName: p.selected_fighter,
+              odds: p.odds_at_pick,
+              leagueId: selectedLeagueForDraft
+          }));
+          
+          executeStartDraft(selectedLeagueForDraft, copied);
+          setTimeout(() => setCustomAlert({ type: 'toast', title: 'Success', message: 'League roster copied to your slip!' }), 300);
       } else {
-          setTimeout(() => setCustomAlert({ type: 'toast', title: 'Success', message: 'Global picks copied to your slip!' }), 300);
+          executeStartDraft(selectedLeagueForDraft, []);
       }
   };
 
@@ -260,8 +265,8 @@ export default function DashboardClient({
 
     const contextId = draftTargetLeague || null;
 
-    // Check if they already saved this specific fight in the database for this specific context
-    const hasDbPickForFight = clientPicks.some(p => String(p.fight_id) === String(newPick.fightId) && p.league_id === contextId);
+    // Isolate checks to the CURRENT context so global picks don't break league drafting
+    const hasDbPickForFight = clientPicks.some(p => String(p.fight_id) === String(newPick.fightId) && String(p.league_id || null) === String(contextId || null));
     if (hasDbPickForFight) return showAlert("Duplicate Fight", "You already drafted a fighter from this match for this roster.");
 
     setPendingPicks(currentPicks => {
@@ -269,16 +274,15 @@ export default function DashboardClient({
         const existingIndex = currentPicks.findIndex(p => p.fightId === newPick.fightId);
         
         if (existingIndex >= 0) {
-            // Un-toggle if clicking the same fighter
             if (currentPicks[existingIndex].fighterName === newPick.fighterName) {
                 newPicks = currentPicks.filter((_, i) => i !== existingIndex);
             } else { 
                 newPicks[existingIndex] = newPick; 
             }
         } else {
-            // ENFORCE 5-PICK RULE FOR LEAGUES
+            // MATH: Check pending picks + already submitted picks for this context
             if (draftTargetLeague) {
-                const dbPicksCount = clientPicks.filter(p => p.league_id === draftTargetLeague && upcomingFightIds.includes(String(p.fight_id))).length;
+                const dbPicksCount = currentContextPicks.filter(p => upcomingFightIds.includes(String(p.fight_id))).length;
                 if ((currentPicks.length + dbPicksCount) >= 5) {
                     showAlert("Roster Full", "You can only select exactly 5 fighters for a league roster!");
                     return currentPicks;
@@ -306,12 +310,12 @@ export default function DashboardClient({
     });
   };
 
-  // 🎯 FINAL CONFIRMATION & SANITY CHECKS
+  // 🎯 FINAL CONFIRMATION
   const handleConfirmAllPicks = async () => {
     if (pendingPicks.length === 0) return;
 
     if (draftTargetLeague) {
-        const dbPicksCount = clientPicks.filter(p => p.league_id === draftTargetLeague && upcomingFightIds.includes(String(p.fight_id))).length;
+        const dbPicksCount = currentContextPicks.filter(p => upcomingFightIds.includes(String(p.fight_id))).length;
         if ((pendingPicks.length + dbPicksCount) !== 5) {
             return showAlert("Incomplete Roster", `League rosters require exactly 5 fighters. You have ${pendingPicks.length + dbPicksCount}/5.`);
         }
@@ -640,7 +644,7 @@ export default function DashboardClient({
                         <FightDashboard 
                             fights={cleanFights} 
                             groupedFights={cleanGroups} 
-                            userPicks={clientPicks} 
+                            userPicks={currentContextPicks} 
                             league_id={draftTargetLeague || null} 
                             onInteractionStart={handleInteraction}
                             onPickSelect={handlePickSelect} 
@@ -660,7 +664,7 @@ export default function DashboardClient({
                                 <div className="mb-4 pb-4 border-b border-gray-800 text-center">
                                     <p className="text-[10px] font-black uppercase tracking-widest text-teal-500">League Roster Capacity</p>
                                     <p className="text-2xl font-black italic text-white mt-1">
-                                        {pendingPicks.length + clientPicks.filter(p => p.league_id === draftTargetLeague && upcomingFightIds.includes(String(p.fight_id))).length} / 5
+                                        {pendingPicks.length + currentContextPicks.filter(p => upcomingFightIds.includes(String(p.fight_id))).length} / 5
                                     </p>
                                 </div>
                              )}
@@ -772,7 +776,7 @@ export default function DashboardClient({
                       <div className="mb-4 pb-4 border-b border-gray-800 text-center">
                           <p className="text-[10px] font-black uppercase tracking-widest text-teal-500">League Roster Capacity</p>
                           <p className="text-2xl font-black italic text-white mt-1">
-                              {pendingPicks.length + clientPicks.filter(p => p.league_id === draftTargetLeague && upcomingFightIds.includes(String(p.fight_id))).length} / 5
+                              {pendingPicks.length + currentContextPicks.filter(p => upcomingFightIds.includes(String(p.fight_id))).length} / 5
                           </p>
                       </div>
                   )}
@@ -794,7 +798,7 @@ export default function DashboardClient({
               <div className="bg-gray-950 border border-gray-800 rounded-3xl w-full max-w-md shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden animate-in zoom-in-95 duration-200">
                   <div className="p-6 border-b border-gray-900 flex justify-between items-center bg-black/40">
                       <h3 className="text-xl font-black italic uppercase tracking-tighter text-white">
-                          {draftStep === 'select' ? 'Where are you drafting?' : 'Copy Global Picks?'}
+                          {draftStep === 'select' ? 'Where are you drafting?' : 'Copy League Picks?'}
                       </h3>
                       <button onClick={() => { setShowDraftModal(false); setDraftStep('select'); }} className="text-gray-500 hover:text-white transition-colors bg-gray-900 rounded-full w-8 h-8 flex items-center justify-center">✕</button>
                   </div>
@@ -841,11 +845,11 @@ export default function DashboardClient({
                           <div className="space-y-4">
                               <div className="p-4 border border-pink-500/20 bg-pink-500/5 rounded-xl mb-6">
                                   <p className="text-sm text-gray-300 font-medium leading-relaxed">
-                                      You already have Global picks locked in for this upcoming event. Would you like to automatically copy them to this League roster?
+                                      You already have a 5-fighter roster locked in for another league. Would you like to automatically copy those picks to this League roster?
                                   </p>
                               </div>
                               <button onClick={handleCopyPicks} className="w-full py-4 bg-pink-600 text-white font-black uppercase tracking-widest text-xs rounded-xl hover:bg-pink-500 transition-colors shadow-[0_0_20px_rgba(236,72,153,0.3)]">
-                                  Copy Global Picks
+                                  Copy League Picks
                               </button>
                               <button onClick={() => executeStartDraft(selectedLeagueForDraft, [])} className="w-full py-4 bg-black text-gray-400 font-black uppercase tracking-widest text-xs rounded-xl hover:bg-gray-900 hover:text-white transition-colors border border-gray-800">
                                   Start Fresh
