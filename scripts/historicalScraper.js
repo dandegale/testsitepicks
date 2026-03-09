@@ -352,11 +352,11 @@ async function processFighter(fighterName) {
     }
 }
 
-// 5. BATCH RUNNER
+// 5. BATCH RUNNER WITH ZERO-POINT FILTER
 async function runBatch() {
     console.log("📥 Fetching current fighters from your database...");
     
-    // 1. Get all fighters from scheduled/past fights
+    // Step 1: Get all fighters from the fights table
     const { data: fights, error: fightsError } = await supabase
         .from('fights')
         .select('fighter_1_name, fighter_2_name');
@@ -372,30 +372,31 @@ async function runBatch() {
         if (fight.fighter_2_name) fighterSet.add(fight.fighter_2_name.trim());
     });
 
-    const allFighters = Array.from(fighterSet);
-
-    // 2. Fetch existing stats to see who is missing an age
-    console.log("📥 Checking existing historical stats for missing ages...");
-    const { data: existingStats, error: statsError } = await supabase
+    // Step 2: Check the historical stats table to see who ALREADY has points
+    const { data: completedStats, error: statsError } = await supabase
         .from('fighter_historical_stats')
-        .select('fighter_name, age'); // 🎯 Fetching age this time
+        .select('fighter_name, average_fantasy_points');
 
-    if (statsError) {
-        console.error("❌ Failed to fetch historical stats:", statsError.message);
-        return;
+    // Step 3: Filter the list! Keep ONLY fighters who have 0 points (or don't exist in the table yet)
+    const fightersWithPoints = new Set();
+    if (completedStats) {
+        completedStats.forEach(stat => {
+            if (stat.average_fantasy_points > 0) {
+                fightersWithPoints.add(stat.fighter_name.trim());
+            }
+        });
     }
 
-    // 3. Filter: Only keep fighters with null/undefined age, or who are completely missing
-    const fightersToProcess = allFighters.filter(fighterName => {
-        const statRecord = existingStats.find(s => s.fighter_name.toLowerCase() === fighterName.toLowerCase());
-        
-        // If they don't exist yet, OR if their age is null/missing, we need to scrape them
-        return !statRecord || statRecord.age === null || statRecord.age === undefined;
-    });
+    const fightersToProcess = Array.from(fighterSet).filter(name => !fightersWithPoints.has(name));
 
-    console.log(`📋 Found ${allFighters.length} total fighters attached to fights.`);
-    console.log(`⏩ Skipping fighters with existing age data...`);
-    console.log(`🎯 ${fightersToProcess.length} fighters missing age data. Commencing Historical Backfill...\n`);
+    console.log(`📊 Found ${fighterSet.size} total fighters attached to your events.`);
+    console.log(`✅ ${fightersWithPoints.size} fighters already have >0 points.`);
+    console.log(`🚀 ${fightersToProcess.length} fighters with 0 points to process. Commencing scan...\n`);
+
+    if (fightersToProcess.length === 0) {
+        console.log("🎉 All fighters have been successfully scored! Nothing to do.");
+        return;
+    }
 
     for (const fighter of fightersToProcess) {
         await processFighter(fighter);
@@ -403,7 +404,7 @@ async function runBatch() {
         await new Promise(r => setTimeout(r, 3000));
     }
     
-    console.log("🎉 ALL FIGHTERS UPDATED WITH MISSING DATA!");
+    console.log("🎉 ALL ZERO-POINT FIGHTERS UPDATED!");
 }
 
 runBatch();

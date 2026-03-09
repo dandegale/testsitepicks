@@ -13,6 +13,8 @@ import MobileNav from './MobileNav';
 import CreateLeagueModal from './CreateLeagueModal';
 import ShowdownModal from './ShowdownModal';
 import OnboardingModal from './OnboardingModal'; 
+// 🎯 NEW: Import the Live Poll Component!
+import LivePoll from './LivePoll'; 
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
@@ -138,7 +140,7 @@ export default function DashboardClient({
       else currentEventName = cleanFights[0].event_name;
   }
 
-  // 🎯 DYNAMIC PICK FILTERING: This ensures picks don't look locked when switching contexts
+  // 🎯 DYNAMIC PICK FILTERING
   const currentContextPicks = useMemo(() => {
       return clientPicks.filter(p => String(p.league_id || null) === String(draftTargetLeague || null));
   }, [clientPicks, draftTargetLeague]);
@@ -199,12 +201,10 @@ export default function DashboardClient({
       else setIsFocusMode(true);
   };
 
-  // 🎯 DRAFT ENGINE LOGIC
   const handleStartDraft = (targetLeagueId) => {
       setDraftTargetLeague(targetLeagueId);
 
       if (targetLeagueId) {
-          // Look for ANY picks made in *other* leagues for this upcoming event
           const otherLeaguePicks = clientPicks.filter(p => p.league_id !== null && String(p.league_id) !== String(targetLeagueId) && upcomingFightIds.includes(String(p.fight_id)));
           
           if (otherLeaguePicks.length > 0) {
@@ -226,15 +226,12 @@ export default function DashboardClient({
   };
 
   const handleCopyPicks = () => {
-      // Find picks from other leagues again
       const otherLeaguePicks = clientPicks.filter(p => p.league_id !== null && String(p.league_id) !== String(selectedLeagueForDraft) && upcomingFightIds.includes(String(p.fight_id)));
       
       if (otherLeaguePicks.length > 0) {
-          // Grab the ID of the first league we find that has picks, and isolate just that team
           const sourceLeagueId = otherLeaguePicks[0].league_id;
           const picksToCopy = otherLeaguePicks.filter(p => String(p.league_id) === String(sourceLeagueId));
 
-          // Map them to the new slip
           const copied = picksToCopy.slice(0, 5).map(p => ({
               fightId: p.fight_id,
               fighterName: p.selected_fighter,
@@ -258,14 +255,12 @@ export default function DashboardClient({
       setDraftTargetLeague(null);
   };
 
-  // 🎯 STRICT PICK VALIDATION
   const handlePickSelect = async (newPick) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return router.push('/login');
 
     const contextId = draftTargetLeague || null;
 
-    // Isolate checks to the CURRENT context so global picks don't break league drafting
     const hasDbPickForFight = clientPicks.some(p => String(p.fight_id) === String(newPick.fightId) && String(p.league_id || null) === String(contextId || null));
     if (hasDbPickForFight) return showAlert("Duplicate Fight", "You already drafted a fighter from this match for this roster.");
 
@@ -280,7 +275,6 @@ export default function DashboardClient({
                 newPicks[existingIndex] = newPick; 
             }
         } else {
-            // MATH: Check pending picks + already submitted picks for this context
             if (draftTargetLeague) {
                 const dbPicksCount = currentContextPicks.filter(p => upcomingFightIds.includes(String(p.fight_id))).length;
                 if ((currentPicks.length + dbPicksCount) >= 5) {
@@ -310,7 +304,6 @@ export default function DashboardClient({
     });
   };
 
-  // 🎯 FINAL CONFIRMATION
   const handleConfirmAllPicks = async () => {
     if (pendingPicks.length === 0) return;
 
@@ -678,6 +671,10 @@ export default function DashboardClient({
                          </div>
                     ) : (
                          <div className="space-y-8 w-full">
+                            
+                            {/* 🔴 LIVE POLL COMPONENT */}
+                            <LivePoll userEmail={userEmail} />
+
                             <div className="w-full bg-gray-950 border border-gray-900 rounded-xl overflow-hidden p-6 shadow-lg flex flex-col">
                                 <div className="flex justify-between items-center mb-6">
                                     <div>
