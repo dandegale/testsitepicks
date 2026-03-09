@@ -28,7 +28,6 @@ const getRarityTextStyle = (rarity) => {
     }
 };
 
-// 🎯 NAME FIXES DICTIONARY (Keeps League page in sync with the scraper)
 const NAME_FIXES = {
     "roass": "rosas",
     "sumudaerji": "mudaerji",
@@ -50,7 +49,6 @@ export default function LeaguePage() {
   const [showMobileSlip, setShowMobileSlip] = useState(false);
   
   const [showChampCelebration, setShowChampCelebration] = useState(false);
-  
   const [customAlert, setCustomAlert] = useState(null);
 
   const [expandedUserRoster, setExpandedUserRoster] = useState(null); 
@@ -87,11 +85,34 @@ export default function LeaguePage() {
     fetchLeagueData();
   }, [leagueId]);
 
+  // 🎯 SUPABASE REALTIME ENGINE: Instantly updates Leaderboard, UI, and Feed without refreshing!
+  useEffect(() => {
+      const liveChannel = supabase.channel(`league-${leagueId}-realtime`)
+          .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'fights' }, (payload) => {
+              setAllFights(prev => prev.map(f => String(f.id) === String(payload.new.id) ? payload.new : f));
+          })
+          .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'fighter_stats' }, (payload) => {
+              setFighterStats(prev => {
+                  const exists = prev.find(s => String(s.id) === String(payload.new.id));
+                  if (exists) return prev.map(s => String(s.id) === String(payload.new.id) ? payload.new : s);
+                  return [...prev, payload.new];
+              });
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'picks' }, (payload) => {
+              if (payload.eventType === 'INSERT') setAllLeaguePicks(prev => [...prev, payload.new]);
+              if (payload.eventType === 'DELETE') setAllLeaguePicks(prev => prev.filter(p => String(p.id) !== String(payload.old.id)));
+          })
+          .subscribe();
+
+      return () => {
+          supabase.removeChannel(liveChannel);
+      };
+  }, [leagueId]);
+
   const showAlert = (title, message) => {
       setCustomAlert({ type: 'alert', title, message });
   };
 
-  // 🎯 UPGRADED: BULLETPROOF MATCHING LOGIC
   const isFighterMatch = (pickName, statName) => {
       if (!pickName || !statName) return false;
       
@@ -110,7 +131,6 @@ export default function LeaguePage() {
       const cleanPick = sanitizeForMatch(pickName);
       const cleanStat = sanitizeForMatch(statName);
 
-      // Now it just looks for "aguilar" inside "jesussantosaguilar" - which works perfectly!
       return cleanPick.includes(statKey) || cleanStat.includes(pickKey);
   };
 
@@ -264,7 +284,7 @@ export default function LeaguePage() {
               odds: pick.odds_at_pick,
               timestamp: pick.created_at,
               fight_context: fight ? `${fight.fighter_1_name} vs ${fight.fighter_2_name}` : 'Unknown Fight',
-              result: fight?.winner ? (fight.winner === pick.selected_fighter ? 'WIN' : 'LOSS') : 'PENDING'
+              result: fight?.winner ? (isFighterMatch(pick.selected_fighter, fight.winner) ? 'WIN' : 'LOSS') : 'PENDING'
           };
       });
       return feed.filter(f => f.user !== "Unknown").sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -944,6 +964,12 @@ export default function LeaguePage() {
         <div className="border-b border-gray-800 bg-gray-950 sticky top-16 z-40">
             <div className="max-w-7xl mx-auto px-4 md:px-6 flex gap-2 md:gap-0 overflow-x-auto scrollbar-hide">
                 <button 
+                    onClick={() => setActiveTab('live')}
+                    className={`whitespace-nowrap px-4 md:px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 flex items-center gap-2 ${activeTab === 'live' ? 'border-red-600 text-white bg-red-900/20' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}
+                >
+                    <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse"></span> LIVE
+                </button>
+                <button 
                     onClick={() => setActiveTab('card')}
                     className={`whitespace-nowrap px-4 md:px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'card' ? 'border-pink-600 text-white bg-gray-900' : 'border-transparent text-gray-500 hover:text-white hover:bg-gray-900/50'}`}
                 >
@@ -984,6 +1010,100 @@ export default function LeaguePage() {
                 
                 <div className="lg:col-span-2 transition-all w-full min-w-0">
                     
+                    {/* 🔴 NEW LIVE TRACKER TAB (With Inlined WebSockets!) */}
+                    {activeTab === 'live' && (
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
+                            <div className="flex items-center gap-3 mb-6">
+                                <span className="w-3 h-3 rounded-full bg-red-500 animate-pulse drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]"></span>
+                                <h2 className="text-2xl font-black uppercase italic tracking-tighter text-white">Live Event Tracker</h2>
+                            </div>
+
+                            {currentEventFights.length === 0 ? (
+                                <div className="p-12 border border-gray-800 rounded-xl text-center text-gray-500 font-bold uppercase tracking-widest">
+                                    No active fights found for this event. Check back on fight night.
+                                </div>
+                            ) : (
+                                currentEventFights.map(fight => {
+                                    // Live stats pull from the magically updating state array!
+                                    const f1Stats = fighterStats.find(s => String(s.fight_id) === String(fight.id) && isFighterMatch(s.fighter_name, fight.fighter_1_name));
+                                    const f2Stats = fighterStats.find(s => String(s.fight_id) === String(fight.id) && isFighterMatch(s.fighter_name, fight.fighter_2_name));
+                                    
+                                    // Get Custom Points based on your League's Scoring Format!
+                                    const f1Pts = getCustomPoints({ odds_at_pick: 0 }, f1Stats, fight, league?.scoring_format);
+                                    const f2Pts = getCustomPoints({ odds_at_pick: 0 }, f2Stats, fight, league?.scoring_format);
+
+                                    return (
+                                        <div key={fight.id} className="p-5 bg-gray-900/80 backdrop-blur-sm rounded-xl border border-gray-800 shadow-xl overflow-hidden relative">
+                                            
+                                            {/* Live Status Header */}
+                                            <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-800">
+                                                <span className="text-xs font-black text-gray-500 tracking-widest uppercase">{fight.weightclass}</span>
+                                                {fight.winner ? (
+                                                    <span className="text-[10px] font-black bg-teal-900/30 border border-teal-500/50 text-teal-400 px-3 py-1 rounded-full uppercase tracking-widest">
+                                                        FINAL • {fight.method} (R{fight.round})
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] font-black bg-red-900/30 border border-red-500/50 text-red-500 px-3 py-1 rounded-full uppercase tracking-widest animate-pulse">
+                                                        🔴 ACTION LIVE
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <div className="flex justify-between items-start">
+                                                
+                                                {/* Fighter 1 */}
+                                                <div className={`flex flex-col w-[42%] ${fight.winner === fight.fighter_1_name ? 'text-teal-400' : 'text-white'}`}>
+                                                    <span className="font-black text-lg md:text-xl truncate leading-none mb-3">{fight.fighter_1_name}</span>
+                                                    {f1Stats ? (
+                                                        <div className="text-xs text-gray-400 space-y-2 bg-black/50 p-4 rounded-lg border border-gray-800">
+                                                            <div className="flex justify-between font-black text-pink-500 border-b border-gray-800 pb-2 mb-2">
+                                                                <span>LEAGUE PTS</span>
+                                                                <span className="text-sm">{f1Pts.toFixed(1)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between"><span>Sig. Strikes</span><span className="text-white font-mono">{f1Stats.sig_strikes || 0}</span></div>
+                                                            <div className="flex justify-between"><span>Knockdowns</span><span className="text-white font-mono">{f1Stats.knockdowns || 0}</span></div>
+                                                            <div className="flex justify-between"><span>Takedowns</span><span className="text-white font-mono">{f1Stats.takedowns || 0}</span></div>
+                                                            <div className="flex justify-between"><span>Sub Attempts</span><span className="text-white font-mono">{f1Stats.sub_attempts || 0}</span></div>
+                                                            <div className="flex justify-between"><span>Control Time</span><span className="text-white font-mono">{f1Stats.control_time_seconds || 0}s</span></div>
+                                                        </div>
+                                                    ) : (
+                                                        <p className="text-xs text-gray-600 italic mt-2">Awaiting stats...</p>
+                                                    )}
+                                                </div>
+
+                                                {/* VS Badge */}
+                                                <div className="w-[16%] flex justify-center items-center mt-8">
+                                                    <span className="text-xl font-black text-gray-700 italic">VS</span>
+                                                </div>
+
+                                                {/* Fighter 2 */}
+                                                <div className={`flex flex-col w-[42%] text-right ${fight.winner === fight.fighter_2_name ? 'text-teal-400' : 'text-white'}`}>
+                                                    <span className="font-black text-lg md:text-xl truncate leading-none mb-3">{fight.fighter_2_name}</span>
+                                                    {f2Stats ? (
+                                                        <div className="text-xs text-gray-400 space-y-2 bg-black/50 p-4 rounded-lg border border-gray-800 text-left">
+                                                            <div className="flex justify-between font-black text-pink-500 border-b border-gray-800 pb-2 mb-2">
+                                                                <span>LEAGUE PTS</span>
+                                                                <span className="text-sm text-right w-full">{f2Pts.toFixed(1)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between"><span>Sig. Strikes</span><span className="text-white font-mono">{f2Stats.sig_strikes || 0}</span></div>
+                                                            <div className="flex justify-between"><span>Knockdowns</span><span className="text-white font-mono">{f2Stats.knockdowns || 0}</span></div>
+                                                            <div className="flex justify-between"><span>Takedowns</span><span className="text-white font-mono">{f2Stats.takedowns || 0}</span></div>
+                                                            <div className="flex justify-between"><span>Sub Attempts</span><span className="text-white font-mono">{f2Stats.sub_attempts || 0}</span></div>
+                                                            <div className="flex justify-between"><span>Control Time</span><span className="text-white font-mono">{f2Stats.control_time_seconds || 0}s</span></div>
+                                                        </div>
+                                                    ) : (
+                                                        <p className="text-xs text-gray-600 italic mt-2 text-right">Awaiting stats...</p>
+                                                    )}
+                                                </div>
+
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                    )}
+
                     {activeTab === 'card' && (
                         <>
                             <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
@@ -1614,12 +1734,12 @@ export default function LeaguePage() {
           <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm lg:hidden flex items-end">
             <div className="w-full bg-gray-950 rounded-t-3xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300 max-h-[90vh]">
                <div className="p-6 border-b border-gray-800 flex justify-between items-center shrink-0">
-                  <div>
+                 <div>
                     <h3 className="font-black italic text-xl text-white uppercase tracking-tighter">Fantasy Roster</h3>
                     <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">
                         {combinedRoster.length === 5 && pendingPicks.length === 0 ? 'Your picks are secured' : 'Select exactly 5 fighters'}
                     </p>
-                  </div>
+                 </div>
                   <button onClick={() => setShowMobileSlip(false)} className="text-gray-500 hover:text-white p-2 text-xs font-bold uppercase tracking-widest bg-gray-900 rounded-lg">✕ Close</button>
                </div>
                <div className="p-6 overflow-y-auto custom-scrollbar pb-12">
