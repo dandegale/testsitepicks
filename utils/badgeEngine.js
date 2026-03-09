@@ -42,7 +42,6 @@ const isFighterMatch = (name1, name2) => {
 };
 // ============================================================================
 
-// 👇 CHANGED: Now accepts an array of targetFightIds instead of a date string!
 export async function awardEventBadges(targetFightIds) {
   console.log(`🏆 Running Badge Engine for ${targetFightIds.length} event fights...`);
 
@@ -84,6 +83,30 @@ export async function awardEventBadges(targetFightIds) {
 
   if (!picks || picks.length === 0) return { success: true, message: 'No picks found for this event.' };
 
+  // 🎯 THE LEAGUE-SPECIFIC TRACKER: Track submission losses strictly by League ID
+  const leagueSubLosses = {}; 
+  
+  picks.forEach(pick => {
+      if (!pick.league_id) return; // Skip Global Feed picks for this specific badge
+      
+      const fight = fights.find(f => f.id === pick.fight_id);
+      if (fight && fight.winner) {
+          const isWin = isFighterMatch(fight.winner, pick.selected_fighter);
+          if (!isWin) {
+              const method = fight.method ? fight.method.toUpperCase() : '';
+              if (method.includes('SUB') || method.includes('SUBMISSION')) {
+                  // Initialize the nested objects if they don't exist yet
+                  if (!leagueSubLosses[pick.league_id]) leagueSubLosses[pick.league_id] = {};
+                  if (!leagueSubLosses[pick.league_id][pick.user_id]) leagueSubLosses[pick.league_id][pick.user_id] = 0;
+                  
+                  // Add 1 submission loss to this user in this league
+                  leagueSubLosses[pick.league_id][pick.user_id]++;
+              }
+          }
+      }
+  });
+
+  // Group picks by user EMAIL for standard global badges
   const userPicks = {};
   picks.forEach(pick => {
     if (!userPicks[pick.user_id]) userPicks[pick.user_id] = {};
@@ -115,6 +138,7 @@ export async function awardEventBadges(targetFightIds) {
       }
   };
 
+  // Evaluate the STANDARD event badges
   for (const [userEmail, uPicksObject] of Object.entries(userPicks)) {
     
     const uPicks = Object.values(uPicksObject); 
@@ -135,7 +159,6 @@ export async function awardEventBadges(targetFightIds) {
             totalWins++;
             
             const method = fight.method ? fight.method.toUpperCase() : '';
-            // 🎯 SAFETY FIX: Defaults to 0 instead of NaN if database round is missing
             const round = parseInt(fight.round, 10) || 0; 
 
             if (method.includes('KO') || method.includes('TKO') || method.includes('KNOCKOUT')) {
@@ -173,6 +196,25 @@ export async function awardEventBadges(targetFightIds) {
     if (pickedUnderdogWins >= 2) {
         grantBadge(userEmail, 'b14'); // The Underdog
     }
+  }
+
+  // 🎯 EVALUATE THE "2-3 YEARS NEEDED" LEAGUE BADGE
+  for (const [leagueId, userCounts] of Object.entries(leagueSubLosses)) {
+      let maxLeagueSubs = 0;
+      
+      // Find what the highest number of sub losses was in this specific league
+      for (const count of Object.values(userCounts)) {
+          if (count > maxLeagueSubs) maxLeagueSubs = count;
+      }
+
+      // If someone actually got submitted (max > 0), give the badge to the highest scorer(s)
+      if (maxLeagueSubs > 0) {
+          for (const [userEmail, count] of Object.entries(userCounts)) {
+              if (count === maxLeagueSubs) {
+                  grantBadge(userEmail, 'b17'); // 2-3 Years Needed
+              }
+          }
+      }
   }
 
   if (newlyEarnedBadges.length > 0) {
