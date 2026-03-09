@@ -55,6 +55,12 @@ export default function DashboardClient({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showShowdown, setShowShowdown] = useState(false);
   
+  // 🎯 NEW DRAFT SELECTION STATE
+  const [showDraftModal, setShowDraftModal] = useState(false);
+  const [draftStep, setDraftStep] = useState('select'); // 'select' | 'copy'
+  const [draftTargetLeague, setDraftTargetLeague] = useState(null); // null = Global, UUID = Specific League
+  const [selectedLeagueForDraft, setSelectedLeagueForDraft] = useState(null); 
+
   const [showOdds, setShowOdds] = useState(false); 
   const [clientPicks, setClientPicks] = useState(myPicks || []);
   
@@ -75,9 +81,7 @@ export default function DashboardClient({
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        router.replace('/login');
-      }
+      if (!session) router.replace('/login');
     };
     checkAuth();
   }, [router]);
@@ -86,13 +90,11 @@ export default function DashboardClient({
 
   const topPublicLeagues = useMemo(() => {
       if (!publicLeagues) return [];
-      return [...publicLeagues]
-          .sort((a, b) => (b.memberCount || 0) - (a.memberCount || 0))
-          .slice(0, 3);
+      return [...publicLeagues].sort((a, b) => (b.memberCount || 0) - (a.memberCount || 0)).slice(0, 3);
   }, [publicLeagues]);
 
-  const { cleanFights, cleanGroups } = useMemo(() => {
-      if (!fights) return { cleanFights: [], cleanGroups: {} };
+  const { cleanFights, cleanGroups, upcomingFightIds } = useMemo(() => {
+      if (!fights) return { cleanFights: [], cleanGroups: {}, upcomingFightIds: [] };
       const now = new Date().getTime();
       const TWELVE_HOURS = 12 * 60 * 60 * 1000;
       
@@ -103,6 +105,9 @@ export default function DashboardClient({
       });
 
       validFights.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+      
+      // Store future fight IDs so we know what matches can be "copied" over to leagues
+      const futureIds = validFights.filter(f => !f.winner).map(f => String(f.id));
 
       let finalGroupedFights = {};
       const tempGroups = [];
@@ -125,49 +130,33 @@ export default function DashboardClient({
           finalGroupedFights[title] = [...bucket].reverse();
       });
 
-      return { cleanFights: validFights, cleanGroups: finalGroupedFights };
+      return { cleanFights: validFights, cleanGroups: finalGroupedFights, upcomingFightIds: futureIds };
   }, [fights]);
 
-  // 🎯 THE FIX: Smarter Event Name Extraction
-  // Checks the fights array for a descriptive event name instead of grabbing generic API tags
   let currentEventName = mainEvent?.event_name || safeEventName.split('(')[0] || "Upcoming Event";
   if (cleanFights && cleanFights.length > 0) {
       const validFight = cleanFights.find(f => f.event_name && f.event_name.toUpperCase() !== 'MMA' && f.event_name.toUpperCase() !== 'UFC');
-      if (validFight) {
-          currentEventName = validFight.event_name;
-      } else {
-          currentEventName = cleanFights[0].event_name;
-      }
+      if (validFight) currentEventName = validFight.event_name;
+      else currentEventName = cleanFights[0].event_name;
   }
 
+  // 🎯 FIXED: Proper User Data Initialization
   const fetchUserData = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-        router.replace('/login');
-        return; 
-    }
+    if (!user) { router.replace('/login'); return; }
 
     if (user && user.email) {
-        const savedPicks = localStorage.getItem(`draft_pending_global_${user.email}`);
-        if (savedPicks) {
-            try {
-                const parsed = JSON.parse(savedPicks);
-                if (parsed.length > 0) {
-                    setPendingPicks(parsed);
-                    setIsFocusMode(true);
-                }
-            } catch(e) {}
-        }
-
-        const { data: picksData } = await supabase.from('picks').select('*').eq('user_id', user.email).is('league_id', null); 
+        // Fetch ALL picks so the client knows what exists across global & leagues
+        const { data: picksData } = await supabase.from('picks').select('*').eq('user_id', user.email); 
         if (picksData) {
             setClientPicks(picksData); 
+            
+            const globalPicks = picksData.filter(p => p.league_id === null);
             const { data: results } = await supabase.from('fights').select('id, winner').not('winner', 'is', null);
             if (results) {
                 let w = 0; let l = 0;
                 const processedFightIds = new Set();
-                picksData.forEach(p => {
+                globalPicks.forEach(p => {
                     if (processedFightIds.has(p.fight_id)) return;
                     const fight = results.find(f => f.id === p.fight_id);
                     if (fight && fight.winner) {
@@ -184,49 +173,123 @@ export default function DashboardClient({
 
         const { data: profile } = await supabase.from('profiles').select('show_odds').eq('id', user.id).single();
         if (profile && profile.show_odds === true) setShowOdds(true);
+
+        // Resume an existing global draft if it exists in memory
+        const savedPicks = localStorage.getItem(`draft_pending_global_${user.email}`);
+        if (savedPicks) {
+            try {
+                const parsed = JSON.parse(savedPicks);
+                if (parsed.length > 0) {
+                    setDraftTargetLeague(null);
+                    setIsDraftMode(true);
+                    setPendingPicks(parsed);
+                    setIsFocusMode(true);
+                }
+            } catch(e) {}
+        }
     }
     setIsCheckingAuth(false);
   };
 
   useEffect(() => { fetchUserData(); }, []);
 
-  const handleInteraction = () => setIsFocusMode(true);
+  const handleInteraction = () => {
+      if (!isDraftMode) setShowDraftModal(true);
+      else setIsFocusMode(true);
+  };
 
+  // 🎯 DRAFT ENGINE LOGIC
+  const handleStartDraft = (targetLeagueId) => {
+      setDraftTargetLeague(targetLeagueId);
+
+      if (targetLeagueId) {
+          // Check if they have ANY existing global picks for the upcoming fights
+          const globalUpcomingPicks = clientPicks.filter(p => p.league_id === null && upcomingFightIds.includes(String(p.fight_id)));
+          
+          if (globalUpcomingPicks.length > 0) {
+              setDraftStep('copy');
+              setSelectedLeagueForDraft(targetLeagueId);
+              return;
+          }
+      }
+      executeStartDraft(targetLeagueId, []);
+  };
+
+  const executeStartDraft = (leagueId, initialPicks = []) => {
+      setDraftTargetLeague(leagueId);
+      setPendingPicks(initialPicks);
+      setIsDraftMode(true);
+      setIsFocusMode(true);
+      setShowDraftModal(false);
+      setDraftStep('select');
+  };
+
+  const handleCopyPicks = () => {
+      const globalUpcomingPicks = clientPicks.filter(p => p.league_id === null && upcomingFightIds.includes(String(p.fight_id)));
+      
+      // Safely slice down to 5 to enforce the League Roster constraint!
+      const copied = globalUpcomingPicks.slice(0, 5).map(p => ({
+          fightId: p.fight_id,
+          fighterName: p.selected_fighter,
+          odds: p.odds_at_pick,
+          leagueId: selectedLeagueForDraft
+      }));
+      
+      executeStartDraft(selectedLeagueForDraft, copied);
+      
+      if (globalUpcomingPicks.length > 5) {
+          setTimeout(() => showAlert("Roster Adjusted", "You had more than 5 Global picks. We copied the first 5 to fit the League roster rules."), 600);
+      } else {
+          setTimeout(() => setCustomAlert({ type: 'toast', title: 'Success', message: 'Global picks copied to your slip!' }), 300);
+      }
+  };
+
+  const handleCancelDraft = async () => {
+      setIsDraftMode(false);
+      setIsFocusMode(false);
+      setPendingPicks([]);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) localStorage.removeItem(`draft_pending_${draftTargetLeague || 'global'}_${user.email}`);
+      setDraftTargetLeague(null);
+  };
+
+  // 🎯 STRICT PICK VALIDATION
   const handlePickSelect = async (newPick) => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-        router.push('/login');
-        return;
-    }
+    if (!user) return router.push('/login');
 
-    const hasDbPickForFight = clientPicks.some(p => String(p.fight_id) === String(newPick.fightId));
-    if (hasDbPickForFight) {
-        return showAlert("Duplicate Fight", "You already drafted a fighter from this match.");
-    }
+    const contextId = draftTargetLeague || null;
+
+    // Check if they already saved this specific fight in the database for this specific context
+    const hasDbPickForFight = clientPicks.some(p => String(p.fight_id) === String(newPick.fightId) && p.league_id === contextId);
+    if (hasDbPickForFight) return showAlert("Duplicate Fight", "You already drafted a fighter from this match for this roster.");
 
     setPendingPicks(currentPicks => {
         let newPicks = [...currentPicks];
         const existingIndex = currentPicks.findIndex(p => p.fightId === newPick.fightId);
         
         if (existingIndex >= 0) {
-            const existingPick = currentPicks[existingIndex];
-            if (existingPick.fighterName === newPick.fighterName) {
+            // Un-toggle if clicking the same fighter
+            if (currentPicks[existingIndex].fighterName === newPick.fighterName) {
                 newPicks = currentPicks.filter((_, i) => i !== existingIndex);
             } else { 
                 newPicks[existingIndex] = newPick; 
             }
         } else {
+            // ENFORCE 5-PICK RULE FOR LEAGUES
+            if (draftTargetLeague) {
+                const dbPicksCount = clientPicks.filter(p => p.league_id === draftTargetLeague && upcomingFightIds.includes(String(p.fight_id))).length;
+                if ((currentPicks.length + dbPicksCount) >= 5) {
+                    showAlert("Roster Full", "You can only select exactly 5 fighters for a league roster!");
+                    return currentPicks;
+                }
+            }
             newPicks = [...currentPicks, newPick];
         }
         
-        if (newPicks.length === 0) {
-            setIsFocusMode(false);
-            setShowMobileSlip(false);
-        } else {
-            setIsFocusMode(true); 
-        }
+        if (newPicks.length > 0) setIsFocusMode(true); 
 
-        localStorage.setItem(`draft_pending_global_${user.email}`, JSON.stringify(newPicks));
+        localStorage.setItem(`draft_pending_${draftTargetLeague || 'global'}_${user.email}`, JSON.stringify(newPicks));
         return newPicks;
     });
   };
@@ -234,22 +297,26 @@ export default function DashboardClient({
   const handleRemovePick = (fightId) => {
     setPendingPicks(current => {
         const updated = current.filter(p => p.fightId !== fightId);
-        
-        if (updated.length === 0) {
-            setShowMobileSlip(false);
-            setIsFocusMode(false);
-        }
+        if (updated.length === 0) setShowMobileSlip(false);
         
         supabase.auth.getUser().then(({ data: { user } }) => {
-            if (user) localStorage.setItem(`draft_pending_global_${user.email}`, JSON.stringify(updated));
+            if (user) localStorage.setItem(`draft_pending_${draftTargetLeague || 'global'}_${user.email}`, JSON.stringify(updated));
         });
-        
         return updated;
     });
   };
 
+  // 🎯 FINAL CONFIRMATION & SANITY CHECKS
   const handleConfirmAllPicks = async () => {
     if (pendingPicks.length === 0) return;
+
+    if (draftTargetLeague) {
+        const dbPicksCount = clientPicks.filter(p => p.league_id === draftTargetLeague && upcomingFightIds.includes(String(p.fight_id))).length;
+        if ((pendingPicks.length + dbPicksCount) !== 5) {
+            return showAlert("Incomplete Roster", `League rosters require exactly 5 fighters. You have ${pendingPicks.length + dbPicksCount}/5.`);
+        }
+    }
+
     setIsSubmitting(true);
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user || !user.email) { router.push('/login'); setIsSubmitting(false); return; }
@@ -261,35 +328,32 @@ export default function DashboardClient({
         fight_id: p.fightId, 
         selected_fighter: p.fighterName, 
         odds_at_pick: parseInt(p.odds, 10), 
-        league_id: p.leagueId || null
+        league_id: draftTargetLeague || null
     }));
     
-    const { error } = await supabase.from('picks').insert(picksToInsert); 
+    const { error } = await supabase.from('picks').upsert(picksToInsert, { onConflict: 'league_id, user_id, fight_id' }); 
 
     if (error) { 
         console.error("Submission Error:", error); 
         showAlert("Error", `Error saving picks: ${error.message}`); 
         setIsSubmitting(false); 
-    }
-    else { 
+    } else { 
         setPendingPicks([]); 
-        localStorage.removeItem(`draft_pending_global_${user.email}`);
+        localStorage.removeItem(`draft_pending_${draftTargetLeague || 'global'}_${user.email}`);
         setIsSubmitting(false); 
         setIsFocusMode(false); 
         setShowMobileSlip(false); 
+        setDraftTargetLeague(null);
+        setIsDraftMode(false);
         window.location.reload(); 
     }
   };
 
   const handleJoinPublicLeague = async (leagueId, leagueName) => {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user || !user.email) {
-          router.push('/login');
-          return;
-      }
+      if (authError || !user || !user.email) return router.push('/login');
 
       setJoiningLeagueId(leagueId);
-
       const { error: joinError } = await supabase.from('league_members').insert([{ league_id: leagueId, user_id: user.email }]);
 
       if (joinError) {
@@ -300,9 +364,7 @@ export default function DashboardClient({
               showAlert("Error", "Error joining: " + joinError.message);
           }
           setJoiningLeagueId(null);
-      } else {
-          router.push(`/league/${leagueId}`);
-      }
+      } else router.push(`/league/${leagueId}`);
   };
 
   const openCreateModalAuthGate = async () => {
@@ -317,6 +379,15 @@ export default function DashboardClient({
       else setShowShowdown(true);
   }
 
+  const getDraftTitle = () => {
+      if (!isDraftMode) return 'Global Fight Card';
+      if (draftTargetLeague) {
+          const l = clientLeagues.find(lg => lg.id === draftTargetLeague);
+          return l ? `Drafting For: ${l.name}` : 'League Draft';
+      }
+      return 'Drafting For: Global Leaderboard';
+  };
+
   if (isCheckingAuth) {
       return (
           <div className="min-h-screen bg-black flex flex-col items-center justify-center font-sans">
@@ -328,14 +399,14 @@ export default function DashboardClient({
 
   return (
     <div className="flex min-h-screen bg-black text-white overflow-hidden font-sans selection:bg-pink-500 selection:text-white">
-<OnboardingModal onOpenShowdown={openShowdownAuthGate} />
+      <OnboardingModal onOpenShowdown={openShowdownAuthGate} />
+      
       <div className={`hidden md:block transition-all duration-500 ${isFocusMode ? '-ml-20' : 'ml-0'}`}>
         <LeagueRail initialLeagues={clientLeagues} />
       </div>
 
       <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileMenu(false)}>
          <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-[#0b0e14] border-r border-gray-800/60 shadow-2xl transform transition-transform duration-300 flex flex-col ${showMobileMenu ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
-            
             <div className="p-5 border-b border-gray-800/60 flex justify-between items-center bg-black/20">
                 <span className="text-xl font-black italic text-white tracking-tighter uppercase">
                     FIGHT<span className="text-pink-600">IQ</span>
@@ -451,8 +522,8 @@ export default function DashboardClient({
         </header>
 
         {isFocusMode && (
-             <button onClick={() => { setIsFocusMode(false); setPendingPicks([]); localStorage.removeItem(`draft_pending_global_${user?.email}`); }} className="fixed top-6 right-6 z-[70] bg-gray-950 text-white px-6 py-3 rounded-full font-bold uppercase text-xs border border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.3)] hover:bg-pink-600 transition-all hidden md:block">
-                ✕ Close Picks
+             <button onClick={handleCancelDraft} className="fixed top-6 right-6 z-[70] bg-gray-950 text-white px-6 py-3 rounded-full font-bold uppercase text-xs border border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.3)] hover:bg-pink-600 transition-all hidden md:block">
+                ✕ Cancel Draft
              </button>
         )}
 
@@ -462,7 +533,6 @@ export default function DashboardClient({
                 <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row md:items-end justify-between gap-4">
                     <div>
                         <h1 className="text-4xl md:text-5xl font-black italic uppercase tracking-tighter mb-1 leading-none">CHOOSE YOUR FIGHTER</h1>
-                        {/* 🎯 Displays the extracted event name instead of MMA */}
                         <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">{currentEventName}</p>
                     </div>
                     <div className="pb-1">
@@ -542,23 +612,26 @@ export default function DashboardClient({
                 {/* Left Column (Fight Dashboard) */}
                 <div className="transition-all duration-700 ease-in-out w-full flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full bg-teal-500 animate-pulse ${isFocusMode ? 'opacity-0' : ''}`}></span>
-                            <h2 className={`text-xl font-black uppercase italic tracking-tighter ${isFocusMode ? 'text-pink-600' : ''}`}>
-                                {isFocusMode ? 'Lock Your Picks' : 'Global Fight Card'}
-                            </h2>
+                        <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full bg-teal-500 animate-pulse ${isFocusMode ? 'opacity-0' : ''}`}></span>
+                                <h2 className={`text-xl font-black uppercase italic tracking-tighter ${isFocusMode ? 'text-pink-600' : ''}`}>
+                                    {getDraftTitle()}
+                                </h2>
+                            </div>
+                            {isDraftMode && draftTargetLeague && (
+                                <p className="text-teal-500 text-[10px] font-black uppercase tracking-widest mt-1">
+                                    League Roster Constraints: Exactly 5 Picks
+                                </p>
+                            )}
                         </div>
                         
                         {!isFocusMode && pendingPicks.length === 0 && (
                             <button 
-                                onClick={() => setIsDraftMode(!isDraftMode)}
-                                className={`px-4 py-2 rounded-lg font-black uppercase text-[10px] tracking-widest transition-all ${
-                                    isDraftMode 
-                                    ? 'bg-pink-600 text-white shadow-[0_0_15px_rgba(219,39,119,0.3)] hover:bg-pink-500' 
-                                    : 'bg-white text-black hover:bg-gray-200 shadow-[0_0_15px_rgba(255,255,255,0.1)]'
-                                }`}
+                                onClick={() => setShowDraftModal(true)}
+                                className={`px-4 py-2 rounded-lg font-black uppercase text-[10px] tracking-widest transition-all bg-white text-black hover:bg-gray-200 shadow-[0_0_15px_rgba(255,255,255,0.1)]`}
                             >
-                                {isDraftMode ? 'Cancel Draft' : 'Draft Picks'}
+                                Draft Picks
                             </button>
                         )}
                     </div>
@@ -568,12 +641,12 @@ export default function DashboardClient({
                             fights={cleanFights} 
                             groupedFights={cleanGroups} 
                             userPicks={clientPicks} 
-                            league_id={null} 
+                            league_id={draftTargetLeague || null} 
                             onInteractionStart={handleInteraction}
                             onPickSelect={handlePickSelect} 
                             pendingPicks={pendingPicks}
                             showOdds={showOdds} 
-                            isGlobalFeed={true} 
+                            isGlobalFeed={!draftTargetLeague} 
                             isDraftMode={isDraftMode}
                         />
                     </div>
@@ -583,13 +656,17 @@ export default function DashboardClient({
                 <div className="hidden xl:flex flex-col w-[350px] shrink-0 space-y-8 transition-all duration-700 relative">
                     {pendingPicks.length > 0 ? (
                          <div className="sticky top-24 max-h-[calc(100vh-120px)] w-full bg-gray-950 border border-gray-800 rounded-xl p-6 shadow-2xl overflow-y-auto">
+                             {draftTargetLeague && (
+                                <div className="mb-4 pb-4 border-b border-gray-800 text-center">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-teal-500">League Roster Capacity</p>
+                                    <p className="text-2xl font-black italic text-white mt-1">
+                                        {pendingPicks.length + clientPicks.filter(p => p.league_id === draftTargetLeague && upcomingFightIds.includes(String(p.fight_id))).length} / 5
+                                    </p>
+                                </div>
+                             )}
                              <BettingSlip 
                                 picks={pendingPicks} 
-                                onCancelAll={() => { 
-                                    setPendingPicks([]); 
-                                    localStorage.removeItem(`draft_pending_global_${user?.email}`); 
-                                    setIsFocusMode(false); 
-                                }} 
+                                onCancelAll={handleCancelDraft} 
                                 onRemovePick={handleRemovePick} 
                                 onConfirm={handleConfirmAllPicks} 
                                 isSubmitting={isSubmitting} 
@@ -691,14 +768,17 @@ export default function DashboardClient({
                   <button onClick={() => setShowMobileSlip(false)} className="text-gray-500 hover:text-white p-2 text-xs font-bold uppercase tracking-widest">✕ Close</button>
                </div>
                <div className="flex-1 overflow-y-auto p-4">
+                  {draftTargetLeague && (
+                      <div className="mb-4 pb-4 border-b border-gray-800 text-center">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-teal-500">League Roster Capacity</p>
+                          <p className="text-2xl font-black italic text-white mt-1">
+                              {pendingPicks.length + clientPicks.filter(p => p.league_id === draftTargetLeague && upcomingFightIds.includes(String(p.fight_id))).length} / 5
+                          </p>
+                      </div>
+                  )}
                   <BettingSlip 
                     picks={pendingPicks} 
-                    onCancelAll={() => { 
-                        setPendingPicks([]); 
-                        localStorage.removeItem(`draft_pending_global_${user?.email}`); 
-                        setShowMobileSlip(false); 
-                        setIsFocusMode(false); 
-                    }} 
+                    onCancelAll={handleCancelDraft} 
                     onRemovePick={handleRemovePick} 
                     onConfirm={handleConfirmAllPicks} 
                     isSubmitting={isSubmitting} 
@@ -708,8 +788,80 @@ export default function DashboardClient({
           </div>
       )}
 
-      {customAlert && (
-          <div className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+      {/* 🎯 THE NEW DRAFT MODAL */}
+      {showDraftModal && (
+          <div className="fixed inset-0 z-[400] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+              <div className="bg-gray-950 border border-gray-800 rounded-3xl w-full max-w-md shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="p-6 border-b border-gray-900 flex justify-between items-center bg-black/40">
+                      <h3 className="text-xl font-black italic uppercase tracking-tighter text-white">
+                          {draftStep === 'select' ? 'Where are you drafting?' : 'Copy Global Picks?'}
+                      </h3>
+                      <button onClick={() => { setShowDraftModal(false); setDraftStep('select'); }} className="text-gray-500 hover:text-white transition-colors bg-gray-900 rounded-full w-8 h-8 flex items-center justify-center">✕</button>
+                  </div>
+                  
+                  <div className="p-6">
+                      {draftStep === 'select' && (
+                          <div className="space-y-4">
+                              <button onClick={() => handleStartDraft(null)} className="w-full text-left p-4 bg-gray-900 border border-gray-800 hover:border-pink-500 rounded-2xl transition-all group flex justify-between items-center shadow-lg">
+                                  <div>
+                                      <div className="font-black text-white uppercase tracking-widest">Global Leaderboard</div>
+                                      <div className="text-[10px] text-pink-500 font-bold uppercase tracking-widest mt-1">Unlimited Roster Spots</div>
+                                  </div>
+                                  <span className="text-pink-500 font-black text-xl opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all">→</span>
+                              </button>
+
+                              {clientLeagues.length > 0 && (
+                                  <div className="pt-4">
+                                      <div className="flex items-center gap-2 mb-3 px-1">
+                                          <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+                                          <div className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">Your Private Leagues</div>
+                                      </div>
+                                      <div className="max-h-[250px] overflow-y-auto custom-scrollbar space-y-2 pr-2">
+                                          {clientLeagues.map(league => (
+                                              <button key={league.id} onClick={() => handleStartDraft(league.id)} className="w-full text-left p-3 bg-black border border-gray-800 hover:border-teal-500 rounded-xl transition-all group flex justify-between items-center">
+                                                  <div className="flex items-center gap-4">
+                                                      <div className="w-10 h-10 rounded-full bg-gray-900 border border-gray-700 overflow-hidden shrink-0 flex items-center justify-center">
+                                                          {league.image_url ? <img src={league.image_url} className="w-full h-full object-cover"/> : <span className="text-[10px] font-black text-gray-500">LG</span>}
+                                                      </div>
+                                                      <div className="min-w-0">
+                                                          <div className="font-bold text-sm text-gray-300 group-hover:text-white truncate">{league.name}</div>
+                                                          <div className="text-[9px] font-black text-teal-600 uppercase tracking-widest mt-0.5">5 Picks Maximum</div>
+                                                      </div>
+                                                  </div>
+                                                  <span className="text-teal-500 font-black opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+                                              </button>
+                                          ))}
+                                      </div>
+                                  </div>
+                              )}
+                          </div>
+                      )}
+
+                      {draftStep === 'copy' && (
+                          <div className="space-y-4">
+                              <div className="p-4 border border-pink-500/20 bg-pink-500/5 rounded-xl mb-6">
+                                  <p className="text-sm text-gray-300 font-medium leading-relaxed">
+                                      You already have Global picks locked in for this upcoming event. Would you like to automatically copy them to this League roster?
+                                  </p>
+                              </div>
+                              <button onClick={handleCopyPicks} className="w-full py-4 bg-pink-600 text-white font-black uppercase tracking-widest text-xs rounded-xl hover:bg-pink-500 transition-colors shadow-[0_0_20px_rgba(236,72,153,0.3)]">
+                                  Copy Global Picks
+                              </button>
+                              <button onClick={() => executeStartDraft(selectedLeagueForDraft, [])} className="w-full py-4 bg-black text-gray-400 font-black uppercase tracking-widest text-xs rounded-xl hover:bg-gray-900 hover:text-white transition-colors border border-gray-800">
+                                  Start Fresh
+                              </button>
+                              <button onClick={() => setDraftStep('select')} className="w-full py-3 text-gray-600 hover:text-white text-[10px] font-bold uppercase tracking-widest transition-colors mt-2">
+                                  ← Back to Selection
+                              </button>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {customAlert && customAlert.type !== 'toast' && (
+          <div className="fixed inset-0 z-[500] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
               <div className="bg-gray-950 border border-gray-800 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                   <div className="p-6">
                       <h3 className="text-xl font-black italic uppercase tracking-tighter text-white mb-2">
@@ -739,6 +891,12 @@ export default function DashboardClient({
                       </button>
                   </div>
               </div>
+          </div>
+      )}
+
+      {customAlert && customAlert.type === 'toast' && (
+          <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[500] bg-teal-500 text-black px-6 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-[0_0_20px_rgba(20,184,166,0.4)] animate-in slide-in-from-bottom-5 fade-in duration-300">
+              {customAlert.message}
           </div>
       )}
 
