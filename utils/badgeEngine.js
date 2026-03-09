@@ -382,7 +382,6 @@ export async function evaluateUserStreaks(userEmail) {
   }
 
   // 🏆 1V1 SHOWDOWN BADGES (Flawless Victory & Showdown King)
-  // 🏆 1V1 SHOWDOWN BADGES (Flawless Victory & Showdown King)
   const { data: userShowdowns } = await supabase
       .from('h2h_matches') 
       .select('*')
@@ -414,10 +413,9 @@ export async function evaluateUserStreaks(userEmail) {
               let user1Score = 0;
               let user2Score = 0;
 
-              // Step 3: Tally up the points
-              // ⚠️ NOTE: Change 'p.points' if your points column is named something else (e.g., p.score or p.fantasy_points)
+              // Step 3: Tally up the points using your exact column name!
               matchPicks.forEach(p => {
-                  const pts = parseFloat(p.points || p.score || p.fantasy_points) || 0;
+                  const pts = parseFloat(p.fantasy_points_earned) || 0;
                   if (p.user_id === match.user1_id) user1Score += pts;
                   if (p.user_id === match.user2_id) user2Score += pts;
               });
