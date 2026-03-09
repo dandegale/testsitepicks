@@ -184,32 +184,52 @@ export default function Profile() {
     if (error) setPrivacy(prev => ({ ...prev, [field]: !newValue })); 
   };
 
+  // 🎯 FIXED: CALCULATE STATS UNIQUELY PER FIGHT
   const calculateStats = (picks, fights, missingLeagues) => {
     let wins = 0, losses = 0, pending = 0, netProfit = 0;
     const historyData = [];
+    const processedFightIds = new Set(); // Keep track of fights we've already scored
+
     picks.forEach(pick => {
         const fight = fights.find(f => f.id == pick.fight_id);
         const fightName = fight ? `${fight.fighter_1_name} vs ${fight.fighter_2_name}` : `Fight #${pick.fight_id}`;
         let result = 'Pending', profitChange = 0;
+        
         if (fight && fight.winner) {
             if (fight.winner === pick.selected_fighter) {
-                result = 'Win'; wins++;
+                result = 'Win'; 
                 const odds = parseInt(pick.odds_at_pick || -110, 10);
                 profitChange = (odds > 0 ? (odds / 100) * 10 : (100 / Math.abs(odds)) * 10) + 10; 
             } else {
-                result = 'Loss'; losses++;
+                result = 'Loss'; 
                 profitChange = -10; 
             }
-        } else { result = 'Pending'; pending++; }
-        if (result !== 'Pending') netProfit += profitChange;
+        } else { 
+            result = 'Pending'; 
+        }
+
+        // Only aggregate the W-L-P and Net Profit stats if we haven't seen this fight yet
+        if (!processedFightIds.has(pick.fight_id)) {
+            if (result === 'Win') wins++;
+            else if (result === 'Loss') losses++;
+            else pending++;
+
+            if (result !== 'Pending') netProfit += profitChange;
+            
+            processedFightIds.add(pick.fight_id);
+        }
         
         let leagueName = 'Global';
         if (!missingLeagues && pick.leagues) {
             leagueName = Array.isArray(pick.leagues) ? pick.leagues[0]?.name : pick.leagues.name;
         }
+        
+        // Push every individual pick to history so the breakdown is still visible
         historyData.push({ id: pick.id, fightName, selection: pick.selected_fighter, odds: pick.odds_at_pick, result, profitChange, leagueName });
     });
-    setStats({ totalBets: picks.length, wins, losses, pending, netProfit: parseFloat(netProfit.toFixed(1)) });
+    
+    // totalBets is now the number of unique fights drafted, not the total number of entries
+    setStats({ totalBets: processedFightIds.size, wins, losses, pending, netProfit: parseFloat(netProfit.toFixed(1)) });
     setHistory(historyData);
   };
 
@@ -269,7 +289,6 @@ export default function Profile() {
 
   const levelStats = useMemo(() => calculateLevel(lifetimePoints), [lifetimePoints]);
 
-  // Find the object of the currently equipped title to get its rarity
   const equippedTitleObj = ownedTitles.find(t => t.name === equippedTitle);
 
   if (loading) return (
@@ -449,7 +468,6 @@ export default function Profile() {
                     </div>
                 )}
                 
-                {/* 🎯 UPDATED: CLICKABLE EQUIPPED TITLE BADGE */}
                 <div className="flex items-center justify-center md:justify-start gap-3 mb-6">
                     <div 
                         onClick={() => setTitleModalOpen(true)}
