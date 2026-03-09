@@ -382,25 +382,26 @@ export async function evaluateUserStreaks(userEmail) {
   }
 
   // 🏆 1V1 SHOWDOWN BADGES (Flawless Victory & Showdown King)
-  const { data: userShowdowns } = await supabase
+  const { data: userShowdowns, error: matchError } = await supabase
       .from('h2h_matches') 
       .select('*')
       .or(`user1_id.eq.${userEmail},user2_id.eq.${userEmail}`)
-      .order('created_at', { ascending: true })
-      .catch(() => ({ data: [] })); 
+      .order('created_at', { ascending: true });
       
-  if (userShowdowns && userShowdowns.length > 0) {
+  if (matchError) {
+      console.log(`   ⚠️ Skipping 1v1 Badges: ${matchError.message}`);
+  } else if (userShowdowns && userShowdowns.length > 0) {
+      
       // Step 1: Get all match IDs so we can fetch the picks
       const matchIds = userShowdowns.map(m => m.id);
 
       // Step 2: Fetch all picks associated with these matches
-      const { data: h2hPicks } = await supabase
+      const { data: h2hPicks, error: picksError } = await supabase
           .from('h2h_picks')
           .select('*')
-          .in('match_id', matchIds)
-          .catch(() => ({ data: [] }));
+          .in('match_id', matchIds);
 
-      if (h2hPicks && h2hPicks.length > 0) {
+      if (!picksError && h2hPicks && h2hPicks.length > 0) {
           let sdStreak = 0;
 
           userShowdowns.forEach(match => {
