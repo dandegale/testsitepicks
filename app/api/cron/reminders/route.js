@@ -4,14 +4,15 @@ import { Resend } from 'resend';
 
 export const dynamic = 'force-dynamic';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function GET(request) {
     // 🛑 THE BOUNCER: Check for the secret key from cron-job.org
     const authHeader = request.headers.get('authorization');
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // 🎯 FIX: Instantiate Resend INSIDE the function so it doesn't break the build!
+    const resend = new Resend(process.env.RESEND_API_KEY);
 
     const supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -67,7 +68,7 @@ export async function GET(request) {
             const username = user.username || 'Manager';
             
             return resend.emails.send({
-                from: 'FightIQ <no-reply@yourdomain.com>', // Replace with your verified Resend domain
+                from: 'FightIQ <no-reply@yourdomain.com>', // MUST BE YOUR VERIFIED DOMAIN IN RESEND
                 to: user.email,
                 subject: `🚨 Lock in your picks for ${eventName}!`,
                 html: `
