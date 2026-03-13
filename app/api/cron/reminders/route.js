@@ -68,8 +68,8 @@ export async function GET(request) {
             const username = user.username || 'Manager';
             
             return resend.emails.send({
-                from: 'FightIQ <no-reply@yourdomain.com>', // MUST BE YOUR VERIFIED DOMAIN IN RESEND
-                to: user.email,
+// To exactly this:
+from: 'FightIQ <onboarding@resend.dev>',                to: user.email,
                 subject: `🚨 Lock in your picks for ${eventName}!`,
                 html: `
                     <div style="font-family: sans-serif; background-color: #050505; color: #ffffff; padding: 40px; text-align: center; border-radius: 10px;">
