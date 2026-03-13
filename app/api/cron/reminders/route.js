@@ -63,13 +63,17 @@ export async function GET(request) {
 
         console.log(`Sending reminders to ${slackers.length} users...`);
 
-        // 5. Send the emails (Batching them to avoid rate limits)
-        const emailPromises = slackers.map(user => {
+        // 5. Send the emails (and ACTUALLY check if Resend accepts them)
+        const emailPromises = slackers.map(async (user) => {
             const username = user.username || 'Manager';
             
-            return resend.emails.send({
-// To exactly this:
-from: 'FightIQ <onboarding@resend.dev>',                to: user.email,
+            // Wait for Resend to reply
+            const response = await resend.emails.send({
+                from: 'FightIQ <onboarding@resend.dev>', // MUST use this for testing
+                
+                // 🚨 PUT YOUR ACTUAL GMAIL/EMAIL HERE FOR TESTING 🚨
+                to: 'dandegale2004@gmail.com', 
+                
                 subject: `🚨 Lock in your picks for ${eventName}!`,
                 html: `
                     <div style="font-family: sans-serif; background-color: #050505; color: #ffffff; padding: 40px; text-align: center; border-radius: 10px;">
@@ -78,18 +82,30 @@ from: 'FightIQ <onboarding@resend.dev>',                to: user.email,
                         <p style="color: #9ca3af; font-size: 16px; line-height: 1.5;">
                             You haven't locked in your 5-man fantasy roster for <strong>${eventName}</strong> yet. Don't leave free points and coins on the table!
                         </p>
-                        <p style="color: #9ca3af; font-size: 16px; line-height: 1.5; margin-bottom: 30px;">
-                            The prelims are starting soon. Jump in, scout the odds, and lock in your squad before the first bell rings.
-                        </p>
                         <a href="https://yourwebsite.com" style="background-color: #db2777; color: #ffffff; padding: 15px 30px; text-decoration: none; font-weight: bold; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px;">
                             Lock In Picks Now
                         </a>
                     </div>
                 `
             });
+
+            return response;
         });
 
-        await Promise.all(emailPromises);
+        // Wait for all the API calls to finish
+        const results = await Promise.all(emailPromises);
+
+        // Check if Resend threw any silent errors
+        const failedEmails = results.filter(r => r.error);
+        
+        if (failedEmails.length > 0) {
+            console.error("Resend Error details:", failedEmails[0].error);
+            // This will push the exact error to cron-job.org so we can see it!
+            return NextResponse.json({ 
+                error: "Resend rejected the emails", 
+                details: failedEmails[0].error 
+            }, { status: 400 });
+        }
 
         return NextResponse.json({ message: `Successfully reminded ${slackers.length} slackers.` });
 
