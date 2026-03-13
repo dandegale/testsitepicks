@@ -85,7 +85,7 @@ export default function LeaguePage() {
     fetchLeagueData();
   }, [leagueId]);
 
-  // 🎯 SUPABASE REALTIME ENGINE: Instantly updates Leaderboard, UI, and Feed without refreshing!
+  // 🎯 SUPABASE REALTIME ENGINE
   useEffect(() => {
       const liveChannel = supabase.channel(`league-${leagueId}-realtime`)
           .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'fights' }, (payload) => {
@@ -592,6 +592,35 @@ export default function LeaguePage() {
       }
   };
 
+  // 🎯 NEW: Leave League Function
+  const handleLeaveLeague = async () => {
+      if (isAdmin) {
+          return showAlert("Action Denied", "You are the creator of this league! If you want to leave, you must Delete the league in the Admin Settings tab.");
+      }
+
+      setCustomAlert({
+          type: 'confirm',
+          title: 'Leave League',
+          message: "Are you sure you want to leave this league? Your past picks will remain in the database, but you will be removed from the leaderboard.",
+          confirmText: 'Leave',
+          onConfirm: async () => {
+              setCustomAlert(null);
+              const { error } = await supabase
+                  .from('league_members')
+                  .delete()
+                  .eq('league_id', leagueId)
+                  .eq('user_id', user.email);
+
+              if (error) {
+                  setToast({ message: "Error leaving league: " + error.message, type: "error" });
+              } else {
+                  setToast({ message: "You have left the league.", type: "success" });
+                  router.push('/');
+              }
+          }
+      });
+  };
+
   const handlePickSelect = (newPick) => {
     if (!user) {
         router.push('/login');
@@ -939,23 +968,36 @@ export default function LeaguePage() {
                     <span className="bg-pink-600 text-white text-[9px] font-black uppercase px-2 py-1 rounded inline-block mb-2 md:mb-3 shadow-[0_0_10px_rgba(236,72,153,0.3)]">
                         {league?.scoring_format === 'Striking' ? '🥊 Striking Only League' : league?.scoring_format === 'Grappling' ? '🥋 Grappling Only League' : '⚔️ Standard MMA League'}
                     </span>
-                    <h1 className="text-3xl md:text-6xl font-black italic uppercase tracking-tighter mb-2 leading-none">
-                        {league?.name}
-                    </h1>
-                    
-                    <div className="flex items-center gap-4 text-gray-400 text-xs font-bold uppercase tracking-widest">
-                        <button 
-                            onClick={handleCopyCode}
-                            className="group flex items-center gap-2 hover:text-white transition-colors"
-                        >
-                            <span>Invite Code:</span>
-                            <span className="text-white bg-gray-800 border border-gray-700 group-hover:border-pink-500 px-3 py-1 rounded select-all font-mono">
-                                {league?.invite_code}
-                            </span>
-                            <span className="text-pink-500 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
-                                {copySuccess ? 'LINK COPIED!' : '❐ SHARE LINK'}
-                            </span>
-                        </button>
+                    <div className="flex justify-between items-end">
+                        <div>
+                            <h1 className="text-3xl md:text-6xl font-black italic uppercase tracking-tighter mb-2 leading-none">
+                                {league?.name}
+                            </h1>
+                            <div className="flex items-center gap-3 text-gray-400 text-xs font-bold uppercase tracking-widest">
+                                <button 
+                                    onClick={handleCopyCode}
+                                    className="group flex items-center gap-2 hover:text-white transition-colors"
+                                >
+                                    <span>Invite Code:</span>
+                                    <span className="text-white bg-gray-800 border border-gray-700 group-hover:border-pink-500 px-3 py-1 rounded select-all font-mono">
+                                        {league?.invite_code}
+                                    </span>
+                                    <span className="text-pink-500 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {copySuccess ? 'LINK COPIED!' : '❐ SHARE LINK'}
+                                    </span>
+                                </button>
+
+                                {/* 🎯 LEAVE LEAGUE BUTTON (BANNER) */}
+                                {!isAdmin && (
+                                    <button 
+                                        onClick={handleLeaveLeague} 
+                                        className="text-[10px] font-black uppercase tracking-widest text-red-500 hover:text-white bg-red-950/30 hover:bg-red-600 border border-red-900/50 hover:border-red-500 px-3 py-1 rounded transition-colors shadow-[0_0_10px_rgba(220,38,38,0.2)] ml-4"
+                                    >
+                                        Leave League
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1010,7 +1052,6 @@ export default function LeaguePage() {
                 
                 <div className="lg:col-span-2 transition-all w-full min-w-0">
                     
-                    {/* 🔴 NEW LIVE TRACKER TAB (With Inlined WebSockets!) */}
                     {activeTab === 'live' && (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
                             <div className="flex items-center gap-3 mb-6">
@@ -1024,11 +1065,9 @@ export default function LeaguePage() {
                                 </div>
                             ) : (
                                 currentEventFights.map(fight => {
-                                    // Live stats pull from the magically updating state array!
                                     const f1Stats = fighterStats.find(s => String(s.fight_id) === String(fight.id) && isFighterMatch(s.fighter_name, fight.fighter_1_name));
                                     const f2Stats = fighterStats.find(s => String(s.fight_id) === String(fight.id) && isFighterMatch(s.fighter_name, fight.fighter_2_name));
                                     
-                                    // Get Custom Points based on your League's Scoring Format!
                                     const f1Pts = getCustomPoints({ odds_at_pick: 0 }, f1Stats, fight, league?.scoring_format);
                                     const f2Pts = getCustomPoints({ odds_at_pick: 0 }, f2Stats, fight, league?.scoring_format);
 
@@ -1626,17 +1665,30 @@ export default function LeaguePage() {
                                                 </div>
                                             </div>
                                             
+                                            {/* 🎯 KICK BUTTON & LEAVE LEAGUE IN ROSTER LIST */}
                                             {(member.user_id !== user?.email && member.user_id !== user?.id) ? (
-                                                <button 
-                                                    onClick={() => handleKickMember(member.user_id)}
-                                                    className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-900/20 transition-all active:scale-95"
-                                                >
-                                                    KICK
-                                                </button>
+                                                isAdmin && (
+                                                    <button 
+                                                        onClick={() => handleKickMember(member.user_id)}
+                                                        className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-900/20 transition-all active:scale-95"
+                                                    >
+                                                        KICK
+                                                    </button>
+                                                )
                                             ) : (
-                                                <span className="text-[9px] font-black uppercase text-teal-500 bg-teal-950/30 px-3 py-1 rounded border border-teal-900/50">
-                                                    You
-                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[9px] font-black uppercase text-teal-500 bg-teal-950/30 px-3 py-1 rounded border border-teal-900/50">
+                                                        You
+                                                    </span>
+                                                    {!isAdmin && (
+                                                        <button 
+                                                            onClick={handleLeaveLeague} 
+                                                            className="text-[9px] font-black uppercase text-red-500 hover:text-red-400 bg-red-950/30 hover:bg-red-900/50 px-3 py-1 rounded border border-red-900/50 hover:border-red-500 transition-colors hidden sm:block"
+                                                        >
+                                                            Leave
+                                                        </button>
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
                                     ))}
