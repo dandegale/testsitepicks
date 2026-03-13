@@ -63,17 +63,13 @@ export async function GET(request) {
 
         console.log(`Sending reminders to ${slackers.length} users...`);
 
-        // 5. Send the emails (and ACTUALLY check if Resend accepts them)
-        const emailPromises = slackers.map(async (user) => {
+        // 5. Build the email payloads for the Batch API
+        const emailPayloads = slackers.map((user) => {
             const username = user.username || 'Manager';
             
-            // Wait for Resend to reply
-            const response = await resend.emails.send({
-                from: 'FightIQ <onboarding@resend.dev>', // MUST use this for testing
-                
-                // 🚨 PUT YOUR ACTUAL GMAIL/EMAIL HERE FOR TESTING 🚨
-                to: 'dandegale2004@gmail.com', 
-                
+            return {
+                from: 'FightIQ <onboarding@resend.dev>', // Change to your verified domain when live
+                to: user.email, // Put back to user.email so you don't get spammed!
                 subject: `🚨 Lock in your picks for ${eventName}!`,
                 html: `
                     <div style="font-family: sans-serif; background-color: #050505; color: #ffffff; padding: 40px; text-align: center; border-radius: 10px;">
@@ -87,27 +83,21 @@ export async function GET(request) {
                         </a>
                     </div>
                 `
-            });
-
-            return response;
+            };
         });
 
-        // Wait for all the API calls to finish
-        const results = await Promise.all(emailPromises);
+        // 6. Send ALL emails at the exact same time in a single request (Bypasses Rate Limits)
+        const response = await resend.batch.send(emailPayloads);
 
-        // Check if Resend threw any silent errors
-        const failedEmails = results.filter(r => r.error);
-        
-        if (failedEmails.length > 0) {
-            console.error("Resend Error details:", failedEmails[0].error);
-            // This will push the exact error to cron-job.org so we can see it!
+        if (response.error) {
+            console.error("Resend Batch Error details:", response.error);
             return NextResponse.json({ 
-                error: "Resend rejected the emails", 
-                details: failedEmails[0].error 
+                error: "Resend rejected the batch", 
+                details: response.error 
             }, { status: 400 });
         }
 
-        return NextResponse.json({ message: `Successfully reminded ${slackers.length} slackers.` });
+        return NextResponse.json({ message: `Successfully reminded ${slackers.length} slackers in one batch.` });
 
     } catch (error) {
         console.error('Reminder Error:', error);
