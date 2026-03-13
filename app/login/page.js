@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
 const supabase = createClient(
@@ -10,8 +10,14 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-export default function LoginPage() {
+// We wrap the main login component in a sub-component so we can safely use useSearchParams
+// inside a Suspense boundary (Next.js 13+ requirement for client components using search params)
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  // 🎯 Grab the URL they were trying to go to, default to the home page if it's null
+  const returnUrl = searchParams.get('redirectTo') || '/';
   
   // Form State
   const [email, setEmail] = useState('');
@@ -69,7 +75,8 @@ export default function LoginPage() {
         if (data.user && !data.session) {
           setSuccessMsg("Account created! Check your email to confirm.");
         } else {
-          router.push('/'); 
+          // 🎯 Push them to their intended destination instead of '/'
+          router.push(returnUrl); 
         }
 
       } else {
@@ -79,7 +86,8 @@ export default function LoginPage() {
         });
 
         if (error) throw error;
-        router.push('/');
+        // 🎯 Push them to their intended destination instead of '/'
+        router.push(returnUrl);
       }
     } catch (error) {
       setErrorMsg(error.message || "Authentication failed.");
@@ -89,16 +97,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center relative overflow-hidden selection:bg-pink-600 selection:text-white font-sans">
-      
-      {/* BACKGROUND EFFECTS */}
-      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-gray-900 via-black to-black opacity-80"></div>
-      <div className="absolute -top-[20%] -left-[10%] w-[500px] h-[500px] bg-pink-600/10 rounded-full blur-[100px]"></div>
-      <div className="absolute top-[40%] -right-[10%] w-[400px] h-[400px] bg-teal-600/10 rounded-full blur-[100px]"></div>
-
-      {/* LOGIN CARD */}
-      <div className="relative z-10 w-full max-w-md p-4">
-        
+    <div className="relative z-10 w-full max-w-md p-4">
         <div className="bg-gray-950/80 backdrop-blur-xl border border-gray-800 rounded-2xl p-8 shadow-2xl shadow-black ring-1 ring-white/5 relative overflow-hidden transition-all duration-500">
             
             {/* Top accent line */}
@@ -242,9 +241,27 @@ export default function LoginPage() {
                     {mode === 'login' ? 'Sign Up' : 'Log In Here'}
                 </button>
             </div>
-
         </div>
-      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------
+// PARENT EXPORT WITH SUSPENSE BOUNDARY
+// ---------------------------------------------------------
+export default function LoginPage() {
+  return (
+    <div className="min-h-screen bg-black flex items-center justify-center relative overflow-hidden selection:bg-pink-600 selection:text-white font-sans">
+      
+      {/* BACKGROUND EFFECTS */}
+      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-gray-900 via-black to-black opacity-80"></div>
+      <div className="absolute -top-[20%] -left-[10%] w-[500px] h-[500px] bg-pink-600/10 rounded-full blur-[100px]"></div>
+      <div className="absolute top-[40%] -right-[10%] w-[400px] h-[400px] bg-teal-600/10 rounded-full blur-[100px]"></div>
+
+      {/* Wrapping the form in Suspense handles the useSearchParams hook properly */}
+      <Suspense fallback={<div className="text-pink-500 animate-pulse font-black uppercase tracking-widest text-xs z-10">Loading Protocol...</div>}>
+        <LoginForm />
+      </Suspense>
       
       <div className="absolute bottom-6 right-6 text-right hidden md:block opacity-30">
         <h2 className="text-4xl font-black italic text-gray-800 uppercase tracking-tighter">UFC</h2>

@@ -9,6 +9,43 @@ function shiftToEST(utcDateString) {
     return date.toISOString(); 
 }
 
+// 🎯 NEW: Strips accents (ř -> r, á -> a) so international names match perfectly!
+const removeAccents = (str) => {
+    return str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '';
+};
+
+// Helper to squash names for clean matching
+const squashFullName = (name) => {
+    if (!name) return '';
+    return removeAccents(name).toLowerCase().replace(/[^a-z]/g, '');
+};
+
+const isAnchorMatch = (clean1, clean2) => {
+    if (!clean1 || !clean2) return false;
+    if (clean1 === clean2) return true;
+    if (clean1.length > 5 && clean2.includes(clean1)) return true;
+    if (clean2.length > 5 && clean1.includes(clean2)) return true;
+    return false;
+};
+
+const NAME_FIXES = {
+    "roass": "rosas",
+    "sumudaerji": "mudaerji",
+    "weili": "zhang",
+    "stpreux": "st-preux",
+    "preux": "st-preux",
+    "saintpreux": "st-preux"
+};
+
+const getSearchKey = (name) => {
+    if (!name) return "";
+    let clean = removeAccents(name).toLowerCase().trim();
+    clean = clean.replace(/\s+(jr\.?|sr\.?|ii|iii)$/g, ''); 
+    const parts = clean.split(/\s+/);
+    let lastName = parts[parts.length - 1].replace(/[^a-z]/g, '');
+    return NAME_FIXES[lastName] || lastName;
+};
+
 // 🎯 THE NAME DICTIONARY 
 const NAME_DICTIONARY = {
     "Javier Reyes Rugeles": "Javier Reyes",
@@ -18,7 +55,7 @@ const NAME_DICTIONARY = {
     "Sulangrangbo": "Sulangrangbo", 
     "Sumudaerji Sumudaerji": "Su Mudaerji",
     "Sumerdaji Sumerdaji": "Su Mudaerji",
-    "Richard Turcios": "Ricky Turcios", // 🎯 We catch Richard here!
+    "Richard Turcios": "Ricky Turcios", 
     "Yi Zha": "Yizha"
 };
 
@@ -35,14 +72,13 @@ export async function GET() {
   const API_KEY = process.env.ODDS_API_KEY;
 
   try {
-    let ufcNames = [];
-    let fighterEventMap = {}; 
+    let espnMatchups = [];
 
-    // 1. Fetch ESPN Data
+    // 1. Fetch ESPN Data (The Absolute Source of Truth)
     try {
         const today = new Date();
         const future = new Date();
-        future.setDate(today.getDate() + 60);
+        future.setDate(today.getDate() + 180); 
 
         const formatDt = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
         const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard?dates=${formatDt(today)}-${formatDt(future)}`;
@@ -54,14 +90,18 @@ export async function GET() {
             espnData.events.forEach(event => {
                 const realEventName = event.name || event.shortName; 
                 event.competitions?.forEach(comp => {
-                    comp.competitors?.forEach(c => {
-                        if (c.athlete?.displayName) {
-                            const fighterName = c.athlete.displayName;
-                            ufcNames.push(fighterName);
-                            const cleanName = fighterName.toLowerCase().replace(/['".,-]/g, '').trim();
-                            fighterEventMap[cleanName] = realEventName;
+                    const fighters = comp.competitors;
+                    if (fighters && fighters.length === 2) {
+                        const name1 = fighters[0].athlete?.displayName;
+                        const name2 = fighters[1].athlete?.displayName;
+                        if (name1 && name2) {
+                            espnMatchups.push({
+                                f1: { original: name1, clean: squashFullName(name1), key: getSearchKey(name1) },
+                                f2: { original: name2, clean: squashFullName(name2), key: getSearchKey(name2) },
+                                eventName: realEventName
+                            });
                         }
-                    });
+                    }
                 });
             });
         }
@@ -82,21 +122,21 @@ export async function GET() {
         .select('*')
         .is('winner', null); 
         
-    // 🎯 NEW: Fetch historical stats to act as a Backup Gatekeeper!
-    const { data: dbFighters } = await supabase.from('fighter_historical_stats').select('fighter_name');
-    const knownUfcNames = dbFighters ? dbFighters.map(f => f.fighter_name.toLowerCase().replace(/['".,-]/g, '').trim()) : [];
-
     const logs = [];
     const bookedFighters = new Set();
     const confirmedDbIds = new Set();
 
+    if (espnMatchups.length === 0) {
+        logs.push("⚠️ WARNING: ESPN API returned 0 active matchups. Sync may be degraded.");
+    }
+
     const PREFERRED_BOOKS = ['fanduel', 'draftkings', 'betmgm', 'bovada'];
     const futureLimit = new Date();
-    futureLimit.setDate(new Date().getDate() + 120);
+    futureLimit.setDate(new Date().getDate() + 180);
 
     for (const event of apiData) {
         const fightDate = new Date(event.commence_time);
-        if (fightDate > futureLimit) continue;
+        if (fightDate > futureLimit || fightDate < new Date()) continue;
 
         let bestBookmaker = null;
         for (const book of PREFERRED_BOOKS) {
@@ -112,43 +152,70 @@ export async function GET() {
         let f1Name = NAME_DICTIONARY[outcome1.name] || outcome1.name;
         let f2Name = NAME_DICTIONARY[outcome2.name] || outcome2.name;
 
-        const f1Key = f1Name.toLowerCase().trim();
-        const f2Key = f2Name.toLowerCase().trim();
+        const b1 = { clean: squashFullName(f1Name), key: getSearchKey(f1Name) };
+        const b2 = { clean: squashFullName(f2Name), key: getSearchKey(f2Name) };
 
-        if (f1Key.includes('tbd') || f2Key.includes('tbd') || f1Key.includes('tba') || f2Key.includes('tba')) continue;
-        if (bookedFighters.has(f1Key) || bookedFighters.has(f2Key)) continue;
+        if (b1.clean.includes('tbd') || b2.clean.includes('tbd') || b1.clean.includes('tba') || b2.clean.includes('tba')) continue;
+        if (bookedFighters.has(b1.clean) || bookedFighters.has(b2.clean)) continue;
 
-        const clean = (str) => str.toLowerCase().replace(/['".,-]/g, '').trim();
-        const c1 = clean(f1Key);
-        const c2 = clean(f2Key);
-        
-        const espnEventName = fighterEventMap[c1] || fighterEventMap[c2];
+        let isConfirmedUfc = false;
+        let dynamicEventName = null;
+
+        for (const match of espnMatchups) {
+            const validDirect = 
+                (isAnchorMatch(b1.clean, match.f1.clean) && b2.key === match.f2.key) || 
+                (isAnchorMatch(b2.clean, match.f2.clean) && b1.key === match.f1.key) ||
+                (b1.key === match.f1.key && b2.key === match.f2.key);
+
+            const validReverse = 
+                (isAnchorMatch(b1.clean, match.f2.clean) && b2.key === match.f1.key) || 
+                (isAnchorMatch(b2.clean, match.f1.clean) && b1.key === match.f2.key) ||
+                (b1.key === match.f2.key && b2.key === match.f1.key);
+
+            if (validDirect || validReverse) {
+                isConfirmedUfc = true;
+                dynamicEventName = match.eventName;
+                break;
+            }
+        }
+
+        if (!isConfirmedUfc) {
+            logs.push(`🚫 BLOCKED FAKE/UNVERIFIED MATCHUP: ${f1Name} vs ${f2Name}`);
+            continue;
+        }
+
         const dateStr = fightDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
         
-        let dynamicEventName = `UFC Fight Night (${dateStr})`;
-        if (espnEventName) {
-            dynamicEventName = espnEventName; 
-        } else if (event.sport_title && event.sport_title !== 'Mixed Martial Arts') {
-            dynamicEventName = event.sport_title;
+        if (!dynamicEventName) {
+            dynamicEventName = event.sport_title !== 'Mixed Martial Arts' ? event.sport_title : `UFC Fight Night (${dateStr})`;
         }
 
         const match = existingFights.find(dbFight => {
-            const dbF1 = dbFight.fighter_1_name.toLowerCase().trim();
-            const dbF2 = dbFight.fighter_2_name.toLowerCase().trim();
-            const isDirect = (dbF1.includes(f1Key) || f1Key.includes(dbF1)) && (dbF2.includes(f2Key) || f2Key.includes(dbF2));
-            const isReverse = (dbF1.includes(f2Key) || f2Key.includes(dbF1)) && (dbF2.includes(f1Key) || f1Key.includes(dbF2));
-            return isDirect || isReverse;
+            const dbF1_clean = squashFullName(dbFight.fighter_1_name);
+            const dbF2_clean = squashFullName(dbFight.fighter_2_name);
+            const dbF1_key = getSearchKey(dbFight.fighter_1_name);
+            const dbF2_key = getSearchKey(dbFight.fighter_2_name);
+
+            const direct = (isAnchorMatch(dbF1_clean, b1.clean) && dbF2_key === b2.key) ||
+                           (isAnchorMatch(dbF2_clean, b2.clean) && dbF1_key === b1.key) ||
+                           (dbF1_key === b1.key && dbF2_key === b2.key);
+
+            const reverse = (isAnchorMatch(dbF1_clean, b2.clean) && dbF2_key === b1.key) ||
+                            (isAnchorMatch(dbF2_clean, b1.clean) && dbF1_key === b2.key) ||
+                            (dbF1_key === b2.key && dbF2_key === b1.key);
+
+            return direct || reverse;
         });
 
         const adjustedEstTime = shiftToEST(event.commence_time);
 
         if (match) {
             confirmedDbIds.add(match.id);
-            bookedFighters.add(f1Key);
-            bookedFighters.add(f2Key);
+            bookedFighters.add(b1.clean);
+            bookedFighters.add(b2.clean);
 
-            const dbF1 = match.fighter_1_name.toLowerCase().trim();
-            const isReversedMatch = dbF1.includes(f2Key) || f2Key.includes(dbF1);
+            const dbF1 = squashFullName(match.fighter_1_name);
+            const isReversedMatch = isAnchorMatch(dbF1, b2.clean) || getSearchKey(match.fighter_1_name) === b2.key;
 
             const newFighter1Odds = isReversedMatch ? outcome2.price : outcome1.price;
             const newFighter2Odds = isReversedMatch ? outcome1.price : outcome2.price;
@@ -165,50 +232,26 @@ export async function GET() {
                     })
                     .eq('id', match.id);
                 
-                logs.push(`Updated Odds/Event/Time: ${match.fighter_1_name} vs ${match.fighter_2_name}`);
+                logs.push(`Updated Odds/Event: ${match.fighter_1_name} vs ${match.fighter_2_name}`);
             }
         } else {
-            // 🎯 THE UPGRADED GATEKEEPER
-            let isConfirmedUfc = ufcNames.some(name => {
-                const cn = clean(name);
-                return c1 === cn || c2 === cn || c1.includes(cn) || c2.includes(cn);
+            bookedFighters.add(b1.clean);
+            bookedFighters.add(b2.clean);
+
+            const { error: insertError } = await supabase.from('fights').insert({
+                event_name: dynamicEventName, 
+                start_time: adjustedEstTime,
+                fighter_1_name: f1Name,
+                fighter_1_odds: outcome1.price,
+                fighter_2_name: f2Name,
+                fighter_2_odds: outcome2.price,
+                source: bestBookmaker.key
             });
 
-            // 🎯 BACKUP 1: Check if they are already in our Historical Stats DB
-            if (!isConfirmedUfc) {
-                if (knownUfcNames.includes(c1) || knownUfcNames.includes(c2)) {
-                    isConfirmedUfc = true;
-                }
-            }
-
-            // 🎯 BACKUP 2: Check if they are in our manual Dictionary override
-            if (!isConfirmedUfc) {
-                if (NAME_DICTIONARY[outcome1.name] || NAME_DICTIONARY[outcome2.name]) {
-                    isConfirmedUfc = true;
-                }
-            }
-
-            if (isConfirmedUfc && fightDate > new Date()) {
-                bookedFighters.add(f1Key);
-                bookedFighters.add(f2Key);
-
-                const { error: insertError } = await supabase.from('fights').insert({
-                    event_name: dynamicEventName, 
-                    start_time: adjustedEstTime,
-                    fighter_1_name: f1Name,
-                    fighter_1_odds: outcome1.price,
-                    fighter_2_name: f2Name,
-                    fighter_2_odds: outcome2.price,
-                    source: bestBookmaker.key
-                });
-
-                if (insertError) {
-                    logs.push(`❌ DB REJECTED ${f1Name}: ${insertError.message}`);
-                } else {
-                    logs.push(`✅ CREATED UFC FIGHT: ${f1Name} vs ${f2Name}`);
-                }
-            } else if (fightDate > new Date()) {
-                logs.push(`🚫 GATEKEEPER BLOCKED: ${f1Name} vs ${f2Name} (Not found in ESPN or DB)`);
+            if (insertError) {
+                logs.push(`❌ DB REJECTED ${f1Name}: ${insertError.message}`);
+            } else {
+                logs.push(`✅ CREATED UFC FIGHT: ${f1Name} vs ${f2Name}`);
             }
         }
     }
@@ -217,13 +260,15 @@ export async function GET() {
 
     if (ghostFights.length > 0) {
         const ghostIds = ghostFights.map(f => f.id);
+        await supabase.from('picks').delete().in('fight_id', ghostIds);
+        await supabase.from('fighter_stats').delete().in('fight_id', ghostIds);
         const { error: deleteError } = await supabase.from('fights').delete().in('id', ghostIds);
         if (!deleteError) {
-            logs.push(`🗑️ CLEANUP: Removed ${ghostFights.length} cancelled or junk fights.`);
+            logs.push(`🗑️ CLEANUP: Erased ${ghostFights.length} speculative/cancelled fights.`);
         }
     }
 
-    return NextResponse.json({ message: 'Sync Complete', ufc_fighters_found_via_espn: ufcNames.length, logs });
+    return NextResponse.json({ message: 'Sync Complete', matchups_verified_via_espn: espnMatchups.length, logs });
 
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
