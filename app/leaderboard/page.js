@@ -214,7 +214,7 @@ export default function LeaderboardPage() {
         <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    {/* 🎯 THE TEAL HAMBURGER BUTTON */}
+                    {/* TEAL HAMBURGER */}
                     <button 
                         onClick={() => setShowMobileMenu(true)} 
                         className="md:hidden p-1 text-teal-400 hover:text-teal-300 transition-colors drop-shadow-[0_0_5px_rgba(45,212,191,0.5)] animate-pulse"
@@ -222,23 +222,18 @@ export default function LeaderboardPage() {
                         <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" /></svg>
                     </button>
 
-                    <Link href="/" className="text-2xl font-black italic text-white tracking-tighter uppercase">
+                    <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">
                         FIGHT<span className="text-pink-600">IQ</span>
                     </Link>
                     <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
-                    <nav className="hidden md:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
-                        <Link href="/my-picks" className="hover:text-white transition-colors">My Picks</Link>
+                    <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
+                        <span className="text-white cursor-default">How It Works</span>
                         <Link href="/" className="hover:text-white transition-colors">Global Feed</Link>
-                        <span className="text-pink-600 cursor-default">Leaderboards</span>
+                        <Link href="/leaderboard" className="hover:text-white transition-colors">Leaderboards</Link>
+                        <Link href="/store" className="hover:text-pink-400 text-pink-600 transition-colors flex items-center gap-1">
+                            <span>STORE</span>
+                        </Link>
                     </nav>
-                </div>
-                <div className="flex items-center gap-4">
-                     <Link href="/profile" className="hidden md:flex bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all">
-                        MY PROFILE
-                    </Link>
-                    <div className="hidden md:block">
-                        <LogOutButton />
-                    </div>
                 </div>
             </div>
         </header>

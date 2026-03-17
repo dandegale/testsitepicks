@@ -158,8 +158,7 @@ export default function LeagueRail({ initialLeagues = [] }) {
       </div>
 
       {/* --- MOBILE HAMBURGER --- */}
-      {/* 🎯 FIX 1: Boosted z-index to 100 */}
-      <div className="md:hidden fixed top-4 left-4 z-[100]">
+      <div className="md:hidden fixed top-4 left-4 z-50">
          <button onClick={() => setIsOpen(true)} className="p-2 bg-gray-900 border border-pink-900 rounded text-pink-500 shadow-lg">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
@@ -170,11 +169,8 @@ export default function LeagueRail({ initialLeagues = [] }) {
       {/* --- MOBILE DRAWER --- */}
       {isOpen && (
         <>
-            {/* 🎯 FIX 2: Boosted backdrop z-index to 90 */}
-            <div className="fixed inset-0 bg-black/80 z-[90] backdrop-blur-sm" onClick={() => setIsOpen(false)} />
-            
-            {/* 🎯 FIX 3: Boosted drawer z-index to 100 */}
-            <div className="fixed inset-y-0 left-0 w-72 bg-gray-950 border-r border-pink-900 z-[100] p-6 flex flex-col shadow-2xl animate-in slide-in-from-left duration-300">
+            <div className="fixed inset-0 bg-black/80 z-40 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
+            <div className="fixed inset-y-0 left-0 w-72 bg-gray-950 border-r border-pink-900 z-50 p-6 flex flex-col shadow-2xl animate-in slide-in-from-left duration-300">
                 <div className="flex justify-between items-center mb-8">
                     <div className="flex items-center gap-3">
                         <img src="/fightiq-logo.png" alt="FightIQ" className="w-12 h-12 object-contain" />
