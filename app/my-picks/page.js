@@ -4,8 +4,9 @@ import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import LeagueRail from '../components/LeagueRail';
+import SideMenu from '../components/SideMenu'; // 🎯 NEW: Imported your custom SideMenu
 import LogOutButton from '../components/LogOutButton'; 
-// 🎯 Removed MobileNav import since LeagueRail handles mobile now!
+import MobileNav from '../components/MobileNav'; 
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -19,8 +20,6 @@ export default function MyPicksPage() {
   const [myLeagues, setMyLeagues] = useState([]);
   
   const [stats, setStats] = useState({ wins: 0, losses: 0, winPercentage: 0 });
-  
-  // NEW: State for our filter ('ALL', 'GLOBAL', or specific league.id)
   const [activeFilter, setActiveFilter] = useState('ALL');
 
   useEffect(() => {
@@ -122,7 +121,6 @@ export default function MyPicksPage() {
 
       return (
           <div key={pick.id} className="bg-gray-950 border border-gray-800 rounded-xl p-6 hover:border-pink-600/50 transition-all group relative overflow-hidden flex flex-col">
-              {/* TOP BADGES */}
               <div className="flex justify-between items-start mb-6">
                   <span className={`text-[9px] font-black uppercase px-2 py-1 rounded border ${isGlobal ? 'bg-teal-900/20 text-teal-400 border-teal-900' : 'bg-gray-800 text-gray-300 border-gray-700'}`}>
                       {leagueName}
@@ -135,7 +133,6 @@ export default function MyPicksPage() {
                   )}
               </div>
 
-              {/* MAIN STATS */}
               <div className="flex justify-between items-end mb-6">
                   <div>
                       <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1">
@@ -157,7 +154,6 @@ export default function MyPicksPage() {
                   </div>
               </div>
 
-              {/* FOOTER */}
               <div className="flex items-center gap-4 border-t border-gray-900 pt-4 mt-auto">
                   <div className="text-right flex-1">
                       <span className="text-[9px] text-gray-600 font-bold uppercase block">Opponent</span>
@@ -213,18 +209,19 @@ export default function MyPicksPage() {
   return (
     <div className="flex min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
       
-      {/* 🎯 FIX 1: Removed the "hidden md:block" wrapper. LeagueRail will now handle its own mobile responsiveness! */}
+      {/* 🎯 Desktop Sidebar */}
       <LeagueRail initialLeagues={myLeagues} />
+      
+      {/* 🎯 Custom Mobile Drawer (with the Active Picks!) */}
+      <SideMenu />
 
-      {/* 🎯 FIX 2: Removed the redundant custom Mobile Drawer code that was clashing with LeagueRail. */}
-
-      <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24 md:pb-0">
+      <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24">
         
         {/* --- HEADER --- */}
         <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
             <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    {/* Added padding on mobile so it doesn't overlap the hamburger menu */}
+                    {/* Added mobile margin so it doesn't hit the hamburger */}
                     <Link href="/" className="text-2xl font-black italic text-white tracking-tighter uppercase ml-12 md:ml-0">
                         FIGHT<span className="text-pink-600">IQ</span>
                     </Link>
@@ -352,7 +349,8 @@ export default function MyPicksPage() {
         </div>
       </main>
 
-      {/* 🎯 FIX 3: Removed the <MobileNav /> component that was double-rendering at the bottom */}
+      {/* 🎯 Bottom Navigation */}
+      <MobileNav />
     </div>
   );
 }
