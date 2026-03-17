@@ -40,7 +40,7 @@ export async function GET(request) {
         // 2. Get EVERY active user email from profiles
         const { data: profiles, error: profileError } = await supabase
             .from('profiles')
-            .select('email, username')
+            .select('id, email, username') // 🎯 FIX: Added 'id' here so we can match it to the picks!
             .not('email', 'is', null);
 
         if (profileError || !profiles) throw new Error("Could not fetch profiles");
@@ -55,7 +55,7 @@ export async function GET(request) {
 
         // 4. Find the slackers (Users who have 0 picks for this event)
         const usersWithPicks = new Set(picks.map(p => p.user_id));
-        const slackers = profiles.filter(profile => !usersWithPicks.has(profile.email));
+        const slackers = profiles.filter(profile => !usersWithPicks.has(profile.id)); // 🎯 FIX: Comparing ID to ID
 
         if (slackers.length === 0) {
             return NextResponse.json({ message: 'Everyone has locked in their picks!' });
@@ -69,7 +69,7 @@ export async function GET(request) {
             
             return {
                 from: 'FightIQ <onboarding@resend.dev>', // Change to your verified domain when live
-                to: user.email, // Put back to user.email so you don't get spammed!
+                to: user.email, 
                 subject: `🚨 Lock in your picks for ${eventName}!`,
                 html: `
                     <div style="font-family: sans-serif; background-color: #050505; color: #ffffff; padding: 40px; text-align: center; border-radius: 10px;">
@@ -78,7 +78,7 @@ export async function GET(request) {
                         <p style="color: #9ca3af; font-size: 16px; line-height: 1.5;">
                             You haven't locked in your 5-man fantasy roster for <strong>${eventName}</strong> yet. Don't leave free points and coins on the table!
                         </p>
-                        <a href="https://yourwebsite.com" style="background-color: #db2777; color: #ffffff; padding: 15px 30px; text-decoration: none; font-weight: bold; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px;">
+                        <a href="https://testsitepicks.vercel.app" style="background-color: #db2777; color: #ffffff; padding: 15px 30px; text-decoration: none; font-weight: bold; border-radius: 8px; text-transform: uppercase; letter-spacing: 2px;">
                             Lock In Picks Now
                         </a>
                     </div>

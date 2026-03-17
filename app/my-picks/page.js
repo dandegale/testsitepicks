@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import LeagueRail from '../components/LeagueRail';
 import LogOutButton from '../components/LogOutButton'; 
-import MobileNav from '../components/MobileNav'; 
+// 🎯 Removed MobileNav import since LeagueRail handles mobile now!
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -18,7 +18,6 @@ export default function MyPicksPage() {
   const [activePicks, setActivePicks] = useState([]);
   const [myLeagues, setMyLeagues] = useState([]);
   
-  const [showMobileLeagues, setShowMobileLeagues] = useState(false);
   const [stats, setStats] = useState({ wins: 0, losses: 0, winPercentage: 0 });
   
   // NEW: State for our filter ('ALL', 'GLOBAL', or specific league.id)
@@ -110,7 +109,6 @@ export default function MyPicksPage() {
     return parseFloat((profit + 10).toFixed(1));
   };
 
-  // NEW: Helper function to render a single pick card to keep our code clean
   const renderPickCard = (pick) => {
       const fight = pick.fight || {};
       const opponent = fight.fighter_1_name === pick.selected_fighter 
@@ -204,7 +202,6 @@ export default function MyPicksPage() {
     );
   }
 
-  // NEW: Filter logic to separate the picks out before rendering
   const globalPicks = activePicks.filter(p => p.league?.isGlobal);
   const leaguePicks = activePicks.filter(p => !p.league?.isGlobal);
 
@@ -216,64 +213,22 @@ export default function MyPicksPage() {
   return (
     <div className="flex min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
       
-      {/* Sidebar (Desktop) */}
-      <div className="hidden md:block">
-        <LeagueRail initialLeagues={myLeagues} />
-      </div>
+      {/* 🎯 FIX 1: Removed the "hidden md:block" wrapper. LeagueRail will now handle its own mobile responsiveness! */}
+      <LeagueRail initialLeagues={myLeagues} />
 
-      {/* --- MOBILE DRAWER --- */}
-      <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
-         <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
-            <div className="p-6 border-b border-gray-800 flex justify-between items-center">
-                <span className="font-black italic text-xl">YOUR LEAGUES</span>
-                <button onClick={() => setShowMobileLeagues(false)} className="text-gray-500 hover:text-white transition-colors">✕</button>
-            </div>
-            
-            <div className="p-4 space-y-6">
-                <div className="flex flex-col gap-3">
-                    {myLeagues && myLeagues.length > 0 ? (
-                        myLeagues.map(league => (
-                            <Link key={league.id} href={`/league/${league.id}`} className="flex items-center gap-4 p-3 rounded-xl bg-gray-800/40 hover:bg-gray-800 border border-gray-700/50 hover:border-pink-500/50 transition-all group">
-                                <div className="w-10 h-10 rounded-full bg-gray-900 border border-gray-600 flex items-center justify-center text-[10px] font-black text-gray-400 group-hover:text-pink-500 group-hover:border-pink-500 transition-all shrink-0">
-                                     {league.name.substring(0,2).toUpperCase()}
-                                </div>
-                                <span className="font-bold text-sm text-gray-300 group-hover:text-white truncate">
-                                    {league.name}
-                                </span>
-                            </Link>
-                        ))
-                    ) : (
-                        <div className="p-4 border border-dashed border-gray-800 rounded-xl text-center">
-                            <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest mb-2">No Leagues Joined</p>
-                        </div>
-                    )}
-                </div>
-                
-                <div className="border-t border-gray-800 pt-6">
-                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Menu</p>
-                    <Link href="/leaderboard" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all mb-2">
-                        <span className="text-xl">🏆</span>
-                        <span className="text-sm font-bold text-gray-300">Global Leaderboard</span>
-                    </Link>
-                     <Link href="/profile" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all">
-                        <span className="text-xl">👤</span>
-                        <span className="text-sm font-bold text-gray-300">My Profile</span>
-                    </Link>
-                </div>
-            </div>
-         </div>
-      </div>
+      {/* 🎯 FIX 2: Removed the redundant custom Mobile Drawer code that was clashing with LeagueRail. */}
 
-      <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24">
+      <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24 md:pb-0">
         
         {/* --- HEADER --- */}
         <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
             <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Link href="/" className="text-2xl font-black italic text-white tracking-tighter uppercase">
+                    {/* Added padding on mobile so it doesn't overlap the hamburger menu */}
+                    <Link href="/" className="text-2xl font-black italic text-white tracking-tighter uppercase ml-12 md:ml-0">
                         FIGHT<span className="text-pink-600">IQ</span>
                     </Link>
-                    <div className="h-4 w-px bg-gray-800 mx-2"></div>
+                    <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
                     <nav className="hidden md:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
                         <span className="text-pink-600 cursor-default">My Picks</span>
                         <Link href="/" className="hover:text-white transition-colors">Global Feed</Link>
@@ -397,7 +352,7 @@ export default function MyPicksPage() {
         </div>
       </main>
 
-      <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
+      {/* 🎯 FIX 3: Removed the <MobileNav /> component that was double-rendering at the bottom */}
     </div>
   );
 }
