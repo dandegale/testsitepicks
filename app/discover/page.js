@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import LeagueRail from '../components/LeagueRail';
 import LogOutButton from '../components/LogOutButton';
 import MobileNav from '../components/MobileNav';
 import Toast from '../components/Toast';
@@ -15,6 +16,10 @@ export default function DiscoverLeaguesPage() {
     const [loading, setLoading] = useState(true);
     const [leagues, setLeagues] = useState([]);
     const [userLeagues, setUserLeagues] = useState(new Set());
+    
+    // 🎯 NEW: Added states for the menu and user's specific leagues
+    const [clientLeagues, setClientLeagues] = useState([]);
+    const [showMobileMenu, setShowMobileMenu] = useState(false);
     
     const [searchQuery, setSearchQuery] = useState('');
     const [sortOrder, setSortOrder] = useState('desc'); 
@@ -33,12 +38,15 @@ export default function DiscoverLeaguesPage() {
             
             let myLeagueIds = new Set();
             if (user) {
+                // 🎯 FIX: Updated select to also grab the league details for the menu
                 const { data: memberships } = await supabase
                     .from('league_members')
-                    .select('league_id')
+                    .select('league_id, leagues ( id, name, image_url, invite_code )')
                     .eq('user_id', user.email);
+                    
                 if (memberships) {
                     myLeagueIds = new Set(memberships.map(m => m.league_id));
+                    setClientLeagues(memberships.map(m => m.leagues).filter(Boolean));
                 }
             }
             setUserLeagues(myLeagueIds);
@@ -139,7 +147,6 @@ export default function DiscoverLeaguesPage() {
         }
     };
 
-    // 🎯 MOBILE-OPTIMIZED PODIUM
     const PodiumStep = ({ league, rank }) => {
         if (!league) return <div className="w-[32%] max-w-[160px] opacity-0 pointer-events-none"></div>;
 
@@ -166,11 +173,9 @@ export default function DiscoverLeaguesPage() {
             rankLabel = "2ND";
         }
 
-        // Using w-[32%] guarantees they perfectly divide the screen on mobile without squishing
         return (
             <div className="flex flex-col items-center justify-end w-[32%] max-w-[160px] group cursor-pointer transition-transform duration-300 hover:-translate-y-2 relative" onClick={() => router.push(`/league/${league.id}`)}>
                 
-                {/* Avatar overlaps perfectly based on screen size */}
                 <div className={`w-12 h-12 md:w-20 md:h-20 rounded-full bg-black ring-[2px] md:ring-4 ${ringClass} overflow-hidden -mb-6 md:-mb-10 z-20 relative flex items-center justify-center shadow-xl group-hover:scale-105 transition-transform`}>
                     {league.image_url ? (
                         <img src={league.image_url} alt={league.name} className="absolute inset-0 w-full h-full object-cover" />
@@ -179,17 +184,13 @@ export default function DiscoverLeaguesPage() {
                     )}
                 </div>
 
-                {/* Podium Block */}
                 <div className={`w-full ${heightClass} ${colorClass} ${shadowClass} rounded-t-lg md:rounded-t-xl flex flex-col items-center pt-8 md:pt-14 pb-2 md:pb-3 px-1 md:px-2 relative z-10`}>
-                    
                     <span className={`font-black italic text-lg md:text-4xl leading-none mb-1 drop-shadow-md ${textClass}`}>
                         {rankLabel}
                     </span>
-                    
                     <span className="text-[7px] md:text-[11px] font-bold text-center uppercase tracking-widest text-white truncate w-full mb-auto px-1">
                         {league.name}
                     </span>
-                    
                     <div className="bg-black/60 px-1 py-1 md:px-2 md:py-2 rounded md:rounded-lg border border-white/10 w-full flex flex-col items-center backdrop-blur-sm mt-2">
                         <span className="text-[6px] md:text-[8px] uppercase tracking-widest text-gray-400">Avg Score</span>
                         <span className="text-[10px] md:text-sm font-black text-white leading-none mt-0.5">{league.averageScore}</span>
@@ -209,41 +210,106 @@ export default function DiscoverLeaguesPage() {
     }
 
     return (
-        <div className="flex flex-col min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
+        <div className="flex min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
             
-            <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
-                <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between w-full">
-                    <div className="flex items-center gap-3 md:gap-4">
-                        <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">FIGHT<span className="text-pink-600">IQ</span></Link>
-                        <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
-                        <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
-                            <Link href="/" className="hover:text-white transition-colors">Global Feed</Link>
-                            <span className="text-pink-600 cursor-default">Discover Leagues</span>
-                        </nav>
+            {/* 🎯 DESKTOP LEAGUE RAIL */}
+            <div className="hidden md:block transition-all duration-500 ml-0 z-[70]">
+                <LeagueRail initialLeagues={clientLeagues} />
+            </div>
+
+            {/* 🎯 THE DARK MOBILE DRAWER */}
+            <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileMenu(false)}>
+                <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-[#0b0e14] border-r border-gray-800/60 shadow-2xl transform transition-transform duration-300 flex flex-col ${showMobileMenu ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
+                    <div className="p-5 border-b border-gray-800/60 flex justify-between items-center bg-black/20">
+                        <span className="text-xl font-black italic text-white tracking-tighter uppercase">
+                            FIGHT<span className="text-pink-600">IQ</span>
+                        </span>
+                        <button onClick={() => setShowMobileMenu(false)} className="text-gray-500 hover:text-white transition-colors p-2 -mr-2">✕</button>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <Link href="/profile" className="hidden lg:flex bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all items-center gap-2">
-                            <span>My Profile</span>
-                        </Link>
-                        <div className="hidden md:block"><LogOutButton /></div>
+                    
+                    <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-6 custom-scrollbar">
+                        <div>
+                            <p className="text-[10px] font-black text-pink-500 uppercase tracking-widest mb-4">Your Leagues</p>
+                            <div className="flex flex-col gap-2">
+                                {clientLeagues && clientLeagues.length > 0 ? (
+                                    clientLeagues.map(league => (
+                                        <Link key={league.id} href={`/league/${league.id}`} className="flex items-center gap-4 p-3 rounded-xl bg-[#12161f] hover:bg-gray-800 border border-gray-800/60 hover:border-pink-500/50 transition-all group">
+                                            <div className="w-10 h-10 rounded-full bg-black border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-400 group-hover:text-pink-500 group-hover:border-pink-500 transition-all shrink-0 overflow-hidden relative">
+                                                {league.image_url ? <img src={league.image_url} alt={league.name} className="w-full h-full object-cover" /> : (league.name ? league.name.substring(0,2).toUpperCase() : 'LG')}
+                                            </div>
+                                            <span className="font-bold text-sm text-gray-300 group-hover:text-white truncate">{league.name}</span>
+                                        </Link>
+                                    ))
+                                ) : (
+                                    <div className="p-4 border border-dashed border-gray-800 rounded-xl text-center bg-black/20">
+                                        <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest mb-2">No Leagues Joined</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        
+                        <div className="border-t border-gray-800/60 pt-6 mt-2 pb-6">
+                            <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Main Menu</p>
+                            <Link href="/" className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-gray-800/60 transition-all mb-1 group">
+                                <svg className="w-5 h-5 text-gray-500 group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                                <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">Dashboard</span>
+                            </Link>
+                            <Link href="/leaderboard" className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-gray-800/60 transition-all mb-1 group">
+                                <svg className="w-5 h-5 text-gray-500 group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v1a5 5 0 01-5 5h-1v2h4v2H5v-2h4v-2H8a5 5 0 01-5-5v-1a2 2 0 012-2m14 0V5a2 2 0 00-2-2H5a2 2 0 00-2 2v6" /></svg>
+                                <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">Global Leaderboard</span>
+                            </Link>
+                            <Link href="/profile" className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-gray-800/60 transition-all mb-1 group">
+                                <svg className="w-5 h-5 text-gray-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">My Profile</span>
+                            </Link>
+                            <Link href="/store" className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-pink-500/30 transition-all group">
+                                <svg className="w-5 h-5 text-gray-500 group-hover:text-pink-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                                <span className="text-sm font-bold text-gray-300 group-hover:text-pink-500 transition-colors">Item Store</span>
+                            </Link>
+                        </div>
                     </div>
                 </div>
-            </header>
+            </div>
 
-            <main className="flex-1 overflow-y-auto pb-24 relative">
+            <main className="flex-1 h-screen overflow-y-auto pb-24 relative flex flex-col w-full">
                 
+                <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
+                    <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between w-full">
+                        <div className="flex items-center gap-3 md:gap-4">
+                            {/* 🎯 THE TEAL HAMBURGER BUTTON */}
+                            <button 
+                                onClick={() => setShowMobileMenu(true)} 
+                                className="md:hidden p-1 text-teal-400 hover:text-teal-300 transition-colors drop-shadow-[0_0_5px_rgba(45,212,191,0.5)] animate-pulse"
+                            >
+                                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                            </button>
+                            
+                            <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">FIGHT<span className="text-pink-600">IQ</span></Link>
+                            <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
+                            <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
+                                <Link href="/" className="hover:text-white transition-colors">Global Feed</Link>
+                                <span className="text-pink-600 cursor-default">Discover Leagues</span>
+                            </nav>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <Link href="/profile" className="hidden lg:flex bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all items-center gap-2">
+                                <span>My Profile</span>
+                            </Link>
+                            <div className="hidden md:block"><LogOutButton /></div>
+                        </div>
+                    </div>
+                </header>
+
                 {/* HERO PODIUM */}
                 <div className="relative w-full bg-[#0b0e14] border-b border-gray-800 overflow-hidden pt-10 md:pt-12 pb-8 md:pb-10">
                     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-pink-900/20 via-black to-black z-0"></div>
                     
                     <div className="max-w-5xl mx-auto px-2 md:px-4 relative z-10">
                         <div className="text-center mb-8 md:mb-10">
-                            {/* 🎯 THE POUND-FOR-POUND TITLE FIX */}
                             <h1 className="text-3xl md:text-5xl font-black italic uppercase tracking-tighter mb-1 md:mb-2">League For League</h1>
                             <p className="text-[9px] md:text-xs text-gray-400 font-bold uppercase tracking-[0.2em]">Highest Scoring Public Leagues</p>
                         </div>
 
-                        {/* Gap scales down perfectly on mobile */}
                         <div className="flex justify-center items-end gap-1.5 sm:gap-4 md:gap-8 mt-10 md:mt-16 mx-auto max-w-2xl px-1">
                             <PodiumStep league={podiumLeagues[0]} rank={2} />
                             <PodiumStep league={podiumLeagues[1]} rank={1} />
@@ -253,7 +319,7 @@ export default function DiscoverLeaguesPage() {
                 </div>
 
                 {/* DISCOVER LIST */}
-                <div className="max-w-4xl mx-auto px-4 md:px-6 py-10 md:py-12">
+                <div className="max-w-4xl mx-auto px-4 md:px-6 py-10 md:py-12 w-full">
                     
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                         <div>
@@ -311,7 +377,6 @@ export default function DiscoverLeaguesPage() {
                                         )}
                                     </div>
 
-                                    {/* 🎯 Mobile optimization: Hidden text labels, only shows numbers and icons on small screens */}
                                     <div className="flex-1 min-w-0 flex flex-col justify-center pl-1">
                                         <div className="flex items-center gap-2 mb-0.5 md:mb-1">
                                             <h3 className="text-sm md:text-base font-black text-white uppercase italic leading-tight truncate group-hover:text-pink-400 transition-colors" title={league.name}>
@@ -360,7 +425,10 @@ export default function DiscoverLeaguesPage() {
                 </div>
             </main>
 
-            <MobileNav />
+            {/* 🎯 LINKED TO OPEN THE DRAWER */}
+            <div className="md:hidden">
+                <MobileNav onToggleLeagues={() => setShowMobileMenu(true)} />
+            </div>
 
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 

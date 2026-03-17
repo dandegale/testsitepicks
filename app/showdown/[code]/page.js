@@ -25,7 +25,9 @@ export default function ShowdownPage() {
 
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [pendingPicks, setPendingPicks] = useState([]); 
-  const [showMobileLeagues, setShowMobileLeagues] = useState(false); 
+  
+  // 🎯 Renamed to match our standard menu toggle
+  const [showMobileMenu, setShowMobileMenu] = useState(false); 
   const [showMobileSlip, setShowMobileSlip] = useState(false);
   const [showShowdown, setShowShowdown] = useState(false);
   const [clientLeagues, setClientLeagues] = useState([]);
@@ -300,7 +302,6 @@ export default function ShowdownPage() {
       return (
           <div className="bg-black border border-gray-800 rounded-xl overflow-hidden shadow-2xl">
               <div className="bg-gray-900 p-3 border-b border-gray-800 flex justify-between items-center">
-                  {/* 🎯 LINK ADDED TO BOX SCORE HEADER */}
                   <span className="text-xs font-black uppercase tracking-widest text-white">
                       <Link href={`/u/${encodeURIComponent(playerName)}`} className="hover:text-pink-400 transition-colors">
                           {playerName}'s Roster
@@ -453,38 +454,73 @@ export default function ShowdownPage() {
         <LeagueRail initialLeagues={clientLeagues} />
       </div>
 
-      <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
-         <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
-            <div className="p-6 border-b border-gray-800 flex justify-between items-center">
-                <span className="font-black italic text-xl">YOUR LEAGUES</span>
-                <button onClick={() => setShowMobileLeagues(false)} className="text-gray-500 hover:text-white transition-colors">✕</button>
-            </div>
-            <div className="p-4 space-y-6">
-                <div className="flex flex-col gap-3">
-                    {clientLeagues && clientLeagues.length > 0 ? (
-                        clientLeagues.map(league => (
-                            <Link key={league.id} href={`/league/${league.id}`} className="flex items-center gap-4 p-3 rounded-xl bg-gray-800/40 hover:bg-gray-800 border border-gray-700/50 hover:border-pink-500/50 transition-all group">
-                                <div className="w-10 h-10 rounded-full bg-gray-900 border border-gray-600 flex items-center justify-center text-[10px] font-black text-gray-400 group-hover:text-pink-500 group-hover:border-pink-500 transition-all shrink-0">
-                                     {league.name ? league.name.substring(0,2).toUpperCase() : 'LG'}
-                                </div>
-                                <span className="font-bold text-sm text-gray-300 group-hover:text-white truncate">{league.name}</span>
-                            </Link>
-                        ))
-                    ) : (
-                        <div className="p-4 border border-dashed border-gray-800 rounded-xl text-center">
-                            <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest mb-2">No Leagues Joined</p>
-                        </div>
-                    )}
-                </div>
-            </div>
-         </div>
+      {/* 🎯 THE FULL DARK MOBILE DRAWER */}
+      <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileMenu(false)}>
+          <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-[#0b0e14] border-r border-gray-800/60 shadow-2xl transform transition-transform duration-300 flex flex-col ${showMobileMenu ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
+              <div className="p-5 border-b border-gray-800/60 flex justify-between items-center bg-black/20">
+                  <span className="text-xl font-black italic text-white tracking-tighter uppercase">
+                      FIGHT<span className="text-pink-600">IQ</span>
+                  </span>
+                  <button onClick={() => setShowMobileMenu(false)} className="text-gray-500 hover:text-white transition-colors p-2 -mr-2">✕</button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-6 custom-scrollbar">
+                  <div>
+                      <p className="text-[10px] font-black text-pink-500 uppercase tracking-widest mb-4">Your Leagues</p>
+                      <div className="flex flex-col gap-2">
+                          {clientLeagues && clientLeagues.length > 0 ? (
+                              clientLeagues.map(league => (
+                                  <Link key={league.id} href={`/league/${league.id}`} className="flex items-center gap-4 p-3 rounded-xl bg-[#12161f] hover:bg-gray-800 border border-gray-800/60 hover:border-pink-500/50 transition-all group">
+                                      <div className="w-10 h-10 rounded-full bg-black border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-400 group-hover:text-pink-500 group-hover:border-pink-500 transition-all shrink-0 overflow-hidden relative">
+                                          {league.image_url ? <img src={league.image_url} alt={league.name} className="w-full h-full object-cover" /> : (league.name ? league.name.substring(0,2).toUpperCase() : 'LG')}
+                                      </div>
+                                      <span className="font-bold text-sm text-gray-300 group-hover:text-white truncate">{league.name}</span>
+                                  </Link>
+                              ))
+                          ) : (
+                              <div className="p-4 border border-dashed border-gray-800 rounded-xl text-center bg-black/20">
+                                  <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest mb-2">No Leagues Joined</p>
+                              </div>
+                          )}
+                      </div>
+                  </div>
+                  
+                  <div className="border-t border-gray-800/60 pt-6 mt-2 pb-6">
+                      <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Main Menu</p>
+                      <Link href="/" className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-gray-800/60 transition-all mb-1 group">
+                          <svg className="w-5 h-5 text-gray-500 group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                          <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">Dashboard</span>
+                      </Link>
+                      <Link href="/leaderboard" className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-gray-800/60 transition-all mb-1 group">
+                          <svg className="w-5 h-5 text-gray-500 group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v1a5 5 0 01-5 5h-1v2h4v2H5v-2h4v-2H8a5 5 0 01-5-5v-1a2 2 0 012-2m14 0V5a2 2 0 00-2-2H5a2 2 0 00-2 2v6" /></svg>
+                          <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">Global Leaderboard</span>
+                      </Link>
+                      <Link href="/profile" className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-gray-800/60 transition-all mb-1 group">
+                          <svg className="w-5 h-5 text-gray-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                          <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">My Profile</span>
+                      </Link>
+                      <Link href="/store" className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-pink-500/30 transition-all group">
+                          <svg className="w-5 h-5 text-gray-500 group-hover:text-pink-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                          <span className="text-sm font-bold text-gray-300 group-hover:text-pink-500 transition-colors">Item Store</span>
+                      </Link>
+                  </div>
+              </div>
+          </div>
       </div>
 
       <main className="flex-1 h-screen overflow-y-auto scrollbar-hide relative flex flex-col pb-24 md:pb-0"> 
         
         <header className={`sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800 transition-all duration-500 ${isFocusMode ? '-translate-y-full' : 'translate-y-0'}`}>
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 md:gap-4">
+                    {/* 🎯 THE TEAL HAMBURGER BUTTON IS HERE NOW */}
+                    <button 
+                        onClick={() => setShowMobileMenu(true)} 
+                        className="md:hidden p-1 text-teal-400 hover:text-teal-300 transition-colors drop-shadow-[0_0_5px_rgba(45,212,191,0.5)] animate-pulse"
+                    >
+                        <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                    </button>
+
                     <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">
                         FIGHT<span className="text-pink-600">IQ</span>
                     </Link>
@@ -540,7 +576,6 @@ export default function ShowdownPage() {
             <div className="absolute inset-0 flex flex-col justify-center p-4 md:p-6 z-20">
                 <div className="max-w-7xl mx-auto w-full flex flex-row items-center justify-center gap-4 md:gap-16">
                     
-                    {/* 🎯 LINK ADDED TO CREATOR BANNER NAME */}
                     <Link href={`/u/${encodeURIComponent(creatorName)}`} className="text-center group flex flex-col items-center w-28 md:w-48 relative hover:opacity-80 transition-opacity">
                       {showdownWinner === 'creator' && <div className="absolute -top-8 text-3xl animate-bounce">👑</div>}
                       <img src="/pink-gloves.png" className={`w-16 md:w-32 transition-transform duration-500 ${showdownWinner === 'creator' ? 'scale-110 drop-shadow-[0_0_40px_rgba(219,39,119,0.8)]' : 'drop-shadow-[0_0_30px_rgba(219,39,119,0.4)] group-hover:drop-shadow-[0_0_40px_rgba(219,39,119,0.6)]'}`} />
@@ -556,7 +591,6 @@ export default function ShowdownPage() {
                         <div className="text-[10px] font-black text-gray-600 uppercase tracking-widest italic mt-1">Fantasy Points</div>
                     </div>
 
-                    {/* 🎯 LINK ADDED TO OPPONENT BANNER NAME (IF EXISTS) */}
                     {opponentName ? (
                         <Link href={`/u/${encodeURIComponent(opponentName)}`} className="text-center group flex flex-col items-center w-28 md:w-48 relative hover:opacity-80 transition-opacity">
                             {showdownWinner === 'opponent' && <div className="absolute -top-8 text-3xl animate-bounce">👑</div>}
@@ -578,7 +612,6 @@ export default function ShowdownPage() {
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen w-full">
             
             <div className={`transition-all duration-500 origin-top ${isFocusMode && !hasLockedRoster ? 'scale-y-0 h-0 opacity-0 mb-0' : 'scale-y-100 mb-8'}`}>
-                {/* 🎯 YOUR MATCHUP BOX SCORE */}
                 <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg">
                     <button onClick={() => setShowComparisons(!showComparisons)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none">
                         <div className="flex items-center gap-2">
@@ -596,7 +629,6 @@ export default function ShowdownPage() {
                     )}
                 </div>
 
-                {/* 🎯 FULL CARD LEADERBOARD BOX */}
                 <div className="bg-gray-950 border border-gray-900 rounded-xl shadow-lg mt-6">
                     <button onClick={() => setShowAllFighters(!showAllFighters)} className="w-full flex items-center justify-between p-4 hover:bg-gray-800 transition-colors focus:outline-none">
                         <div className="flex items-center gap-2">
@@ -712,7 +744,6 @@ export default function ShowdownPage() {
         </div>
       </main>
 
-      {/* MOBILE UI */}
       {!hasLockedRoster && pendingPicks.length > 0 && (
           <div className="lg:hidden fixed bottom-20 left-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
             <button 
@@ -732,7 +763,6 @@ export default function ShowdownPage() {
           </div>
       )}
 
-      {/* MOBILE UI Modal */}
       {showMobileSlip && !hasLockedRoster && (
           <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm lg:hidden flex items-end">
             <div className="w-full bg-gray-950 rounded-t-3xl border-t border-gray-800 flex flex-col shadow-2xl animate-in slide-in-from-bottom-full duration-300">
@@ -751,7 +781,9 @@ export default function ShowdownPage() {
       )}
 
       <ShowdownModal isOpen={showShowdown} onClose={() => setShowShowdown(false)} />
-      <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
+      
+      {/* 🎯 Updated to trigger the new mobile menu */}
+      <MobileNav onToggleLeagues={() => setShowMobileMenu(true)} />
 
     </div>
   );
