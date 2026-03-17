@@ -278,27 +278,27 @@ export default function DiscoverLeaguesPage() {
                         <div className="flex items-center gap-3 md:gap-4">
                             {/* 🎯 THE TEAL HAMBURGER BUTTON */}
                             <button 
-                                onClick={() => setShowMobileMenu(true)} 
-                                className="md:hidden p-1 text-teal-400 hover:text-teal-300 transition-colors drop-shadow-[0_0_5px_rgba(45,212,191,0.5)] animate-pulse"
-                            >
-                                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" /></svg>
-                            </button>
-                            
-                            <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">FIGHT<span className="text-pink-600">IQ</span></Link>
-                            <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
-                            <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
-                                <Link href="/" className="hover:text-white transition-colors">Global Feed</Link>
-                                <span className="text-pink-600 cursor-default">Discover Leagues</span>
-                            </nav>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <Link href="/profile" className="hidden lg:flex bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all items-center gap-2">
-                                <span>My Profile</span>
-                            </Link>
-                            <div className="hidden md:block"><LogOutButton /></div>
-                        </div>
-                    </div>
-                </header>
+                        onClick={() => setShowMobileMenu(true)} 
+                        className="md:hidden p-1 text-teal-400 hover:text-teal-300 transition-colors drop-shadow-[0_0_5px_rgba(45,212,191,0.5)] animate-pulse"
+                    >
+                        <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                    </button>
+
+                    <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">
+                        FIGHT<span className="text-pink-600">IQ</span>
+                    </Link>
+                    <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
+                    <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
+                        <span className="text-white cursor-default">How It Works</span>
+                        <Link href="/" className="hover:text-white transition-colors">Global Feed</Link>
+                        <Link href="/leaderboard" className="hover:text-white transition-colors">Leaderboards</Link>
+                        <Link href="/store" className="hover:text-pink-400 text-pink-600 transition-colors flex items-center gap-1">
+                            <span>STORE</span>
+                        </Link>
+                    </nav>
+                </div>
+            </div>
+        </header>
 
                 {/* HERO PODIUM */}
                 <div className="relative w-full bg-[#0b0e14] border-b border-gray-800 overflow-hidden pt-10 md:pt-12 pb-8 md:pb-10">

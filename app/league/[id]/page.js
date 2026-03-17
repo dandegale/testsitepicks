@@ -45,7 +45,8 @@ export default function LeaguePage() {
   const [activeTab, setActiveTab] = useState('card'); 
   const [copySuccess, setCopySuccess] = useState(false);
   
-  const [showMobileLeagues, setShowMobileLeagues] = useState(false);
+  // 🎯 Replaced with showMobileMenu to match our standard layout
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showMobileSlip, setShowMobileSlip] = useState(false);
   
   const [showChampCelebration, setShowChampCelebration] = useState(false);
@@ -482,6 +483,17 @@ export default function LeaguePage() {
             });
         }
         setMembers(processedMembers);
+
+        // Fetch My Leagues for the sidebar
+        if (currentUser) {
+            const { data: memberships } = await supabase
+                .from('league_members')
+                .select('leagues ( id, name, image_url, invite_code )')
+                .eq('user_id', currentUser.email);
+            if (memberships) {
+                setMyLeagues(memberships.map(m => m.leagues).filter(Boolean));
+            }
+        }
 
         const { data: globalFights } = await supabase.from('fights').select('*').order('start_time', { ascending: true });
         setAllFights(globalFights || []);
@@ -929,29 +941,89 @@ export default function LeaguePage() {
         <LeagueRail initialLeagues={myLeagues} />
       </div>
 
+      {/* 🎯 THE DARK MOBILE DRAWER */}
+      <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileMenu ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileMenu(false)}>
+          <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-[#0b0e14] border-r border-gray-800/60 shadow-2xl transform transition-transform duration-300 flex flex-col ${showMobileMenu ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
+              <div className="p-5 border-b border-gray-800/60 flex justify-between items-center bg-black/20">
+                  <span className="text-xl font-black italic text-white tracking-tighter uppercase">
+                      FIGHT<span className="text-pink-600">IQ</span>
+                  </span>
+                  <button onClick={() => setShowMobileMenu(false)} className="text-gray-500 hover:text-white transition-colors p-2 -mr-2">✕</button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-6 custom-scrollbar">
+                  <div>
+                      <p className="text-[10px] font-black text-pink-500 uppercase tracking-widest mb-4">Your Leagues</p>
+                      <div className="flex flex-col gap-2">
+                          {myLeagues && myLeagues.length > 0 ? (
+                              myLeagues.map(leagueItem => (
+                                  <Link key={leagueItem.id} href={`/league/${leagueItem.id}`} onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 p-3 rounded-xl bg-[#12161f] hover:bg-gray-800 border border-gray-800/60 hover:border-pink-500/50 transition-all group">
+                                      <div className="w-10 h-10 rounded-full bg-black border border-gray-700 flex items-center justify-center text-[10px] font-black text-gray-400 group-hover:text-pink-500 group-hover:border-pink-500 transition-all shrink-0 overflow-hidden relative">
+                                          {leagueItem.image_url ? <img src={leagueItem.image_url} alt={leagueItem.name} className="w-full h-full object-cover" /> : (leagueItem.name ? leagueItem.name.substring(0,2).toUpperCase() : 'LG')}
+                                      </div>
+                                      <span className="font-bold text-sm text-gray-300 group-hover:text-white truncate">{leagueItem.name}</span>
+                                  </Link>
+                              ))
+                          ) : (
+                              <div className="p-4 border border-dashed border-gray-800 rounded-xl text-center bg-black/20">
+                                  <p className="text-gray-600 text-[10px] font-bold uppercase tracking-widest mb-2">No Leagues Joined</p>
+                              </div>
+                          )}
+                      </div>
+                  </div>
+                  
+                  <div className="border-t border-gray-800/60 pt-6 mt-2 pb-6">
+                      <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Main Menu</p>
+                      <Link href="/" onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-gray-800/60 transition-all mb-1 group">
+                          <svg className="w-5 h-5 text-gray-500 group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                          <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">Dashboard</span>
+                      </Link>
+                      <Link href="/discover" onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-gray-800/60 transition-all mb-1 group">
+                          <svg className="w-5 h-5 text-gray-500 group-hover:text-pink-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">Discover Leagues</span>
+                      </Link>
+                      <Link href="/leaderboard" onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-gray-800/60 transition-all mb-1 group">
+                          <svg className="w-5 h-5 text-gray-500 group-hover:text-yellow-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v1a5 5 0 01-5 5h-1v2h4v2H5v-2h4v-2H8a5 5 0 01-5-5v-1a2 2 0 012-2m14 0V5a2 2 0 00-2-2H5a2 2 0 00-2 2v6" /></svg>
+                          <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">Global Leaderboard</span>
+                      </Link>
+                      <Link href="/profile" onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-gray-800/60 transition-all mb-1 group">
+                          <svg className="w-5 h-5 text-gray-500 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                          <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">My Profile</span>
+                      </Link>
+                      <Link href="/store" onClick={() => setShowMobileMenu(false)} className="flex items-center gap-4 p-3 rounded-xl hover:bg-gray-800/40 border border-transparent hover:border-pink-500/30 transition-all group">
+                          <svg className="w-5 h-5 text-gray-500 group-hover:text-pink-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                          <span className="text-sm font-bold text-gray-300 group-hover:text-pink-500 transition-colors">Item Store</span>
+                      </Link>
+                  </div>
+              </div>
+          </div>
+      </div>
+
       <main className="flex-1 h-screen overflow-y-auto overflow-x-hidden scrollbar-hide relative flex flex-col pb-24 md:pb-0">
         
         <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 md:gap-4">
+                    {/* 🎯 THE TEAL HAMBURGER BUTTON */}
+                    <button 
+                        onClick={() => setShowMobileMenu(true)} 
+                        className="md:hidden p-1 text-teal-400 hover:text-teal-300 transition-colors drop-shadow-[0_0_5px_rgba(45,212,191,0.5)] animate-pulse"
+                    >
+                        <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                    </button>
+
                     <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">
                         FIGHT<span className="text-pink-600">IQ</span>
                     </Link>
                     <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
-                    <nav className="hidden md:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
+                    <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
+                        <span className="text-white cursor-default">How It Works</span>
                         <Link href="/" className="hover:text-white transition-colors">Global Feed</Link>
-                        <span className="text-pink-600 cursor-default truncate max-w-[100px] md:max-w-[150px]">
-                            {league?.name}
-                        </span>
+                        <Link href="/leaderboard" className="hover:text-white transition-colors">Leaderboards</Link>
+                        <Link href="/store" className="hover:text-pink-400 text-pink-600 transition-colors flex items-center gap-1">
+                            <span>STORE</span>
+                        </Link>
                     </nav>
-                </div>
-                <div className="flex items-center gap-4">
-                     <Link href="/profile" className="hidden md:flex bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all">
-                        MY PROFILE
-                    </Link>
-                    <div className="hidden md:block">
-                        <LogOutButton />
-                    </div>
                 </div>
             </div>
         </header>
@@ -1010,7 +1082,6 @@ export default function LeaguePage() {
                     League Chat
                 </button>
                 
-                {/* 🎯 NEW TAB FOR LEAVING LEAGUE */}
                 <button 
                     onClick={() => setActiveTab('leave')}
                     className={`whitespace-nowrap px-4 md:px-6 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-b-2 ${activeTab === 'leave' ? 'border-red-600 text-red-500 bg-gray-900' : 'border-transparent text-gray-500 hover:text-red-400 hover:bg-gray-900/50'}`}
@@ -1031,7 +1102,6 @@ export default function LeaguePage() {
 
         <div className="p-4 md:p-10 max-w-7xl mx-auto min-h-screen w-full">
             
-            {/* 🎯 LEAVE LEAGUE TAB CONTENT */}
             {activeTab === 'leave' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-2xl mx-auto mt-10">
                     <div className="bg-red-950/10 border border-red-900/30 rounded-3xl p-8 md:p-12 text-center shadow-2xl relative overflow-hidden">
@@ -1086,7 +1156,6 @@ export default function LeaguePage() {
                 </div>
             )}
 
-            {/* HIDE THE NORMAL GRID IF WE ARE ON THE LEAVE TAB */}
             {activeTab !== 'leave' && (
                 <div className="relative grid grid-cols-1 lg:grid-cols-3 w-full gap-6 lg:gap-10 items-start">
                     
@@ -1114,7 +1183,6 @@ export default function LeaguePage() {
                                         return (
                                             <div key={fight.id} className="p-5 bg-gray-900/80 backdrop-blur-sm rounded-xl border border-gray-800 shadow-xl overflow-hidden relative">
                                                 
-                                                {/* Live Status Header */}
                                                 <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-800">
                                                     <span className="text-xs font-black text-gray-500 tracking-widest uppercase">{fight.weightclass}</span>
                                                     {fight.winner ? (
@@ -1130,7 +1198,6 @@ export default function LeaguePage() {
 
                                                 <div className="flex justify-between items-start">
                                                     
-                                                    {/* Fighter 1 */}
                                                     <div className={`flex flex-col w-[42%] ${fight.winner === fight.fighter_1_name ? 'text-teal-400' : 'text-white'}`}>
                                                         <span className="font-black text-lg md:text-xl truncate leading-none mb-3">{fight.fighter_1_name}</span>
                                                         {f1Stats ? (
@@ -1150,12 +1217,10 @@ export default function LeaguePage() {
                                                         )}
                                                     </div>
 
-                                                    {/* VS Badge */}
                                                     <div className="w-[16%] flex justify-center items-center mt-8">
                                                         <span className="text-xl font-black text-gray-700 italic">VS</span>
                                                     </div>
 
-                                                    {/* Fighter 2 */}
                                                     <div className={`flex flex-col w-[42%] text-right ${fight.winner === fight.fighter_2_name ? 'text-teal-400' : 'text-white'}`}>
                                                         <span className="font-black text-lg md:text-xl truncate leading-none mb-3">{fight.fighter_2_name}</span>
                                                         {f2Stats ? (
@@ -1833,38 +1898,7 @@ export default function LeaguePage() {
           </div>
       )}
 
-      <div className={`fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileLeagues ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setShowMobileLeagues(false)}>
-         <div className={`absolute left-0 top-0 bottom-0 w-[80%] max-w-[300px] bg-gray-900 border-r border-gray-800 transform transition-transform duration-300 ${showMobileLeagues ? 'translate-x-0' : '-translate-x-full'}`} onClick={e => e.stopPropagation()}>
-            <div className="p-6 border-b border-gray-800 flex justify-between items-center">
-                <span className="font-black italic text-xl">YOUR LEAGUES</span>
-                <button onClick={() => setShowMobileLeagues(false)} className="text-gray-500 hover:text-white transition-colors">✕</button>
-            </div>
-            
-            <div className="p-4 space-y-6">
-                <div className="flex flex-col gap-4">
-                    {myLeagues.length > 0 ? (
-                        <LeagueRail initialLeagues={myLeagues} />
-                    ) : (
-                        <p className="text-gray-500 text-xs italic">No leagues joined yet.</p>
-                    )}
-                </div>
-                
-                <div className="border-t border-gray-800 pt-6">
-                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Menu</p>
-                    <Link href="/leaderboard" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all mb-2">
-                        <img src="/trophy.png" className="w-8 h-8 object-contain brightness-125 drop-shadow-[0_0_10px_rgba(234,179,8,0.4)]" alt="Lead" />
-                        <span className="text-sm font-bold text-gray-300">Global Leaderboard</span>
-                    </Link>
-                     <Link href="/profile" className="flex items-center gap-3 p-3 rounded-lg bg-gray-900/50 border border-gray-800 hover:bg-gray-800 transition-all">
-                        <span className="text-xl">👤</span>
-                        <span className="text-sm font-bold text-gray-300">My Profile</span>
-                    </Link>
-                </div>
-            </div>
-         </div>
-      </div>
-
-      <MobileNav onToggleLeagues={() => setShowMobileLeagues(true)} />
+      <MobileNav onToggleLeagues={() => setShowMobileMenu(true)} />
 
       {toast && (
         <Toast 

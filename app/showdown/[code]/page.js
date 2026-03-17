@@ -514,7 +514,7 @@ export default function ShowdownPage() {
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-3 md:gap-4">
                     {/* 🎯 THE TEAL HAMBURGER BUTTON IS HERE NOW */}
-                    <button 
+                     <button 
                         onClick={() => setShowMobileMenu(true)} 
                         className="md:hidden p-1 text-teal-400 hover:text-teal-300 transition-colors drop-shadow-[0_0_5px_rgba(45,212,191,0.5)] animate-pulse"
                     >
@@ -526,34 +526,13 @@ export default function ShowdownPage() {
                     </Link>
                     <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
                     <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
-                        <Link href="/my-picks" className="hover:text-white transition-colors">My Picks</Link>
+                        <span className="text-white cursor-default">How It Works</span>
                         <Link href="/" className="hover:text-white transition-colors">Global Feed</Link>
                         <Link href="/leaderboard" className="hover:text-white transition-colors">Leaderboards</Link>
+                        <Link href="/store" className="hover:text-pink-400 text-pink-600 transition-colors flex items-center gap-1">
+                            <span>STORE</span>
+                        </Link>
                     </nav>
-                </div>
-                <div className="flex items-center gap-3 md:gap-6">
-                    <button onClick={() => setShowShowdown(true)} className="flex bg-gradient-to-r from-pink-600 to-teal-600 hover:from-pink-500 hover:to-teal-500 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-white shadow-[0_0_15px_rgba(219,39,119,0.2)] hover:shadow-[0_0_20px_rgba(20,184,166,0.4)] transition-all items-center gap-2 active:scale-95">
-                        <span>⚔️</span>
-                        <span className="hidden sm:inline">1v1 Showdown</span>
-                        <span className="sm:hidden">1v1</span>
-                    </button>
-                    <div className="hidden md:flex items-center gap-3 px-4 border-x border-gray-800">
-                        <div className="text-right">
-                            <p className="text-[9px] font-black text-gray-600 uppercase tracking-tighter leading-none mb-1">Career Record</p>
-                            <p className="text-sm font-black italic text-white leading-none">{careerStats.wins}W - {careerStats.losses}L</p>
-                        </div>
-                        <div className="w-8 h-8 rounded-full border border-gray-800 flex items-center justify-center relative text-[8px] font-black">
-                            {Math.round(liveWinPercentage)}%
-                            <svg className="absolute inset-0 w-full h-full -rotate-90">
-                                <circle cx="16" cy="16" r="14" fill="none" stroke="#111" strokeWidth="1.5" />
-                                <circle cx="16" cy="16" r="14" fill="none" stroke="#db2777" strokeWidth="1.5" strokeDasharray="88" strokeDashoffset={88 - (88 * liveWinPercentage) / 100} />
-                            </svg>
-                        </div>
-                    </div>
-                    <Link href="/profile" className="hidden lg:flex bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all items-center gap-2">
-                        <span>My Profile</span>
-                    </Link>
-                    <div className="hidden md:block"><LogOutButton /></div>
                 </div>
             </div>
         </header>

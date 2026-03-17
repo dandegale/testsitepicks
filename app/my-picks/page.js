@@ -270,7 +270,7 @@ export default function MyPicksPage() {
             <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between w-full">
                 <div className="flex items-center gap-3 md:gap-4">
                     {/* 🎯 THE TEAL HAMBURGER BUTTON */}
-                    <button 
+                     <button 
                         onClick={() => setShowMobileMenu(true)} 
                         className="md:hidden p-1 text-teal-400 hover:text-teal-300 transition-colors drop-shadow-[0_0_5px_rgba(45,212,191,0.5)] animate-pulse"
                     >
@@ -282,32 +282,13 @@ export default function MyPicksPage() {
                     </Link>
                     <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
                     <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
-                        <span className="text-pink-600 cursor-default">My Picks</span>
+                        <span className="text-white cursor-default">How It Works</span>
                         <Link href="/" className="hover:text-white transition-colors">Global Feed</Link>
                         <Link href="/leaderboard" className="hover:text-white transition-colors">Leaderboards</Link>
+                        <Link href="/store" className="hover:text-pink-400 text-pink-600 transition-colors flex items-center gap-1">
+                            <span>STORE</span>
+                        </Link>
                     </nav>
-                </div>
-
-                <div className="flex items-center gap-4 md:gap-6">
-                    <div className="flex items-center gap-3 pr-4 border-r border-gray-800 hidden md:flex">
-                        <div className="text-right">
-                            <p className="text-[9px] font-black text-gray-600 uppercase tracking-tighter leading-none mb-1">Career Record</p>
-                            <p className="text-sm font-black italic text-white leading-none">{stats.wins}W - {stats.losses}L</p>
-                        </div>
-                        <div className="w-8 h-8 rounded-full border border-gray-800 flex items-center justify-center relative text-[8px] font-black">
-                            {Math.round(stats.winPercentage)}%
-                            <svg className="absolute inset-0 w-full h-full -rotate-90">
-                                <circle cx="16" cy="16" r="14" fill="none" stroke="#111" strokeWidth="1.5" />
-                                <circle cx="16" cy="16" r="14" fill="none" stroke="#db2777" strokeWidth="1.5" strokeDasharray="88" strokeDashoffset={88 - (88 * stats.winPercentage) / 100} />
-                            </svg>
-                        </div>
-                    </div>
-                    <Link href="/profile" className="hidden lg:flex bg-gray-900 hover:bg-gray-800 border border-gray-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-300 hover:text-white transition-all items-center gap-2">
-                        <span>My Profile</span>
-                    </Link>
-                    <div className="hidden md:block">
-                        <LogOutButton />
-                    </div>
                 </div>
             </div>
         </header>
