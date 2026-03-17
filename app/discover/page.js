@@ -11,7 +11,7 @@ import Toast from '../components/Toast';
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-// 🎯 FIX 2: Moved PodiumStep OUTSIDE the main component so React stops destroying and rebuilding it!
+// 🎯 FIX: Moved PodiumStep OUTSIDE the main component so React stops destroying it!
 const PodiumStep = ({ league, rank, router }) => {
     if (!league) return <div className="w-[32%] max-w-[160px] opacity-0 pointer-events-none"></div>;
 
@@ -208,13 +208,12 @@ export default function DiscoverLeaguesPage() {
     }
 
     return (
-        <div className="flex min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
+        <div className="flex flex-col min-h-screen bg-black text-white font-sans selection:bg-pink-500 selection:text-white">
             
             <div className="hidden md:block transition-all duration-500 ml-0 z-[70]">
                 <LeagueRail initialLeagues={clientLeagues} />
             </div>
 
-            {/* 🎯 FIX 1: THE UN-NESTED MOBILE DRAWER */}
             <div 
                 className={`fixed inset-0 z-[90] bg-black/80 backdrop-blur-sm transition-opacity duration-300 md:hidden ${showMobileMenu ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} 
                 onClick={() => setShowMobileMenu(false)} 
@@ -275,7 +274,7 @@ export default function DiscoverLeaguesPage() {
                 </div>
             </div>
 
-            <main className="flex-1 h-screen overflow-y-auto pb-24 relative flex flex-col w-full">
+            <main className="flex-1 overflow-y-auto pb-24 relative">
                 
                 <header className="sticky top-0 z-[60] w-full bg-black/80 backdrop-blur-xl border-b border-gray-800">
                     <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between w-full">
@@ -286,7 +285,6 @@ export default function DiscoverLeaguesPage() {
                             >
                                 <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" /></svg>
                             </button>
-                            
                             <Link href="/" className="text-xl md:text-2xl font-black italic text-white tracking-tighter uppercase">FIGHT<span className="text-pink-600">IQ</span></Link>
                             <div className="hidden md:block h-4 w-px bg-gray-800 mx-2"></div>
                             <nav className="hidden lg:flex gap-6 text-[10px] font-black uppercase tracking-widest text-gray-500">
@@ -313,6 +311,7 @@ export default function DiscoverLeaguesPage() {
                         </div>
 
                         <div className="flex justify-center items-end gap-1.5 sm:gap-4 md:gap-8 mt-10 md:mt-16 mx-auto max-w-2xl px-1">
+                            {/* 🎯 FIX: Passed the router prop into the separated components */}
                             <PodiumStep league={podiumLeagues[0]} rank={2} router={router} />
                             <PodiumStep league={podiumLeagues[1]} rank={1} router={router} />
                             <PodiumStep league={podiumLeagues[2]} rank={3} router={router} />
