@@ -27,12 +27,19 @@ const NAME_FIXES = {
     "roass": "rosas",         
     "sumudaerji": "mudaerji", 
     "weili": "zhang",         
-    "stpreux": "st-preux"     
+    "stpreux": "st-preux",
+    "sterling": "stirling",   // 🎯 Added fix for Navajo Stirling
+    "simone": "simon"         // 🎯 Added fix for Ricky Simone/Simon
+};
+
+// 🎯 NEW: Safely removes accents (so Simón becomes Simon instead of Simn)
+const removeAccents = (str) => {
+    return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 };
 
 const getSearchKey = (name) => {
     if (!name) return "";
-    let clean = name.toLowerCase().trim();
+    let clean = removeAccents(name).toLowerCase().trim();
     clean = clean.replace(/\s+(jr\.?|sr\.?|ii|iii)$/g, '');
     const parts = clean.split(/\s+/);
     let lastName = parts[parts.length - 1].replace(/[^a-z]/g, '');
@@ -40,7 +47,7 @@ const getSearchKey = (name) => {
 };
 
 const sanitizeForMatch = (str) => {
-    return str ? str.toLowerCase().replace(/[^a-z]/g, '') : '';
+    return str ? removeAccents(str).toLowerCase().replace(/[^a-z]/g, '') : '';
 };
 
 const isFighterMatch = (name1, name2) => {
@@ -180,14 +187,12 @@ async function processEconomyPayouts() {
 
         console.log(`🔎 Found ${unpaidPicks.length} unpaid LEAGUE picks to process. Analyzing matches...`);
 
-        // We need the stats for these fights to know how many points they scored
         const fightIds = recentFights.map(f => f.id);
         const { data: statsData } = await supabase
             .from('fighter_stats')
             .select('*')
             .in('fight_id', fightIds);
 
-        // We need to know what kind of league they picked in (Striking, Grappling, MMA)
         const leagueIds = [...new Set(unpaidPicks.map(p => p.league_id))];
         const { data: leaguesData } = await supabase
             .from('leagues')
@@ -200,12 +205,10 @@ async function processEconomyPayouts() {
         unpaidPicks.forEach(pick => {
             const fight = recentFights.find(f => f.id === pick.fight_id);
             
-            // Only process if the fight is officially finished
             if (fight) {
                 const league = leaguesData?.find(l => String(l.id) === String(pick.league_id));
                 const format = league?.scoring_format || 'MMA';
 
-                // Find the exact stat row for the picked fighter using the smart matcher
                 const statRow = statsData?.find(s => 
                     String(s.fight_id) === String(pick.fight_id) && 
                     isFighterMatch(s.fighter_name, pick.selected_fighter)
@@ -219,7 +222,6 @@ async function processEconomyPayouts() {
                 console.log(`   🎫 Pick: [${pick.selected_fighter}] | Format: [${format}] | DFS Points Scored: ${earnedPoints}`);
 
                 if (!userEarnings[pick.user_id]) userEarnings[pick.user_id] = 0;
-                // Add the fantasy points directly to their earnings!
                 userEarnings[pick.user_id] += earnedPoints;
 
                 picksToMarkPaid.push(pick.id);
@@ -239,7 +241,6 @@ async function processEconomyPayouts() {
             if (profileErr || !profile) {
                 console.log(`   ❌ ERROR: Could not find profile for [${email}].`);
             } else {
-                // Round the final combined points to a clean integer for the database
                 const newBalance = Math.round((profile.coins || 0) + earnings);
                 
                 const { error: updateErr } = await supabase.from('profiles').update({ coins: newBalance }).eq('email', email);
@@ -339,8 +340,40 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
 
         const statuses = [];
         $('.b-fight-details__person-status').each((i, el) => statuses.push($(el).text().trim().toUpperCase()));
-        
-        const isFinished = statuses.includes('W') || statuses.includes('L') || statuses.includes('NC') || statuses.includes('D');
+
+        let isKO = false;
+        let isSub = false;
+        let isDec = false; 
+        let finishRound = 1;
+        let finishTimeSeconds = 999;
+        let winMethodStr = ""; 
+
+        $('.b-fight-details__text-item, .b-fight-details__text-item_first').each((i, el) => {
+            const text = $(el).text().replace(/\s+/g, ' ').toUpperCase().trim();
+            
+            if (text.includes('METHOD:')) {
+                const parts = text.split('METHOD:');
+                if (parts.length > 1) {
+                    winMethodStr = parts[1].trim(); 
+                }
+                if (text.includes('KO/TKO') || text.includes('TKO') || text.includes('KO')) isKO = true;
+                if (text.includes('SUB') || text.includes('SUBMISSION')) isSub = true;
+                if (text.includes('DEC') || text.includes('DECISION')) isDec = true; 
+            }
+            if (text.includes('ROUND:') && !text.includes('FORMAT')) {
+                const parts = text.split('ROUND:');
+                if (parts.length > 1) finishRound = parseInt(parts[1].trim()) || 1;
+            }
+            if (text.includes('TIME:') && !text.includes('FORMAT')) {
+                const parts = text.split('TIME:');
+                if (parts.length > 1) {
+                    const [m, s] = parts[1].trim().split(':').map(Number);
+                    if (!isNaN(m) && !isNaN(s)) finishTimeSeconds = (m * 60) + s;
+                }
+            }
+        });
+
+        const isFinished = statuses.includes('W') || statuses.includes('L') || statuses.includes('NC') || statuses.includes('DRAW') || statuses.includes('D') || winMethodStr.length > 2;
 
         const tableText = $('.b-fight-details__table').text() || '';
         const hasFightStats = tableText.includes('Sig. str') || tableText.includes('Ctrl') || tableText.includes('Td');
@@ -363,43 +396,6 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
         });
 
         if (!dbFight) return;
-
-        // 🛑 FINISH DETECTION & ROUND TIMING
-        let isKO = false;
-        let isSub = false;
-        let isDec = false; 
-        let finishRound = 1;
-        let finishTimeSeconds = 999;
-        let winMethodStr = ""; 
-
-        $('.b-fight-details__text-item, .b-fight-details__text-item_first').each((i, el) => {
-            const text = $(el).text().replace(/\s+/g, ' ').toUpperCase().trim();
-            
-            if (text.includes('METHOD:')) {
-                const parts = text.split('METHOD:');
-                if (parts.length > 1) {
-                    winMethodStr = parts[1].trim(); 
-                }
-                if (text.includes('KO/TKO') || text.includes('TKO') || text.includes('KO')) isKO = true;
-                if (text.includes('SUB') || text.includes('SUBMISSION')) isSub = true;
-                if (text.includes('DEC') || text.includes('DECISION')) isDec = true; 
-            }
-            if (text.includes('ROUND:') && !text.includes('FORMAT')) {
-                const parts = text.split('ROUND:');
-                if (parts.length > 1) {
-                    finishRound = parseInt(parts[1].trim()) || 1;
-                }
-            }
-            if (text.includes('TIME:') && !text.includes('FORMAT')) {
-                const parts = text.split('TIME:');
-                if (parts.length > 1) {
-                    const [m, s] = parts[1].trim().split(':').map(Number);
-                    if (!isNaN(m) && !isNaN(s)) {
-                        finishTimeSeconds = (m * 60) + s;
-                    }
-                }
-            }
-        });
 
         const isUnder30s = finishRound === 1 && finishTimeSeconds <= 30;
         const isLast10sR5 = finishRound === 5 && finishTimeSeconds >= 290; 
@@ -516,20 +512,29 @@ async function scrapeAndScoreFight(fightUrl, dbFights) {
             finalMethodString = `${winMethodStr} R${finishRound}`;
         }
 
-        if (isFinished && statuses.includes('W')) {
-            const winnerKey = getSearchKey(fighters[winnerIndex]);
-            let exactDbWinnerName = fighters[winnerIndex]; 
-            
-            const f1Clean = sanitizeForMatch(dbFight.fighter_1_name);
-            const f2Clean = sanitizeForMatch(dbFight.fighter_2_name);
-            
-            if (f1Clean.includes(winnerKey)) {
-                exactDbWinnerName = dbFight.fighter_1_name;
-            } else if (f2Clean.includes(winnerKey)) {
-                exactDbWinnerName = dbFight.fighter_2_name;
-            }
+        if (isFinished) {
+            let exactDbWinnerName = 'Draw'; 
+            let cleanMethod = winMethodStr ? winMethodStr.trim() : (isDec ? 'DEC' : 'UNKNOWN');
 
-            const cleanMethod = winMethodStr ? winMethodStr.trim() : (isDec ? 'DEC' : 'UNKNOWN');
+            if (statuses.includes('W')) {
+                const winnerKey = getSearchKey(fighters[winnerIndex]);
+                exactDbWinnerName = fighters[winnerIndex]; 
+                
+                const f1Clean = sanitizeForMatch(dbFight.fighter_1_name);
+                const f2Clean = sanitizeForMatch(dbFight.fighter_2_name);
+                
+                if (f1Clean.includes(winnerKey)) {
+                    exactDbWinnerName = dbFight.fighter_1_name;
+                } else if (f2Clean.includes(winnerKey)) {
+                    exactDbWinnerName = dbFight.fighter_2_name;
+                }
+            } else if (statuses.includes('NC') || winMethodStr.includes('NO CONTEST') || winMethodStr.includes('NC')) {
+                exactDbWinnerName = 'No Contest';
+                cleanMethod = 'NC';
+            } else {
+                exactDbWinnerName = 'Draw';
+                if (!cleanMethod || cleanMethod === 'UNKNOWN') cleanMethod = 'DRAW';
+            }
 
             const { error: updateError } = await supabase.from('fights').update({ 
                 winner: exactDbWinnerName,

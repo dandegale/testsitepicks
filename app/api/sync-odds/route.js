@@ -28,13 +28,16 @@ const isAnchorMatch = (clean1, clean2) => {
     return false;
 };
 
+// 🎯 UPDATED: Added the Stirling/Simon fixes to the core search key generator
 const NAME_FIXES = {
     "roass": "rosas",
     "sumudaerji": "mudaerji",
     "weili": "zhang",
     "stpreux": "st-preux",
     "preux": "st-preux",
-    "saintpreux": "st-preux"
+    "saintpreux": "st-preux",
+    "sterling": "stirling", // Fix for Navajo
+    "simone": "simon"       // Fix for Ricky
 };
 
 const getSearchKey = (name) => {
@@ -46,7 +49,7 @@ const getSearchKey = (name) => {
     return NAME_FIXES[lastName] || lastName;
 };
 
-// 🎯 THE NAME DICTIONARY 
+// 🎯 UPDATED: Added direct translations for the sportsbook weirdness
 const NAME_DICTIONARY = {
     "Javier Reyes Rugeles": "Javier Reyes",
     "Joseph Pyfer": "Joe Pyfer",
@@ -56,7 +59,9 @@ const NAME_DICTIONARY = {
     "Sumudaerji Sumudaerji": "Su Mudaerji",
     "Sumerdaji Sumerdaji": "Su Mudaerji",
     "Richard Turcios": "Ricky Turcios", 
-    "Yi Zha": "Yizha"
+    "Yi Zha": "Yizha",
+    "Navajo Sterling": "Navajo Stirling", // Fix sportsbook typo
+    "Ricky Simone": "Ricky Simon"         // Fix sportsbook typo
 };
 
 export async function GET() {
