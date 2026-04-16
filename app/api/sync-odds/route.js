@@ -9,12 +9,10 @@ function shiftToEST(utcDateString) {
     return date.toISOString(); 
 }
 
-// 🎯 NEW: Strips accents (ř -> r, á -> a) so international names match perfectly!
 const removeAccents = (str) => {
     return str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '';
 };
 
-// Helper to squash names for clean matching
 const squashFullName = (name) => {
     if (!name) return '';
     return removeAccents(name).toLowerCase().replace(/[^a-z]/g, '');
@@ -28,7 +26,6 @@ const isAnchorMatch = (clean1, clean2) => {
     return false;
 };
 
-// 🎯 UPDATED: Added the Stirling/Simon fixes to the core search key generator
 const NAME_FIXES = {
     "roass": "rosas",
     "sumudaerji": "mudaerji",
@@ -36,8 +33,8 @@ const NAME_FIXES = {
     "stpreux": "st-preux",
     "preux": "st-preux",
     "saintpreux": "st-preux",
-    "sterling": "stirling", // Fix for Navajo
-    "simone": "simon"       // Fix for Ricky
+    "sterling": "stirling", 
+    "simone": "simon"       
 };
 
 const getSearchKey = (name) => {
@@ -49,7 +46,6 @@ const getSearchKey = (name) => {
     return NAME_FIXES[lastName] || lastName;
 };
 
-// 🎯 UPDATED: Added direct translations for the sportsbook weirdness
 const NAME_DICTIONARY = {
     "Javier Reyes Rugeles": "Javier Reyes",
     "Joseph Pyfer": "Joe Pyfer",
@@ -60,9 +56,9 @@ const NAME_DICTIONARY = {
     "Sumerdaji Sumerdaji": "Su Mudaerji",
     "Richard Turcios": "Ricky Turcios", 
     "Yi Zha": "Yizha",
-    "Navajo Sterling": "Navajo Stirling", // Fix sportsbook typo
+    "Navajo Sterling": "Navajo Stirling", 
     "Ricky Simone": "Ricky Simon",
-    "Darya Zheleznyakova": "Daria Zhelezniakova"         // Fix sportsbook typo
+    "Darya Zheleznyakova": "Daria Zhelezniakova"         
 };
 
 export async function GET() {
@@ -80,7 +76,6 @@ export async function GET() {
   try {
     let espnMatchups = [];
 
-    // 1. Fetch ESPN Data (The Absolute Source of Truth)
     try {
         const today = new Date();
         const future = new Date();
@@ -115,7 +110,6 @@ export async function GET() {
         console.error("ESPN Fetch Error:", e);
     }
 
-    // 2. Fetch Odds API
     const response = await fetch(
       `https://api.the-odds-api.com/v4/sports/mma_mixed_martial_arts/odds/?apiKey=${API_KEY}&regions=us&markets=h2h&oddsFormat=american`
     );
@@ -262,7 +256,26 @@ export async function GET() {
         }
     }
 
-    const ghostFights = existingFights.filter(f => !confirmedDbIds.has(f.id));
+    // 🎯 THE FIX: Smart Ghost Fight Cleanup
+    const now = new Date();
+    const ghostFights = existingFights.filter(f => {
+        // If we saw it in the API today, it's not a ghost. Keep it.
+        if (confirmedDbIds.has(f.id)) return false;
+
+        // Calculate how many hours until the fight starts
+        const fightDate = new Date(f.start_time);
+        const hoursUntilFight = (fightDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+        // 🛡️ PROTECT FIGHT NIGHT: If the fight is less than 36 hours away (or already in the past), 
+        // the odds were likely just pulled by the sportsbooks for the event. DO NOT DELETE.
+        if (hoursUntilFight < 36) {
+            logs.push(`🛡️ PROTECTED: ${f.fighter_1_name} vs ${f.fighter_2_name} (Odds pulled off board, but fight is close/active)`);
+            return false;
+        }
+
+        // If it's a future fight (>36 hours away) that disappeared from the API, it was likely cancelled. Let it be deleted.
+        return true;
+    });
 
     if (ghostFights.length > 0) {
         const ghostIds = ghostFights.map(f => f.id);
