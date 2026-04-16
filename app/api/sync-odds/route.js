@@ -61,7 +61,8 @@ const NAME_DICTIONARY = {
     "Richard Turcios": "Ricky Turcios", 
     "Yi Zha": "Yizha",
     "Navajo Sterling": "Navajo Stirling", // Fix sportsbook typo
-    "Ricky Simone": "Ricky Simon"         // Fix sportsbook typo
+    "Ricky Simone": "Ricky Simon",
+    "Darya Zheleznyakova": "Daria Zhelezniakova"         // Fix sportsbook typo
 };
 
 export async function GET() {
