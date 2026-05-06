@@ -2,9 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { useRouter } from 'next/navigation'; // 🚀 NEW: Import Router
+import { useRouter } from 'next/navigation';
 
-// 🎯 IMPORT STORE CASES FOR RARITY LOOKUP
 import { STORE_CASES } from '@/lib/cases';
 
 const supabase = createClient(
@@ -12,7 +11,32 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// 🎯 HELPER TO COLORIZE TITLES BASED ON RARITY
+// 🎯 1. THE PROFANITY DICTIONARY
+// Add any words you want to block here. Use lowercase.
+const BANNED_WORDS = [
+  'fuck', 'shit', 'bitch', 'asshole', 'cunt', 'dick', 'pussy', 
+  'slut', 'whore', 'fag', 'faggot', 'nigger', 'nigga', 'retard', 
+  'chink', 'spic', 'kike', 'gook', 'tranny', 'dyke'
+];
+
+// 🎯 2. THE CHECKER (Looks for whole words to avoid blocking "class" because it has "ass" in it)
+const containsProfanity = (text) => {
+  return BANNED_WORDS.some(word => {
+    const regex = new RegExp(`\\b${word}\\b`, 'i');
+    return regex.test(text);
+  });
+};
+
+// 🎯 3. THE SCRUBBER (Replaces bad words with asterisks for older DB messages)
+const censorText = (text) => {
+  let censored = text;
+  BANNED_WORDS.forEach(word => {
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    censored = censored.replace(regex, '***');
+  });
+  return censored;
+};
+
 const getRarityTextStyle = (rarity) => {
     switch (rarity) {
         case 'Legendary': return 'text-yellow-500 drop-shadow-[0_0_5px_rgba(234,179,8,0.8)]';
@@ -23,7 +47,7 @@ const getRarityTextStyle = (rarity) => {
 };
 
 export default function ChatBox({ league_id }) {
-  const router = useRouter(); // 🚀 NEW: Initialize Router
+  const router = useRouter(); 
   const activeLeagueId = league_id || null;
 
   const [messages, setMessages] = useState([]);
@@ -76,7 +100,10 @@ export default function ChatBox({ league_id }) {
 
       const { data, error } = await query;
       if (data) {
-          setMessages(data);
+          // 🎯 Scrub old messages loaded from the database
+          const scrubbedData = data.map(msg => ({ ...msg, content: censorText(msg.content) }));
+          setMessages(scrubbedData);
+          
           const uniqueEmails = [...new Set(data.map(m => m.user_id))];
           loadProfiles(uniqueEmails);
       }
@@ -95,7 +122,10 @@ export default function ChatBox({ league_id }) {
         setMessages((prev) => {
           const exists = prev.some(m => m.id === payload.new.id);
           if (exists) return prev;
-          return [...prev, payload.new];
+          
+          // 🎯 Scrub incoming live messages
+          const cleanMsg = { ...payload.new, content: censorText(payload.new.content) };
+          return [...prev, cleanMsg];
         });
         loadProfiles([payload.new.user_id]);
       })
@@ -111,6 +141,12 @@ export default function ChatBox({ league_id }) {
   const handleSend = async (e) => {
     e.preventDefault();
     if (!newMessage.trim() || !user) return;
+
+    // 🎯 4. THE BOUNCER: Block the message from ever reaching Supabase
+    if (containsProfanity(newMessage)) {
+        alert("⚠️ Message blocked. Trash talk is fine, but keep slurs and extreme toxicity out of the chat.");
+        return;
+    }
 
     const currentUsername = user.user_metadata?.username || user.email.split('@')[0];
 
@@ -175,7 +211,7 @@ export default function ChatBox({ league_id }) {
                       <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{isMe ? 'You' : displayName}</span>
                       {equippedTitle && <span className={`text-[8px] font-black uppercase tracking-widest truncate ${getRarityTextStyle(titleRarity)}`}>"{equippedTitle}"</span>}
                   </div>
-                  <div className={`px-4 py-2.5 text-xs font-medium shadow-lg leading-relaxed ${isMe ? 'bg-pink-600 text-white rounded-2xl rounded-tr-sm' : 'bg-gray-800 border border-gray-700 text-gray-200 rounded-2xl rounded-tl-sm'}`}>
+                  <div className={`px-4 py-2.5 text-xs font-medium shadow-lg leading-relaxed ${isMe ? 'bg-pink-600 text-white rounded-2xl rounded-tr-sm break-words' : 'bg-gray-800 border border-gray-700 text-gray-200 rounded-2xl rounded-tl-sm break-words'}`}>
                     {msg.content}
                   </div>
                 </div>
@@ -191,11 +227,8 @@ export default function ChatBox({ league_id }) {
           type="text"
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
-          
-          // 🚀 NEW: Intercept clicks and redirect if not logged in
           onClick={() => { if (!user) router.push('/login'); }}
           readOnly={!user} 
-          
           placeholder={user ? "Talk trash..." : "Click to log in and chat"}
           className={`flex-1 bg-black border border-gray-800 text-white text-xs px-4 py-3 rounded-xl focus:outline-none focus:border-pink-600 transition-colors placeholder:text-gray-600 font-bold shadow-inner ${!user ? 'cursor-pointer' : ''}`}
         />

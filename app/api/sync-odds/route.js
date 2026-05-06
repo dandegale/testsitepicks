@@ -3,11 +3,7 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-function shiftToEST(utcDateString) {
-    const date = new Date(utcDateString);
-    date.setHours(date.getHours() - 5);
-    return date.toISOString(); 
-}
+// 🎯 FIX 1: shiftToEST completely erased! We are saving in pure UTC.
 
 const removeAccents = (str) => {
     return str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '';
@@ -135,7 +131,15 @@ export async function GET() {
     futureLimit.setDate(new Date().getDate() + 180);
 
     for (const event of apiData) {
-        const fightDate = new Date(event.commence_time);
+        let fightDate = new Date(event.commence_time); 
+        
+        // 🎯 FIX 2: THE PLACEHOLDER CATCHER
+        // If the API uses a generic 12:00 UTC (8 AM EST) or 00:00 UTC placeholder,
+        // force the start time to 6:00 PM EST (22:00 UTC) so fights don't lock at breakfast!
+        if (event.commence_time.includes('T12:00:00Z') || event.commence_time.includes('T00:00:00Z')) {
+            fightDate.setUTCHours(22, 0, 0, 0); 
+        }
+
         if (fightDate > futureLimit || fightDate < new Date()) continue;
 
         let bestBookmaker = null;
@@ -207,7 +211,7 @@ export async function GET() {
             return direct || reverse;
         });
 
-        const adjustedEstTime = shiftToEST(event.commence_time);
+        const finalUTCTime = fightDate.toISOString(); // 🎯 Using pure UTC
 
         if (match) {
             confirmedDbIds.add(match.id);
@@ -220,12 +224,15 @@ export async function GET() {
             const newFighter1Odds = isReversedMatch ? outcome2.price : outcome1.price;
             const newFighter2Odds = isReversedMatch ? outcome1.price : outcome2.price;
 
-            if (match.fighter_1_odds !== newFighter1Odds || match.fighter_2_odds !== newFighter2Odds || match.event_name !== dynamicEventName || match.start_time !== adjustedEstTime) {
+            const dbTimeMs = new Date(match.start_time).getTime();
+            const apiTimeMs = fightDate.getTime();
+
+            if (match.fighter_1_odds !== newFighter1Odds || match.fighter_2_odds !== newFighter2Odds || match.event_name !== dynamicEventName || dbTimeMs !== apiTimeMs) {
                 await supabase
                     .from('fights')
                     .update({
                         event_name: dynamicEventName, 
-                        start_time: adjustedEstTime,
+                        start_time: finalUTCTime,
                         fighter_1_odds: newFighter1Odds,
                         fighter_2_odds: newFighter2Odds,
                         source: bestBookmaker.key
@@ -240,7 +247,7 @@ export async function GET() {
 
             const { error: insertError } = await supabase.from('fights').insert({
                 event_name: dynamicEventName, 
-                start_time: adjustedEstTime,
+                start_time: finalUTCTime,
                 fighter_1_name: f1Name,
                 fighter_1_odds: outcome1.price,
                 fighter_2_name: f2Name,
@@ -256,26 +263,7 @@ export async function GET() {
         }
     }
 
-    // 🎯 THE FIX: Smart Ghost Fight Cleanup
-    const now = new Date();
-    const ghostFights = existingFights.filter(f => {
-        // If we saw it in the API today, it's not a ghost. Keep it.
-        if (confirmedDbIds.has(f.id)) return false;
-
-        // Calculate how many hours until the fight starts
-        const fightDate = new Date(f.start_time);
-        const hoursUntilFight = (fightDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-
-        // 🛡️ PROTECT FIGHT NIGHT: If the fight is less than 36 hours away (or already in the past), 
-        // the odds were likely just pulled by the sportsbooks for the event. DO NOT DELETE.
-        if (hoursUntilFight < 36) {
-            logs.push(`🛡️ PROTECTED: ${f.fighter_1_name} vs ${f.fighter_2_name} (Odds pulled off board, but fight is close/active)`);
-            return false;
-        }
-
-        // If it's a future fight (>36 hours away) that disappeared from the API, it was likely cancelled. Let it be deleted.
-        return true;
-    });
+    const ghostFights = existingFights.filter(f => !confirmedDbIds.has(f.id));
 
     if (ghostFights.length > 0) {
         const ghostIds = ghostFights.map(f => f.id);
