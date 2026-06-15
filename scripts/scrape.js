@@ -117,8 +117,13 @@ async function getLatestEventUrl() {
             }
         });
         const $ = cheerio.load(data);
-        const latestUrl = $('.b-link_style_black').first().attr('href');
-        if (!latestUrl) throw new Error("Could not find the event link.");
+        
+        // 🎯 THE FIX: Explicitly hunt for the first "event-details" URL instead of relying on a fragile CSS class
+        const latestUrl = $('a[href*="/event-details/"]').first().attr('href');
+        
+        if (!latestUrl) throw new Error("Could not find the event link in the HTML.");
+        
+        console.log(`✅ Found event link: ${latestUrl}`);
         return latestUrl;
     } catch (error) {
         console.error("❌ Failed to fetch latest event URL:", error.message);

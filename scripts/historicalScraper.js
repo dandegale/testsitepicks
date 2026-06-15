@@ -6,10 +6,12 @@ const cheerio = require('cheerio');
 const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+// 🎯 THE FIX: Look for the exact name Supabase uses, and NEVER fall back to the public Anon Key!
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-    console.error("❌ ERROR: Missing Supabase URL or Key.");
+    console.error("❌ ERROR: Missing Supabase URL or Service Role Key in your .env file!");
     process.exit(1);
 }
 
