@@ -1,13 +1,10 @@
 name: Automated UFC Stats Scraper
 
 on:
-  # Runs automatically every 5 minutes during Saturday fight hours (UTC)
-  # Covers Saturday 12:00 PM EDT through Sunday 3:00 AM EDT
   schedule:
     - cron: '*/5 16-23 * * 6'
     - cron: '*/5 0-7 * * 0'
   
-  # Allows triggering manually from GitHub tab or via cron-job.org API
   workflow_dispatch:
     inputs:
       force:
@@ -38,4 +35,12 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           FORCE_RUN: ${{ github.event.inputs.force }}
-        run: node scraper.js
+        run: |
+          SCRAPER_FILE=$(grep -rl "scrapeFullCard" --include="*.js" --include="*.mjs" --exclude-dir="node_modules" --exclude-dir=".next" --exclude-dir=".git" . | head -n 1)
+          if [ -z "$SCRAPER_FILE" ]; then
+            echo "❌ ERROR: Could not find your scraper script anywhere in the GitHub repo!"
+            echo "👉 Make sure you saved the file in VS Code and ran: git add . && git commit -m 'add scraper' && git push"
+            exit 1
+          fi
+          echo "🎯 Found scraper at: $SCRAPER_FILE"
+          node "$SCRAPER_FILE"
