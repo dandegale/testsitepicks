@@ -2,15 +2,13 @@
 require('dotenv').config({ path: '.env.local' });
 require('dotenv').config({ path: '.env' });
 
-// 🎯 NEW: Anti-Bot Stealth Browser
+// 🎯 Anti-Bot Stealth Browser
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 const cheerio = require('cheerio');
 const { createClient } = require('@supabase/supabase-js');
-
-console.log("🚀 Stealth Scraper started! Firing up invisible browser...");
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
@@ -21,6 +19,13 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+// CLI Flags:
+// --force : Bypass the smart idle check and scrape UFCStats anyway
+// --loop  : Keep running automatically every 3 minutes in the terminal
+const FORCE_RUN = process.argv.includes('--force') || process.env.FORCE_RUN === 'true';
+const LOOP_MODE = process.argv.includes('--loop');
+const LOOP_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes
 
 // ============================================================================
 // 🎯 BULLETPROOF NAME MATCHING ENGINE
@@ -109,19 +114,66 @@ const getCustomPoints = (pick, stats, fightInfo, format) => {
 };
 
 // ============================================================================
+// 🎯 MAIN SCRAPER ENGINE
+// ============================================================================
 
 async function scrapeFullCard() {
+    console.log(`\n🚀 [${new Date().toLocaleTimeString()}] Checking Fight Card status...`);
+
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: dbFights, error: dbError } = await supabase
+        .from('fights')
+        .select('*')
+        .gte('start_time', fourteenDaysAgo);
+
+    if (dbError) {
+        console.error("❌ Database Error:", dbError.message);
+        return;
+    }
+
+    // 🎯 SMART PRE-FLIGHT GATE: Don't boot Chrome if no fights need scraping
+    if (!FORCE_RUN) {
+        const twelveHoursAhead = Date.now() + (12 * 60 * 60 * 1000);
+        const activeOrUnfinishedFights = (dbFights || []).filter(f => {
+            const fightTime = new Date(f.start_time).getTime();
+            return !f.winner && fightTime <= twelveHoursAhead;
+        });
+
+        const { count: unpaidCount } = await supabase
+            .from('picks')
+            .select('id', { count: 'exact', head: true })
+            .not('league_id', 'is', null)
+            .is('paid_out', false);
+
+        if (activeOrUnfinishedFights.length === 0 && (!unpaidCount || unpaidCount === 0)) {
+            console.log("💤 All active fights are finalized and paid out. Skipping browser launch (use --force to override).");
+            return;
+        }
+
+        if (activeOrUnfinishedFights.length === 0 && unpaidCount > 0) {
+            console.log("💰 All fights have winners, but unpaid picks remain. Running payouts without launching browser...");
+            await updateAllUsersLifetimePoints();
+            await processEconomyPayouts();
+            return;
+        }
+
+        console.log(`🔥 Found ${activeOrUnfinishedFights.length} unfinished fight(s) in active window. Firing up invisible browser...`);
+    } else {
+        console.log("⚡ Force mode enabled! Firing up invisible browser...");
+    }
+
     const browser = await puppeteer.launch({ 
-        headless: true, // 🎯 Keep invisible so Chrome respects our HTTP overrides!
+        headless: true,
         ignoreHTTPSErrors: true, 
         args: [
             '--no-sandbox', 
             '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage', // Prevents crashes on Linux/GitHub Actions
+            '--no-zygote',
             '--disable-extensions',
             '--disable-web-security',
             '--ignore-certificate-errors',
             '--allow-running-insecure-content',
-            // 🎯 THE GOLDEN KEY: Explicitly kills Chrome's brand-new HTTP auto-blocker!
             '--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable,AutoUpgradeMixedContent',
             '--disable-blink-features=AutomationControlled'
         ] 
@@ -131,46 +183,37 @@ async function scrapeFullCard() {
     await page.setViewport({ width: 1280, height: 800 });
 
     try {
-        const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
-        const { data: dbFights, error: dbError } = await supabase.from('fights').select('*').gte('start_time', fourteenDaysAgo);
-        if (dbError) throw dbError;
-
         console.log("🔍 Sneaking past Cloudflare natively...");
         
-        // 🎯 Safely requesting the exact URL the server prefers
         await page.goto('http://www.ufcstats.com/statistics/events/completed', { waitUntil: 'networkidle2', timeout: 60000 });
         
         const html = await page.content();
         const $ = cheerio.load(html);
 
-        // 🎯 THE FIX: Aggressive Date Filtering & Logging (No blind fallbacks!)
         let latestUrl = null;
         const rightNow = new Date();
 
         console.log("\n🗓️ Inspecting the event calendar...");
 
         $('.b-statistics__table-row').each((i, el) => {
-            if (latestUrl) return; // Stop looping once we find the golden link
+            if (latestUrl) return;
 
             const linkTag = $(el).find('a[href*="event-details"], .b-link_style_black').first();
             const dateTag = $(el).find('.b-statistics__date');
 
             if (linkTag.length > 0 && dateTag.length > 0) {
-                // 🎯 Clean up UFC Stats' weird invisible spaces and line breaks
                 const dateStr = dateTag.text().replace(/\s+/g, ' ').trim(); 
                 const eventDate = new Date(dateStr);
 
-                // If Node.js can't read the date format, scream about it but don't crash
                 if (isNaN(eventDate.getTime())) {
                     console.log(`⚠️ Unreadable date string: "${dateStr}" - Skipping...`);
                     return; 
                 }
 
-                // Add a 24-hour buffer to "Right Now" to account for weird timezone overlaps
                 const safeCurrentTime = rightNow.getTime() + (24 * 60 * 60 * 1000);
 
                 if (eventDate.getTime() <= safeCurrentTime) {
-                    console.log(`✅ Locked onto valid past event: ${dateStr}`);
+                    console.log(`✅ Locked onto valid past/live event: ${dateStr}`);
                     latestUrl = linkTag.attr('href');
                 } else {
                     console.log(`⏩ Skipping future event: ${dateStr}`);
@@ -237,12 +280,12 @@ async function scrapeAndScoreFight(fightUrl, dbFights, page) {
         const hasFightStats = tableText.includes('Sig. str') || tableText.includes('Ctrl') || tableText.includes('Td');
 
         if (!hasFightStats && !isFinished) {
-            console.log(`⏳ Fight hasn't started yet: ${fighters[0]} vs ${fighters[1]} - Skipping...`);
+            console.log(`⏳ Fight hasn't started yet: ${fighters[0]} vs ${fighters[1]} — Skipping...`);
             return; 
         }
 
         if (!isFinished) {
-            console.log(`📡 Fight is Live/Pending: ${fighters[0]} vs ${fighters[1]} - Syncing live stats...`);
+            console.log(`📡 Fight is Live/Pending: ${fighters[0]} vs ${fighters[1]} — Syncing live stats...`);
         }
 
         const key1 = getSearchKey(fighters[0]);
@@ -620,5 +663,25 @@ async function updateAllUsersLifetimePoints() {
     }
 }
 
-// FIRE THE ENGINES
-scrapeFullCard();
+// ============================================================================
+// 🎯 EXECUTION RUNNER (SUPPORTS SINGLE RUN OR AUTO-LOOP)
+// ============================================================================
+
+async function startRunner() {
+    if (LOOP_MODE) {
+        console.log("🔁 AUTO-LOOP ENABLED: Running every 3 minutes. Press Ctrl+C to stop.");
+        while (true) {
+            await scrapeFullCard();
+            console.log(`⏳ Sleeping for 3 minutes until next check...`);
+            await new Promise(r => setTimeout(r, LOOP_INTERVAL_MS));
+        }
+    } else {
+        await scrapeFullCard();
+        process.exit(0); // Cleanly close open handles for GitHub Actions
+    }
+}
+
+startRunner().catch(err => {
+    console.error("❌ Unhandled Runner Error:", err);
+    process.exit(1);
+});
