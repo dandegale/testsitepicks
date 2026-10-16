@@ -1,34 +1,41 @@
-name: Live UFC Scraper
+name: Automated UFC Stats Scraper
 
 on:
+  # Runs automatically every 5 minutes during Saturday fight hours (UTC)
+  # Covers Saturday 12:00 PM EDT through Sunday 3:00 AM EDT
   schedule:
-    # Saturday: Runs every 5 minutes from 21:00 to 23:59 UTC (Approx 4:00 PM to 7:59 PM EST)
-    - cron: '*/5 21-23 * * 6'
-    # Sunday: Runs every 5 minutes from 00:00 to 06:59 UTC (Approx 8:00 PM to 2:00 AM EST)
-    - cron: '*/5 0-6 * * 0'
+    - cron: '*/5 16-23 * * 6'
+    - cron: '*/5 0-7 * * 0'
   
-  # This line adds a button in GitHub so you can manually trigger it to test!
-  workflow_dispatch: 
+  # Allows triggering manually from GitHub tab or via cron-job.org API
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force scrape even if fights appear finished'
+        required: false
+        default: 'false'
 
 jobs:
-  scrape-fights:
+  scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
-      - name: Install Dependencies
-        run: npm install
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Run Fight Scraper
+      - name: Run Stealth Scraper
         env:
-          # This pulls your secure keys from GitHub settings so they aren't public
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: node scripts/scrape.js
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FORCE_RUN: ${{ github.event.inputs.force }}
+        run: node scraper.js
