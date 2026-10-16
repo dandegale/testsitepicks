@@ -2,13 +2,16 @@
 require('dotenv').config({ path: '.env.local' });
 require('dotenv').config({ path: '.env' });
 
-const axios = require('axios');
+// 🎯 NEW: Anti-Bot Stealth Browser
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
+
 const cheerio = require('cheerio');
 const { createClient } = require('@supabase/supabase-js');
 
-console.log("🚀 Script started! If you see this, Node is reading the file.");
+console.log("🚀 Stealth Scraper started! Firing up invisible browser...");
 
-// 🎯 Catch the variables no matter what you named them in your .env file
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
@@ -28,11 +31,10 @@ const NAME_FIXES = {
     "sumudaerji": "mudaerji", 
     "weili": "zhang",         
     "stpreux": "st-preux",
-    "sterling": "stirling",   // 🎯 Added fix for Navajo Stirling
-    "simone": "simon"         // 🎯 Added fix for Ricky Simone/Simon
+    "sterling": "stirling",   
+    "simone": "simon"         
 };
 
-// 🎯 NEW: Safely removes accents (so Simón becomes Simon instead of Simn)
 const removeAccents = (str) => {
     return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 };
@@ -60,7 +62,7 @@ const isFighterMatch = (name1, name2) => {
 };
 
 // ============================================================================
-// 🎯 THE DFS SCORING ENGINE (Replicates your LeaguePage math perfectly)
+// 🎯 THE DFS SCORING ENGINE
 // ============================================================================
 
 const getCustomPoints = (pick, stats, fightInfo, format) => {
@@ -108,55 +110,101 @@ const getCustomPoints = (pick, stats, fightInfo, format) => {
 
 // ============================================================================
 
-async function getLatestEventUrl() {
-    try {
-        console.log("🔍 Searching for the latest UFC event...");
-        const { data } = await axios.get('http://ufcstats.com/statistics/events/completed', {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-        });
-        const $ = cheerio.load(data);
-        
-        // 🎯 THE FIX: Explicitly hunt for the first "event-details" URL instead of relying on a fragile CSS class
-        const latestUrl = $('a[href*="/event-details/"]').first().attr('href');
-        
-        if (!latestUrl) throw new Error("Could not find the event link in the HTML.");
-        
-        console.log(`✅ Found event link: ${latestUrl}`);
-        return latestUrl;
-    } catch (error) {
-        console.error("❌ Failed to fetch latest event URL:", error.message);
-        return null;
-    }
-}
-
 async function scrapeFullCard() {
+    const browser = await puppeteer.launch({ 
+        headless: true, // 🎯 Keep invisible so Chrome respects our HTTP overrides!
+        ignoreHTTPSErrors: true, 
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-extensions',
+            '--disable-web-security',
+            '--ignore-certificate-errors',
+            '--allow-running-insecure-content',
+            // 🎯 THE GOLDEN KEY: Explicitly kills Chrome's brand-new HTTP auto-blocker!
+            '--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable,AutoUpgradeMixedContent',
+            '--disable-blink-features=AutomationControlled'
+        ] 
+    });
+    
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 800 });
+
     try {
         const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
         const { data: dbFights, error: dbError } = await supabase.from('fights').select('*').gte('start_time', fourteenDaysAgo);
         if (dbError) throw dbError;
 
-        const UFC_EVENT_URL = await getLatestEventUrl();
-        if (!UFC_EVENT_URL) return;
+        console.log("🔍 Sneaking past Cloudflare natively...");
+        
+        // 🎯 Safely requesting the exact URL the server prefers
+        await page.goto('http://www.ufcstats.com/statistics/events/completed', { waitUntil: 'networkidle2', timeout: 60000 });
+        
+        const html = await page.content();
+        const $ = cheerio.load(html);
 
-        console.log(`📡 Fetching event card data...`);
-        const { data: eventData } = await axios.get(UFC_EVENT_URL, { 
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' } 
+        // 🎯 THE FIX: Aggressive Date Filtering & Logging (No blind fallbacks!)
+        let latestUrl = null;
+        const rightNow = new Date();
+
+        console.log("\n🗓️ Inspecting the event calendar...");
+
+        $('.b-statistics__table-row').each((i, el) => {
+            if (latestUrl) return; // Stop looping once we find the golden link
+
+            const linkTag = $(el).find('a[href*="event-details"], .b-link_style_black').first();
+            const dateTag = $(el).find('.b-statistics__date');
+
+            if (linkTag.length > 0 && dateTag.length > 0) {
+                // 🎯 Clean up UFC Stats' weird invisible spaces and line breaks
+                const dateStr = dateTag.text().replace(/\s+/g, ' ').trim(); 
+                const eventDate = new Date(dateStr);
+
+                // If Node.js can't read the date format, scream about it but don't crash
+                if (isNaN(eventDate.getTime())) {
+                    console.log(`⚠️ Unreadable date string: "${dateStr}" - Skipping...`);
+                    return; 
+                }
+
+                // Add a 24-hour buffer to "Right Now" to account for weird timezone overlaps
+                const safeCurrentTime = rightNow.getTime() + (24 * 60 * 60 * 1000);
+
+                if (eventDate.getTime() <= safeCurrentTime) {
+                    console.log(`✅ Locked onto valid past event: ${dateStr}`);
+                    latestUrl = linkTag.attr('href');
+                } else {
+                    console.log(`⏩ Skipping future event: ${dateStr}`);
+                }
+            }
         });
-        const $event = cheerio.load(eventData);
+
+        if (!latestUrl) {
+            console.log("\n🛑 HTML DUMP:");
+            console.log(html.substring(0, 1500));
+            throw new Error("Could not find a valid past event link. They may have changed their layout.");
+        }
+
+        const safeLatestUrl = latestUrl.replace('www.', '');
+        console.log(`\n📡 Fetching event card data from: ${safeLatestUrl}`);
+        
+        await page.goto(safeLatestUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        
+        const eventHtml = await page.content();
+        const $event = cheerio.load(eventHtml);
         
         const fightUrls = [];
         $event('.b-fight-details__table-row').each((i, el) => {
-            const link = $event(el).attr('data-link');
-            if (link) fightUrls.push(link); 
+            let link = $event(el).attr('data-link');
+            if (link) {
+                fightUrls.push(link); 
+            }
         });
 
         console.log(`🥊 Found ${fightUrls.length} fights. Commencing balanced scrape...`);
 
         for (const url of fightUrls) {
-            await scrapeAndScoreFight(url, dbFights);
-            await new Promise(r => setTimeout(r, 2000)); 
+            await scrapeAndScoreFight(url, dbFights, page);
+            await new Promise(r => setTimeout(r, 3000)); 
         }
 
         await updateAllUsersLifetimePoints();
@@ -165,6 +213,246 @@ async function scrapeFullCard() {
         console.log("🏆 Card update complete!");
     } catch (err) {
         console.error("❌ Fatal Event Error:", err.message);
+    } finally {
+        await browser.close(); 
+    }
+}
+
+async function scrapeAndScoreFight(fightUrl, dbFights, page) {
+    try {
+        await page.goto(fightUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        const html = await page.content();
+        const $ = cheerio.load(html);
+        
+        const fighters = [];
+        $('.b-fight-details__person-name').each((i, el) => fighters.push($(el).text().trim()));
+        if (fighters.length < 2) return;
+
+        const statuses = [];
+        $('.b-fight-details__person-status').each((i, el) => statuses.push($(el).text().trim().toUpperCase()));
+        
+        const isFinished = statuses.includes('W') || statuses.includes('L') || statuses.includes('NC') || statuses.includes('DRAW') || statuses.includes('D');
+
+        const tableText = $('.b-fight-details__table').text() || '';
+        const hasFightStats = tableText.includes('Sig. str') || tableText.includes('Ctrl') || tableText.includes('Td');
+
+        if (!hasFightStats && !isFinished) {
+            console.log(`⏳ Fight hasn't started yet: ${fighters[0]} vs ${fighters[1]} - Skipping...`);
+            return; 
+        }
+
+        if (!isFinished) {
+            console.log(`📡 Fight is Live/Pending: ${fighters[0]} vs ${fighters[1]} - Syncing live stats...`);
+        }
+
+        const key1 = getSearchKey(fighters[0]);
+        const key2 = getSearchKey(fighters[1]);
+
+        const dbFight = dbFights.find(f => {
+            const combinedDbNames = sanitizeForMatch(f.fighter_1_name) + sanitizeForMatch(f.fighter_2_name);
+            return combinedDbNames.includes(key1) && combinedDbNames.includes(key2);
+        });
+
+        if (!dbFight) return;
+
+        // 🛑 FINISH DETECTION & ROUND TIMING
+        let isKO = false;
+        let isSub = false;
+        let isDec = false; 
+        let finishRound = 1;
+        let finishTimeSeconds = 999;
+        let winMethodStr = ""; 
+
+        $('.b-fight-details__text-item, .b-fight-details__text-item_first').each((i, el) => {
+            const text = $(el).text().replace(/\s+/g, ' ').toUpperCase().trim();
+            
+            if (text.includes('METHOD:')) {
+                const parts = text.split('METHOD:');
+                if (parts.length > 1) {
+                    winMethodStr = parts[1].trim(); 
+                }
+                if (text.includes('KO/TKO') || text.includes('TKO') || text.includes('KO')) isKO = true;
+                if (text.includes('SUB') || text.includes('SUBMISSION')) isSub = true;
+                if (text.includes('DEC') || text.includes('DECISION')) isDec = true; 
+            }
+            if (text.includes('ROUND:') && !text.includes('FORMAT')) {
+                const parts = text.split('ROUND:');
+                if (parts.length > 1) {
+                    finishRound = parseInt(parts[1].trim()) || 1;
+                }
+            }
+            if (text.includes('TIME:') && !text.includes('FORMAT')) {
+                const parts = text.split('TIME:');
+                if (parts.length > 1) {
+                    const [m, s] = parts[1].trim().split(':').map(Number);
+                    if (!isNaN(m) && !isNaN(s)) {
+                        finishTimeSeconds = (m * 60) + s;
+                    }
+                }
+            }
+        });
+
+        const isUnder30s = finishRound === 1 && finishTimeSeconds <= 30;
+        const isLast10sR5 = finishRound === 5 && finishTimeSeconds >= 290; 
+
+        let baseBonus = 0;
+        
+        if (isLast10sR5 && (isKO || isSub)) {
+            baseBonus = 100;
+        } 
+        else if (isKO) {
+            if (isUnder30s) baseBonus = 60;
+            else if (finishRound === 1) baseBonus = 35;
+            else if (finishRound === 2) baseBonus = 25;
+            else if (finishRound === 3) baseBonus = 20; 
+            else if (finishRound === 4) baseBonus = 25;
+            else if (finishRound === 5) baseBonus = 40; 
+        } 
+        else if (isSub) {
+            if (isUnder30s) baseBonus = 65;
+            else if (finishRound === 1) baseBonus = 35;
+            else if (finishRound === 2) baseBonus = 25;
+            else if (finishRound === 3) baseBonus = 20; 
+            else if (finishRound === 4) baseBonus = 25;
+            else if (finishRound === 5) baseBonus = 40; 
+        }
+        else if (isDec) {
+            baseBonus = 10;
+        }
+
+        const rows = $('.b-fight-details__table-body').first().find('.b-fight-details__table-text');
+        const parseStat = (index) => {
+            const raw = rows.eq(index).text().trim().split(' of ')[0];
+            return parseInt(raw) || 0; 
+        };
+
+        let results = fighters.map((name, i) => {
+            const kd = parseStat(2 + i);
+            const sig_str = parseStat(4 + i);
+            const td = parseStat(10 + i);
+            const sub_att = parseStat(14 + i);
+            
+            const ctrlRaw = rows.eq(18 + i).text().trim() || "0:00"; 
+            const [m, s] = ctrlRaw.split(':').map(Number);
+            const ctrlMinutes = (m || 0) + ((s || 0) / 60);
+
+            let points = (sig_str * 0.25) + (td * 2.5) + (kd * 5) + (sub_att * 3) + (ctrlMinutes * 1.8);
+            
+            return {
+                fight_id: dbFight.id,
+                fighter_name: name,
+                knockdowns: kd,
+                sig_strikes: sig_str,
+                takedowns: td,
+                sub_attempts: sub_att, 
+                control_time_seconds: ((m || 0) * 60) + (s || 0),
+                is_winner: statuses[i] === 'W', 
+                fantasy_points: points 
+            };
+        });
+
+        // 🛑 FINISH BONUSES
+        const winnerIndex = results.findIndex(r => r.is_winner);
+        let finalBonus = 0;
+        let wasEqualized = false; 
+
+        if (isFinished && winnerIndex !== -1) {
+            const loserIndex = winnerIndex === 0 ? 1 : 0;
+
+            if (baseBonus > 0) {
+                const winnerKey = getSearchKey(fighters[winnerIndex]);
+                let winnerOdds = 0;
+
+                const f1Clean = sanitizeForMatch(dbFight.fighter_1_name);
+                const f2Clean = sanitizeForMatch(dbFight.fighter_2_name);
+
+                if (f1Clean.includes(winnerKey)) {
+                    winnerOdds = parseInt(dbFight.fighter_1_odds) || 0;
+                } else if (f2Clean.includes(winnerKey)) {
+                    winnerOdds = parseInt(dbFight.fighter_2_odds) || 0;
+                }
+
+                let oddsMultiplier = 1;
+
+                if (winnerOdds > 0) {
+                    oddsMultiplier = winnerOdds / 100;
+                } else if (winnerOdds < 0) {
+                    oddsMultiplier = 100 / Math.abs(winnerOdds);
+                }
+
+                finalBonus = parseFloat((baseBonus * oddsMultiplier).toFixed(2));
+                
+                if (winnerOdds < 0 && (isKO || isSub)) {
+                    finalBonus += 10;
+                }
+
+                results[winnerIndex].fantasy_points += finalBonus;
+            }
+
+            if (results[winnerIndex].fantasy_points < results[loserIndex].fantasy_points) {
+                results[winnerIndex].fantasy_points = results[loserIndex].fantasy_points;
+                wasEqualized = true; 
+            }
+        }
+
+        results.forEach(r => {
+            r.fantasy_points = parseFloat(Math.min(r.fantasy_points, 999.99).toFixed(2));
+        });
+
+        const { error } = await supabase.from('fighter_stats').upsert(results, { onConflict: 'fight_id, fighter_name' });
+        if (error) throw new Error(`Supabase Stats Error: ${error.message}`);
+        
+        let finalMethodString = winMethodStr; 
+        if (isKO || isSub) {
+            finalMethodString = `${winMethodStr} R${finishRound}`;
+        }
+
+        if (isFinished) {
+            let exactDbWinnerName = 'Draw'; 
+            let cleanMethod = winMethodStr ? winMethodStr.trim() : (isDec ? 'DEC' : 'UNKNOWN');
+
+            if (statuses.includes('W')) {
+                const winnerKey = getSearchKey(fighters[winnerIndex]);
+                exactDbWinnerName = fighters[winnerIndex]; 
+                
+                const f1Clean = sanitizeForMatch(dbFight.fighter_1_name);
+                const f2Clean = sanitizeForMatch(dbFight.fighter_2_name);
+                
+                if (f1Clean.includes(winnerKey)) {
+                    exactDbWinnerName = dbFight.fighter_1_name;
+                } else if (f2Clean.includes(winnerKey)) {
+                    exactDbWinnerName = dbFight.fighter_2_name;
+                }
+            } else if (statuses.includes('NC') || winMethodStr.includes('NO CONTEST') || winMethodStr.includes('NC')) {
+                exactDbWinnerName = 'No Contest';
+                cleanMethod = 'NC';
+            } else if (statuses.includes('DRAW') || statuses.includes('D')) {
+                exactDbWinnerName = 'Draw';
+                cleanMethod = 'DRAW';
+            }
+
+            const { error: updateError } = await supabase.from('fights').update({ 
+                winner: exactDbWinnerName,
+                method: cleanMethod,
+                round: finishRound 
+            }).eq('id', dbFight.id);
+
+            if (updateError) {
+                console.error(`❌ Failed to update winner for ${exactDbWinnerName}:`, updateError.message);
+            }
+        }
+
+        let bonusLabel = finalBonus > 0 ? ` (+${finalBonus} True Odds Bonus)` : "";
+        let eqLabel = wasEqualized ? ` ⚠️ [EQUALIZER APPLIED]` : "";
+        
+        if (isFinished) {
+            console.log(`✅ Finalized: ${fighters[0]} vs ${fighters[1]} (${statuses.includes('W') ? fighters[winnerIndex] + ' won by ' + finalMethodString + bonusLabel + eqLabel : 'Draw/NC'})`);
+        } else {
+            console.log(`🔄 Live Stats Saved: ${fighters[0]} [${results[0].fantasy_points} pts] vs ${fighters[1]} [${results[1].fantasy_points} pts]`);
+        }
+        
+    } catch (err) {
+        console.error(`❌ Error:`, err.message);
     }
 }
 
@@ -332,238 +620,5 @@ async function updateAllUsersLifetimePoints() {
     }
 }
 
-async function scrapeAndScoreFight(fightUrl, dbFights) {
-    try {
-        const { data } = await axios.get(fightUrl, { 
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0' } 
-        });
-        const $ = cheerio.load(data);
-        
-        const fighters = [];
-        $('.b-fight-details__person-name').each((i, el) => fighters.push($(el).text().trim()));
-        if (fighters.length < 2) return;
-
-        const statuses = [];
-        $('.b-fight-details__person-status').each((i, el) => statuses.push($(el).text().trim().toUpperCase()));
-
-        let isKO = false;
-        let isSub = false;
-        let isDec = false; 
-        let finishRound = 1;
-        let finishTimeSeconds = 999;
-        let winMethodStr = ""; 
-
-        $('.b-fight-details__text-item, .b-fight-details__text-item_first').each((i, el) => {
-            const text = $(el).text().replace(/\s+/g, ' ').toUpperCase().trim();
-            
-            if (text.includes('METHOD:')) {
-                const parts = text.split('METHOD:');
-                if (parts.length > 1) {
-                    winMethodStr = parts[1].trim(); 
-                }
-                if (text.includes('KO/TKO') || text.includes('TKO') || text.includes('KO')) isKO = true;
-                if (text.includes('SUB') || text.includes('SUBMISSION')) isSub = true;
-                if (text.includes('DEC') || text.includes('DECISION')) isDec = true; 
-            }
-            if (text.includes('ROUND:') && !text.includes('FORMAT')) {
-                const parts = text.split('ROUND:');
-                if (parts.length > 1) finishRound = parseInt(parts[1].trim()) || 1;
-            }
-            if (text.includes('TIME:') && !text.includes('FORMAT')) {
-                const parts = text.split('TIME:');
-                if (parts.length > 1) {
-                    const [m, s] = parts[1].trim().split(':').map(Number);
-                    if (!isNaN(m) && !isNaN(s)) finishTimeSeconds = (m * 60) + s;
-                }
-            }
-        });
-
-        const isFinished = statuses.includes('W') || statuses.includes('L') || statuses.includes('NC') || statuses.includes('DRAW') || statuses.includes('D') || winMethodStr.length > 2;
-
-        const tableText = $('.b-fight-details__table').text() || '';
-        const hasFightStats = tableText.includes('Sig. str') || tableText.includes('Ctrl') || tableText.includes('Td');
-
-        if (!hasFightStats && !isFinished) {
-            console.log(`⏳ Fight hasn't started yet: ${fighters[0]} vs ${fighters[1]} - Skipping...`);
-            return; 
-        }
-
-        if (!isFinished) {
-            console.log(`📡 Fight is Live/Pending: ${fighters[0]} vs ${fighters[1]} - Syncing live stats...`);
-        }
-
-        const key1 = getSearchKey(fighters[0]);
-        const key2 = getSearchKey(fighters[1]);
-
-        const dbFight = dbFights.find(f => {
-            const combinedDbNames = sanitizeForMatch(f.fighter_1_name) + sanitizeForMatch(f.fighter_2_name);
-            return combinedDbNames.includes(key1) && combinedDbNames.includes(key2);
-        });
-
-        if (!dbFight) return;
-
-        const isUnder30s = finishRound === 1 && finishTimeSeconds <= 30;
-        const isLast10sR5 = finishRound === 5 && finishTimeSeconds >= 290; 
-
-        let baseBonus = 0;
-        
-        if (isLast10sR5 && (isKO || isSub)) {
-            baseBonus = 100;
-        } 
-        else if (isKO) {
-            if (isUnder30s) baseBonus = 60;
-            else if (finishRound === 1) baseBonus = 35;
-            else if (finishRound === 2) baseBonus = 25;
-            else if (finishRound === 3) baseBonus = 20; 
-            else if (finishRound === 4) baseBonus = 25;
-            else if (finishRound === 5) baseBonus = 40; 
-        } 
-        else if (isSub) {
-            if (isUnder30s) baseBonus = 65;
-            else if (finishRound === 1) baseBonus = 35;
-            else if (finishRound === 2) baseBonus = 25;
-            else if (finishRound === 3) baseBonus = 20; 
-            else if (finishRound === 4) baseBonus = 25;
-            else if (finishRound === 5) baseBonus = 40; 
-        }
-        else if (isDec) {
-            baseBonus = 10;
-        }
-
-        const rows = $('.b-fight-details__table-body').first().find('.b-fight-details__table-text');
-        const parseStat = (index) => {
-            const raw = rows.eq(index).text().trim().split(' of ')[0];
-            return parseInt(raw) || 0; 
-        };
-
-        let results = fighters.map((name, i) => {
-            const kd = parseStat(2 + i);
-            const sig_str = parseStat(4 + i);
-            const td = parseStat(10 + i);
-            const sub_att = parseStat(14 + i);
-            
-            const ctrlRaw = rows.eq(18 + i).text().trim() || "0:00"; 
-            const [m, s] = ctrlRaw.split(':').map(Number);
-            const ctrlMinutes = (m || 0) + ((s || 0) / 60);
-
-            let points = (sig_str * 0.25) + (td * 2.5) + (kd * 5) + (sub_att * 3) + (ctrlMinutes * 1.8);
-            
-            return {
-                fight_id: dbFight.id,
-                fighter_name: name,
-                knockdowns: kd,
-                sig_strikes: sig_str,
-                takedowns: td,
-                sub_attempts: sub_att, 
-                control_time_seconds: ((m || 0) * 60) + (s || 0),
-                is_winner: statuses[i] === 'W', 
-                fantasy_points: points 
-            };
-        });
-
-        // 🛑 FINISH BONUSES
-        const winnerIndex = results.findIndex(r => r.is_winner);
-        let finalBonus = 0;
-        let wasEqualized = false; 
-
-        if (isFinished && winnerIndex !== -1) {
-            const loserIndex = winnerIndex === 0 ? 1 : 0;
-
-            if (baseBonus > 0) {
-                const winnerKey = getSearchKey(fighters[winnerIndex]);
-                let winnerOdds = 0;
-
-                const f1Clean = sanitizeForMatch(dbFight.fighter_1_name);
-                const f2Clean = sanitizeForMatch(dbFight.fighter_2_name);
-
-                if (f1Clean.includes(winnerKey)) {
-                    winnerOdds = parseInt(dbFight.fighter_1_odds) || 0;
-                } else if (f2Clean.includes(winnerKey)) {
-                    winnerOdds = parseInt(dbFight.fighter_2_odds) || 0;
-                }
-
-                let oddsMultiplier = 1;
-
-                if (winnerOdds > 0) {
-                    oddsMultiplier = winnerOdds / 100;
-                } else if (winnerOdds < 0) {
-                    oddsMultiplier = 100 / Math.abs(winnerOdds);
-                }
-
-                finalBonus = parseFloat((baseBonus * oddsMultiplier).toFixed(2));
-                
-                if (winnerOdds < 0 && (isKO || isSub)) {
-                    finalBonus += 10;
-                }
-
-                results[winnerIndex].fantasy_points += finalBonus;
-            }
-
-            if (results[winnerIndex].fantasy_points < results[loserIndex].fantasy_points) {
-                results[winnerIndex].fantasy_points = results[loserIndex].fantasy_points;
-                wasEqualized = true; 
-            }
-        }
-
-        results.forEach(r => {
-            r.fantasy_points = parseFloat(Math.min(r.fantasy_points, 999.99).toFixed(2));
-        });
-
-        const { error } = await supabase.from('fighter_stats').upsert(results, { onConflict: 'fight_id, fighter_name' });
-        if (error) throw new Error(`Supabase Stats Error: ${error.message}`);
-        
-        let finalMethodString = winMethodStr; 
-        if (isKO || isSub) {
-            finalMethodString = `${winMethodStr} R${finishRound}`;
-        }
-
-        if (isFinished) {
-            let exactDbWinnerName = 'Draw'; 
-            let cleanMethod = winMethodStr ? winMethodStr.trim() : (isDec ? 'DEC' : 'UNKNOWN');
-
-            if (statuses.includes('W')) {
-                const winnerKey = getSearchKey(fighters[winnerIndex]);
-                exactDbWinnerName = fighters[winnerIndex]; 
-                
-                const f1Clean = sanitizeForMatch(dbFight.fighter_1_name);
-                const f2Clean = sanitizeForMatch(dbFight.fighter_2_name);
-                
-                if (f1Clean.includes(winnerKey)) {
-                    exactDbWinnerName = dbFight.fighter_1_name;
-                } else if (f2Clean.includes(winnerKey)) {
-                    exactDbWinnerName = dbFight.fighter_2_name;
-                }
-            } else if (statuses.includes('NC') || winMethodStr.includes('NO CONTEST') || winMethodStr.includes('NC')) {
-                exactDbWinnerName = 'No Contest';
-                cleanMethod = 'NC';
-            } else {
-                exactDbWinnerName = 'Draw';
-                if (!cleanMethod || cleanMethod === 'UNKNOWN') cleanMethod = 'DRAW';
-            }
-
-            const { error: updateError } = await supabase.from('fights').update({ 
-                winner: exactDbWinnerName,
-                method: cleanMethod,
-                round: finishRound 
-            }).eq('id', dbFight.id);
-
-            if (updateError) {
-                console.error(`❌ Failed to update winner for ${exactDbWinnerName}:`, updateError.message);
-            }
-        }
-
-        let bonusLabel = finalBonus > 0 ? ` (+${finalBonus} True Odds Bonus)` : "";
-        let eqLabel = wasEqualized ? ` ⚠️ [EQUALIZER APPLIED]` : "";
-        
-        if (isFinished) {
-            console.log(`✅ Finalized: ${fighters[0]} vs ${fighters[1]} (${statuses.includes('W') ? fighters[winnerIndex] + ' won by ' + finalMethodString + bonusLabel + eqLabel : 'Draw/NC'})`);
-        } else {
-            console.log(`🔄 Live Stats Saved: ${fighters[0]} [${results[0].fantasy_points} pts] vs ${fighters[1]} [${results[1].fantasy_points} pts]`);
-        }
-        
-    } catch (err) {
-        console.error(`❌ Error:`, err.message);
-    }
-}
-
+// FIRE THE ENGINES
 scrapeFullCard();
